@@ -1,0 +1,8 @@
+[package]
+name = "emu"
+version = "0.1.0"
+authors = ["Giovanni Bajo <rasky@develer.com>"]
+
+[dependencies]
+byteorder = "1"
+enum-map = "0.4.0"

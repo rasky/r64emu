@@ -1,0 +1,9 @@
+[package]
+name = "r64emu"
+version = "0.1.0"
+authors = ["Giovanni Bajo <rasky@develer.com>"]
+
+[dependencies]
+emu = {path =  "./emu"}
+num = "0.1.42"
+byteorder = "1"
