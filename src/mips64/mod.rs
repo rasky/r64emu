@@ -3,6 +3,8 @@ extern crate num;
 
 use self::byteorder::BigEndian;
 use super::emu::Bus;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 trait Numerics64 {
     fn hi_lo(self) -> (u64, u64);
@@ -45,7 +47,7 @@ impl Numerics32 for i32 {
 
 struct Mipsop<'a> {
     opcode: u32,
-    cpu: &'a mut Cpu<'a>,
+    cpu: &'a mut Cpu,
 }
 
 impl<'a> Mipsop<'a> {
@@ -108,24 +110,27 @@ impl<'a> Mipsop<'a> {
     }
 }
 
-#[derive(Default)]
-pub struct Cpu<'a> {
+pub struct Cpu {
     regs: [u64; 32],
     hi: u64,
     lo: u64,
 
-    bus: &'a Bus<Order = BigEndian>,
-
+    // bus: Rc<RefCell<Box<&'a Bus<'a, Order = BigEndian>>>>,
     pc: u32,
     clock: i64,
     until: i64,
 }
 
-impl<'a> Cpu<'a> {
-    pub fn new(bus: &Bus<Order = BigEndian>) -> Cpu {
+impl Cpu {
+    pub fn new() -> Cpu {
         return Cpu {
-            bus,
-            ..Default::default()
+            // bus: bus,
+            regs: [0u64; 32],
+            hi: 0,
+            lo: 0,
+            pc: 0,
+            clock: 0,
+            until: 0,
         };
     }
 
