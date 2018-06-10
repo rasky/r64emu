@@ -17,9 +17,14 @@ fn main() {
 
     let mut cpu = mips64::Cpu::new(/*bus.clone()*/);
 
-    let val = bus.borrow().read32(0x12000000);
+    let mut val = bus.borrow().read32(0x12000000);
+    val += bus.borrow().read32(0x12000004);
+
+    let mut x = bus.borrow_mut();
+    x.write32(0x12000000, 4);
+    x.write32(0x12000000, 6);
 
     cpu.step(args[1].parse::<u32>().unwrap());
 
-    println!("Hello, world! {:x}", 0);
+    println!("Hello, world! {:x}", val);
 }

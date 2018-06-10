@@ -50,31 +50,30 @@ struct MemArea<'a> {
 
 impl<'a> MemArea<'a> {
     #[inline(always)]
-    fn mem_io_r(&'a self, mut pc: u32) -> MemIoR<'a> {
+    fn mem_io_r(&self, mut pc: u32) -> MemIoR {
         pc &= self.mask;
         MemIoR::Mem(&self.data[pc as usize..])
     }
     #[inline(always)]
-    fn mem_io_w(&'a mut self, mut pc: u32) -> MemIoW<'a> {
+    fn mem_io_w(&mut self, mut pc: u32) -> MemIoW {
         pc &= self.mask;
         MemIoW::Mem(&mut self.data[pc as usize..])
     }
 }
 
-#[repr(u8)]
-enum HwIo<'a> {
+enum HwIo<'a,'b:'a> {
     Unmapped(),
-    Mem(&'a mut MemArea<'a>),
-    Node(&'a mut Node<'a>),
+    Mem(&'a mut MemArea<'b>),
+    Node(&'a mut Node<'a,'b>),
 }
 
-struct Node<'a> {
-    ior: [HwIo<'a>; 65536],
-    iow: [HwIo<'a>; 65536],
+struct Node<'a,'b:'a> {
+    ior: [HwIo<'a,'b>; 65536],
+    iow: [HwIo<'a,'b>; 65536],
 }
 
-impl<'a> Node<'a> {
-    fn new() -> Box<Node<'a>> {
+impl<'a,'b> Node<'a,'b> {
+    fn new() -> Box<Node<'a,'b>> {
         let mut n = box Node {
             ior: unsafe { std::mem::uninitialized() },
             iow: unsafe { std::mem::uninitialized() },
@@ -89,24 +88,24 @@ impl<'a> Node<'a> {
     }
 }
 
-pub struct Bus<'a, Order: ByteOrder> {
-    arena: Vec<Box<Node<'a>>>,
-    roots: EnumMap<AccessSize, Box<Node<'a>>>,
+pub struct Bus<'a,'b:'a, Order: ByteOrder> {
+    arena: Vec<Box<Node<'a,'b>>>,
+    roots: EnumMap<AccessSize, Box<Node<'a,'b>>>,
     phantom: PhantomData<Order>,
 }
 
-impl<'a, Order> Bus<'a, Order>
+impl<'a,'b, Order> Bus<'a,'b, Order>
 where
     Order: ByteOrder,
 {
-    pub fn read8(&'a self, pc: u32) -> u8 {
+    pub fn read8(&self, pc: u32) -> u8 {
         match self.fetch_read(pc, AccessSize::Size8) {
             MemIoR::Mem(buf) => buf[0],
             MemIoR::Func(f) => f() as u8,
             MemIoR::Unmapped() => 0xff,
         }
     }
-    pub fn read16(&'a self, pc: u32) -> u16 {
+    pub fn read16(&self, pc: u32) -> u16 {
         match self.fetch_read(pc, AccessSize::Size16) {
             MemIoR::Mem(buf) => Order::read_u16(buf),
             MemIoR::Func(f) => f() as u16,
@@ -120,7 +119,7 @@ where
             MemIoR::Unmapped() => 0xffffffff,
         }
     }
-    pub fn read64(&'a self, pc: u32) -> u64 {
+    pub fn read64(&self, pc: u32) -> u64 {
         match self.fetch_read(pc, AccessSize::Size64) {
             MemIoR::Mem(buf) => Order::read_u64(buf),
             MemIoR::Func(f) => f() as u64,
@@ -128,7 +127,7 @@ where
         }
     }
 
-    pub fn write8(&'a mut self, pc: u32, val: u8) {
+    pub fn write8(&mut self, pc: u32, val: u8) {
         match self.fetch_write(pc, AccessSize::Size8) {
             MemIoW::Mem(ref mut buf) => (*buf)[0] = val,
             MemIoW::Func(mut f) => f(val as u64),
@@ -136,7 +135,7 @@ where
         }
     }
 
-    pub fn write16(&'a mut self, pc: u32, val: u16) {
+    pub fn write16(&mut self, pc: u32, val: u16) {
         match self.fetch_write(pc, AccessSize::Size16) {
             MemIoW::Mem(ref mut buf) => Order::write_u16(*buf, val),
             MemIoW::Func(mut f) => f(val as u64),
@@ -144,7 +143,7 @@ where
         }
     }
 
-    pub fn write32(&'a mut self, pc: u32, val: u32) {
+    pub fn write32(&mut self, pc: u32, val: u32) {
         match self.fetch_write(pc, AccessSize::Size32) {
             MemIoW::Mem(ref mut buf) => Order::write_u32(*buf, val),
             MemIoW::Func(mut f) => f(val as u64),
@@ -152,7 +151,7 @@ where
         }
     }
 
-    pub fn write64(&'a mut self, pc: u32, val: u64) {
+    pub fn write64(&mut self, pc: u32, val: u64) {
         match self.fetch_write(pc, AccessSize::Size64) {
             MemIoW::Mem(ref mut buf) => Order::write_u64(*buf, val),
             MemIoW::Func(mut f) => f(val as u64),
@@ -160,7 +159,7 @@ where
         }
     }
 
-    pub fn new() -> Box<Bus<'a, Order>> {
+    pub fn new() -> Box<Bus<'a,'b, Order>> {
         box Bus {
             arena: Vec::new(),
             roots: enum_map!{
@@ -173,7 +172,7 @@ where
         }
     }
 
-    fn fetch_read<'b>(&'b self, addr: u32, size: AccessSize) -> MemIoR<'b> {
+    fn fetch_read(&self, addr: u32, size: AccessSize) -> MemIoR {
         let node = &self.roots[size];
         let mut io = &node.ior[(addr >> 16) as usize];
         if let HwIo::Node(node) = io {
@@ -190,7 +189,7 @@ where
         }
     }
 
-    fn fetch_write(&'a mut self, addr: u32, size: AccessSize) -> MemIoW<'a> {
+    fn fetch_write(&mut self, addr: u32, size: AccessSize) -> MemIoW {
         let node = &mut self.roots[size];
         let io = &mut node.iow[(addr >> 16) as usize];
 
