@@ -1,7 +1,7 @@
 extern crate byteorder;
 
 use self::byteorder::{ByteOrder, LittleEndian};
-use super::bus::{MemIoR, MemIoW};
+use super::bus::{MemIoR, MemIoW, RawPtr, RawPtrMut};
 
 struct Reg32 {
     raw: [u8; 4],
@@ -22,13 +22,13 @@ impl Reg32 {
     fn mem_io_r32(&self, _pc: u32) -> MemIoR {
         match self.rcb {
             Some(f) => MemIoR::Func(Box::new(move || f(self.get()) as u64)),
-            None => MemIoR::Mem(&self.raw),
+            None => MemIoR::Raw(RawPtr(&self.raw[0])),
         }
     }
 
     fn mem_io_w32(&mut self, _pc: u32) -> MemIoW {
         if self.romask == 0 && self.wcb.is_none() {
-            MemIoW::Mem(&mut self.raw)
+            MemIoW::Raw(RawPtrMut(&mut self.raw[0]))
         } else {
             MemIoW::Func(Box::new(move |val64| {
                 let mut val = val64 as u32;
