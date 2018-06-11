@@ -1,7 +1,7 @@
 use std::env;
 
 extern crate emu;
-use emu::Bus;
+use emu::bus::Bus;
 
 extern crate byteorder;
 use self::byteorder::{BigEndian, ByteOrder, LittleEndian};
@@ -41,7 +41,7 @@ fn main() {
     bus.borrow_mut().map_mem(0x00000000, 0x03EFFFFF, hw.rdram.clone()).unwrap();
 
     bus.borrow_mut().write32(0x01000234, 4);
-    let val = bus.borrow().read32(0x01000234);
+    let val = bus.borrow().read::<u32>(0x01000234);
     println!("Hello, world! {:x}", val);
 
     cpu.step(args[1].parse::<u32>().expect("invalid argument"));

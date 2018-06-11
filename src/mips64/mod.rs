@@ -1,8 +1,8 @@
 extern crate byteorder;
 extern crate num;
 
+use super::emu::bus::Bus;
 use self::byteorder::BigEndian;
-use super::emu::Bus;
 use std::cell::RefCell;
 use std::rc::Rc;
 
