@@ -7,5 +7,5 @@ extern crate enum_map;
 extern crate static_assertions;
 
 pub mod bus;
-mod regs;
 mod memint;
+mod regs;

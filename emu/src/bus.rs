@@ -1,34 +1,29 @@
 extern crate byteorder;
 
-use super::memint::{MemInt,AccessSize,ByteOrderCombiner};
 use self::byteorder::ByteOrder;
+use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use enum_map::EnumMap;
 use std;
-use std::mem;
-use std::slice;
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::marker::PhantomData;
-
+use std::mem;
+use std::rc::Rc;
+use std::slice;
 
 pub struct RawPtr(pub *const u8);
 pub struct RawPtrMut(pub *mut u8);
 
 impl RawPtr {
     #[inline(always)]
-    fn slice_for<O:MemInt>(&self) -> &[u8] {
-        unsafe {
-            slice::from_raw_parts(self.0, mem::size_of::<O>())
-        }
+    fn slice_for<O: MemInt>(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.0, mem::size_of::<O>()) }
     }
 }
 
 impl RawPtrMut {
     #[inline(always)]
-    fn slice_for<O:MemInt>(&mut self) -> &mut [u8] {
-        unsafe {
-            slice::from_raw_parts_mut(self.0, mem::size_of::<O>())
-        }
+    fn slice_for<O: MemInt>(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.0, mem::size_of::<O>()) }
     }
 }
 
@@ -42,7 +37,7 @@ where
     Func(Box<'a + Fn() -> u64>),
 }
 
-impl<'a,O,U> MemIoR<'a, O, U>
+impl<'a, O, U> MemIoR<'a, O, U>
 where
     O: ByteOrder,
     U: MemInt,
@@ -52,18 +47,18 @@ where
         match self {
             MemIoR::Raw(buf) => U::endian_read_from::<O>(buf.slice_for::<U>()),
             MemIoR::Func(f) => U::truncate_from(f()),
-            MemIoR::Unmapped(_,_) => U::truncate_from(0xffffffffffffffff),
+            MemIoR::Unmapped(_, _) => U::truncate_from(0xffffffffffffffff),
         }
     }
 }
 
-pub enum MemIoW<'a, O:ByteOrder, U:MemInt> {
-    Unmapped(PhantomData<O>,PhantomData<U>),
+pub enum MemIoW<'a, O: ByteOrder, U: MemInt> {
+    Unmapped(PhantomData<O>, PhantomData<U>),
     Raw(RawPtrMut),
     Func(Box<'a + FnMut(u64)>),
 }
 
-impl<'a,O,U> MemIoW<'a, O, U>
+impl<'a, O, U> MemIoW<'a, O, U>
 where
     O: ByteOrder,
     U: MemInt,
@@ -73,7 +68,7 @@ where
         match self {
             MemIoW::Raw(ref mut buf) => U::endian_write_to::<O>(buf.slice_for::<U>(), val),
             MemIoW::Func(ref mut f) => f(val.into()),
-            MemIoW::Unmapped(_,_) => {}
+            MemIoW::Unmapped(_, _) => {}
         }
     }
 }
@@ -85,18 +80,21 @@ struct MemArea {
 
 impl MemArea {
     #[inline(always)]
-    fn mem_io_r<'a, 'b:'a, O:ByteOrder, U:MemInt>(&'a self, mut pc: u32) -> MemIoR<'b,O,U> {
+    fn mem_io_r<'a, 'b: 'a, O: ByteOrder, U: MemInt>(&'a self, mut pc: u32) -> MemIoR<'b, O, U> {
         pc &= self.mask;
 
         let buf = self.data.borrow();
-        MemIoR::Raw::<O,U>(RawPtr(&buf[pc as usize]))
+        MemIoR::Raw::<O, U>(RawPtr(&buf[pc as usize]))
     }
     #[inline(always)]
-    fn mem_io_w<'a, 'b:'a, O:ByteOrder, U:MemInt>(&'a mut self, mut pc: u32) -> MemIoW<'b,O,U> {
+    fn mem_io_w<'a, 'b: 'a, O: ByteOrder, U: MemInt>(
+        &'a mut self,
+        mut pc: u32,
+    ) -> MemIoW<'b, O, U> {
         pc &= self.mask;
 
         let mut buf = self.data.borrow_mut();
-        MemIoW::Raw::<O,U>(RawPtrMut(&mut buf[pc as usize]))
+        MemIoW::Raw::<O, U>(RawPtrMut(&mut buf[pc as usize]))
     }
 }
 
@@ -128,7 +126,7 @@ impl<'a> Node<'a> {
     }
 }
 
-pub struct Bus<'a, Order: ByteOrder+ByteOrderCombiner> {
+pub struct Bus<'a, Order: ByteOrder + ByteOrderCombiner> {
     nodes: Vec<Box<Node<'a>>>,
     mems: Vec<Rc<RefCell<MemArea>>>,
 
@@ -138,7 +136,7 @@ pub struct Bus<'a, Order: ByteOrder+ByteOrderCombiner> {
 
 impl<'a, Order> Bus<'a, Order>
 where
-    Order: ByteOrder+ByteOrderCombiner,
+    Order: ByteOrder + ByteOrderCombiner,
 {
     pub fn new() -> Box<Bus<'a, Order>> {
         assert_eq_size!(HwIo, [u8; 16]);
@@ -157,24 +155,24 @@ where
         b
     }
 
-    pub fn read<U:MemInt+'a>(&self, addr: u32) -> U {
+    pub fn read<U: MemInt + 'a>(&self, addr: u32) -> U {
         self.internal_fetch_read::<U>(addr).read()
     }
 
-    pub fn write<U:MemInt+'a>(&mut self, addr: u32, val: U) {
+    pub fn write<U: MemInt + 'a>(&mut self, addr: u32, val: U) {
         self.internal_fetch_write::<U>(addr).write(val);
     }
 
-    pub fn fetch_read<U:MemInt+'a>(&self, addr: u32) -> MemIoR<Order,U> {
+    pub fn fetch_read<U: MemInt + 'a>(&self, addr: u32) -> MemIoR<Order, U> {
         self.internal_fetch_read::<U>(addr)
     }
 
-    pub fn fetch_write<U:MemInt+'a>(&mut self, addr: u32) -> MemIoW<Order,U> {
+    pub fn fetch_write<U: MemInt + 'a>(&mut self, addr: u32) -> MemIoW<Order, U> {
         self.internal_fetch_write::<U>(addr)
     }
 
     #[inline(always)]
-    fn internal_fetch_read<U:MemInt+'a>(&self, addr: u32) -> MemIoR<Order,U> {
+    fn internal_fetch_read<U: MemInt + 'a>(&self, addr: u32) -> MemIoR<Order, U> {
         let node = &self.roots[U::ACCESS_SIZE];
         let mut io = &node.ior[(addr >> 16) as usize];
         if let HwIo::Node(node) = io {
@@ -193,7 +191,7 @@ where
     }
 
     #[inline(always)]
-    fn internal_fetch_write<U:MemInt+'a>(&mut self, addr: u32) -> MemIoW<Order, U> {
+    fn internal_fetch_write<U: MemInt + 'a>(&mut self, addr: u32) -> MemIoW<Order, U> {
         let node = &mut self.roots[U::ACCESS_SIZE];
         let io = &mut node.iow[(addr >> 16) as usize];
 
@@ -222,26 +220,30 @@ where
 
     pub fn map_mem(&mut self, begin: u32, end: u32, buf: Rc<RefCell<[u8]>>) -> Result<(), &str> {
         let pmemsize = buf.borrow().len();
-        if pmemsize & (pmemsize-1) != 0 {
+        if pmemsize & (pmemsize - 1) != 0 {
             return Err("map_mem: memory buffer should be a power of two");
         }
 
-        let mem = Rc::new(RefCell::new(MemArea{
+        let mem = Rc::new(RefCell::new(MemArea {
             data: buf,
-            mask: (pmemsize-1) as u32,
+            mask: (pmemsize - 1) as u32,
         }));
 
-        let vmemsize = end-begin+1;
+        let vmemsize = end - begin + 1;
         if vmemsize < 0x10000 {
             unimplemented!();
-
         } else {
-            if (begin&0xffff) != 0 || (end&0xffff) != 0xffff {
+            if (begin & 0xffff) != 0 || (end & 0xffff) != 0xffff {
                 unimplemented!();
             }
 
-            for idx in begin>>16..(end>>16)+1 {
-                for sz in vec![AccessSize::Size8, AccessSize::Size16, AccessSize::Size32, AccessSize::Size64] {
+            for idx in begin >> 16..(end >> 16) + 1 {
+                for sz in vec![
+                    AccessSize::Size8,
+                    AccessSize::Size16,
+                    AccessSize::Size32,
+                    AccessSize::Size64,
+                ] {
                     self.roots[sz].ior[idx as usize] = HwIo::Mem(mem.clone());
                     self.roots[sz].iow[idx as usize] = HwIo::Mem(mem.clone());
                 }
@@ -252,9 +254,9 @@ where
         return Ok(());
     }
 
-    fn fetch_read_combined<U:MemInt+'a>(&self, addr: u32) -> MemIoR<Order,U> {
+    fn fetch_read_combined<U: MemInt + 'a>(&self, addr: u32) -> MemIoR<Order, U> {
         let before = self.fetch_read::<U::Half>(addr);
-        let after = self.fetch_read::<U::Half>(addr+(mem::size_of::<U>() as u32)/2);
+        let after = self.fetch_read::<U::Half>(addr + (mem::size_of::<U>() as u32) / 2);
 
         MemIoR::Func(Box::new(move || {
             U::from_halves::<Order>(before.read(), after.read()).into()

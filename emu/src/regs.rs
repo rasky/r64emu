@@ -19,14 +19,14 @@ impl Reg32 {
         LittleEndian::write_u32(&mut self.raw, val)
     }
 
-    fn mem_io_r32(&self, _pc: u32) -> MemIoR<LittleEndian,u32> {
+    fn mem_io_r32(&self, _pc: u32) -> MemIoR<LittleEndian, u32> {
         match self.rcb {
             Some(f) => MemIoR::Func(Box::new(move || f(self.get()) as u64)),
             None => MemIoR::Raw(RawPtr(&self.raw[0])),
         }
     }
 
-    fn mem_io_w32(&mut self, _pc: u32) -> MemIoW<LittleEndian,u32> {
+    fn mem_io_w32(&mut self, _pc: u32) -> MemIoW<LittleEndian, u32> {
         if self.romask == 0 && self.wcb.is_none() {
             MemIoW::Raw(RawPtrMut(&mut self.raw[0]))
         } else {
