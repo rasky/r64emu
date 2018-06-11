@@ -11,7 +11,7 @@ use std::rc::Rc;
 mod mips64;
 
 struct Hw {
-    rdram: Rc<RefCell<[u8]>>,
+    rdram: RefCell<[u8; 4 * 1024 * 1024]>,
 }
 
 // fn make_membuf(sz: usize) -> Rc<RefCell<[u8]>> {
@@ -24,7 +24,7 @@ struct Hw {
 impl Hw {
     fn new() -> Box<Hw> {
         Box::new(Hw {
-            rdram: Rc::new(RefCell::new([0u8; 4 * 1024 * 1024])),
+            rdram: RefCell::new([0u8; 4 * 1024 * 1024]),
         })
     }
 }
@@ -39,7 +39,7 @@ fn main() {
     let mut cpu = mips64::Cpu::new(/*bus.clone()*/);
 
     bus.borrow_mut()
-        .map_mem(0x00000000, 0x03EFFFFF, hw.rdram.clone())
+        .map_mem(0x00000000, 0x03EFFFFF, &hw.rdram)
         .unwrap();
 
     bus.borrow_mut().write::<u32>(0x01000234, 4);

@@ -73,12 +73,12 @@ where
     }
 }
 
-struct MemArea {
-    data: Rc<RefCell<[u8]>>,
+struct MemArea<'m> {
+    data: &'m RefCell<[u8]>,
     mask: u32,
 }
 
-impl MemArea {
+impl<'m> MemArea<'m> {
     #[inline(always)]
     fn mem_io_r<'a, 'b: 'a, O: ByteOrder, U: MemInt>(&'a self, mut pc: u32) -> MemIoR<'b, O, U> {
         pc &= self.mask;
@@ -87,10 +87,7 @@ impl MemArea {
         MemIoR::Raw::<O, U>(RawPtr(&buf[pc as usize]))
     }
     #[inline(always)]
-    fn mem_io_w<'a, 'b: 'a, O: ByteOrder, U: MemInt>(
-        &'a mut self,
-        mut pc: u32,
-    ) -> MemIoW<'b, O, U> {
+    fn mem_io_w<'a, 'b: 'a, O: ByteOrder, U: MemInt>(&'a self, mut pc: u32) -> MemIoW<'b, O, U> {
         pc &= self.mask;
 
         let mut buf = self.data.borrow_mut();
@@ -101,7 +98,7 @@ impl MemArea {
 enum HwIo<'a> {
     Unmapped(),
     Combined(),
-    Mem(Rc<RefCell<MemArea>>),
+    Mem(Rc<MemArea<'a>>),
     Node(&'a mut Node<'a>),
 }
 
@@ -128,7 +125,6 @@ impl<'a> Node<'a> {
 
 pub struct Bus<'a, Order: ByteOrder + ByteOrderCombiner> {
     nodes: Vec<Box<Node<'a>>>,
-    mems: Vec<Rc<RefCell<MemArea>>>,
 
     roots: EnumMap<AccessSize, Box<Node<'a>>>,
     phantom: PhantomData<Order>,
@@ -143,7 +139,6 @@ where
 
         let b = box Bus {
             nodes: Vec::new(),
-            mems: Vec::new(),
             roots: enum_map!{
                 AccessSize::Size8 => Node::new(),
                 AccessSize::Size16 => Node::new(),
@@ -180,7 +175,7 @@ where
         }
 
         match io {
-            HwIo::Mem(mem) => mem.borrow().mem_io_r(addr),
+            HwIo::Mem(mem) => mem.mem_io_r(addr),
             HwIo::Unmapped() => {
                 println!("unmapped bus read: addr={:x}", addr);
                 MemIoR::Unmapped(PhantomData, PhantomData)
@@ -196,14 +191,14 @@ where
         let io = &mut node.iow[(addr >> 16) as usize];
 
         match io {
-            HwIo::Mem(mem) => mem.borrow_mut().mem_io_w(addr),
+            HwIo::Mem(mem) => mem.mem_io_w(addr),
             HwIo::Unmapped() => {
                 println!("unmapped bus write: addr={:x}", addr);
                 MemIoW::Unmapped(PhantomData, PhantomData)
             }
             HwIo::Combined() => unimplemented!(),
             HwIo::Node(node) => match &mut node.iow[(addr & 0xffff) as usize] {
-                HwIo::Mem(mem) => mem.borrow_mut().mem_io_w(addr),
+                HwIo::Mem(mem) => mem.mem_io_w(addr),
                 HwIo::Unmapped() => {
                     println!("unmapped bus write: addr={:x}", addr);
                     MemIoW::Unmapped(PhantomData, PhantomData)
@@ -218,16 +213,16 @@ where
         self.roots[AccessSize::Size32].ior[0x1234] = HwIo::Combined()
     }
 
-    pub fn map_mem(&mut self, begin: u32, end: u32, buf: Rc<RefCell<[u8]>>) -> Result<(), &str> {
+    pub fn map_mem(&mut self, begin: u32, end: u32, buf: &'a RefCell<[u8]>) -> Result<(), &str> {
         let pmemsize = buf.borrow().len();
         if pmemsize & (pmemsize - 1) != 0 {
             return Err("map_mem: memory buffer should be a power of two");
         }
 
-        let mem = Rc::new(RefCell::new(MemArea {
+        let mem = Rc::new(MemArea {
             data: buf,
             mask: (pmemsize - 1) as u32,
-        }));
+        });
 
         let vmemsize = end - begin + 1;
         if vmemsize < 0x10000 {
@@ -250,7 +245,6 @@ where
             }
         }
 
-        self.mems.push(mem);
         return Ok(());
     }
 
