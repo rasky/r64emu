@@ -14,7 +14,8 @@ pub trait MemInt : Into<u64> {
     type Half: MemInt;
     const ACCESS_SIZE: AccessSize;
     fn truncate_from(v: u64) -> Self;
-    fn endian_read_from<O:ByteOrder>(&[u8]) -> Self;
+    fn endian_read_from<O:ByteOrder>(buf: &[u8]) -> Self;
+    fn endian_write_to<O:ByteOrder>(buf: &mut [u8], val: Self);
     fn from_halves<O:ByteOrderCombiner>(before: Self::Half, after: Self::Half) -> Self;
 }
 
@@ -26,6 +27,9 @@ impl MemInt for u8 {
     }
     fn endian_read_from<O:ByteOrder>(buf: &[u8]) -> Self {
         buf[0]
+    }
+    fn endian_write_to<O:ByteOrder>(buf: &mut [u8], val: Self) {
+        buf[0] = val;
     }
     fn from_halves<O:ByteOrderCombiner>(_before: Self::Half, _after: Self::Half) -> Self {
         panic!("internal error: u8::from_halves should never be called")
@@ -41,6 +45,9 @@ impl MemInt for u16 {
     fn endian_read_from<O:ByteOrder>(buf: &[u8]) -> Self {
         O::read_u16(buf)
     }
+    fn endian_write_to<O:ByteOrder>(buf: &mut [u8], val: Self) {
+        O::write_u16(buf, val)
+    }
     fn from_halves<O:ByteOrderCombiner>(before: Self::Half, after: Self::Half) -> Self {
         O::combine16(before, after)
     }
@@ -55,6 +62,9 @@ impl MemInt for u32 {
     fn endian_read_from<O:ByteOrder>(buf: &[u8]) -> Self {
         O::read_u32(buf)
     }
+    fn endian_write_to<O:ByteOrder>(buf: &mut [u8], val: Self) {
+        O::write_u32(buf, val)
+    }
     fn from_halves<O:ByteOrderCombiner>(before: Self::Half, after: Self::Half) -> Self {
         O::combine32(before, after)
     }
@@ -68,6 +78,9 @@ impl MemInt for u64 {
     }
     fn endian_read_from<O:ByteOrder>(buf: &[u8]) -> Self {
         O::read_u64(buf)
+    }
+    fn endian_write_to<O:ByteOrder>(buf: &mut [u8], val: Self) {
+        O::write_u64(buf, val)
     }
     fn from_halves<O:ByteOrderCombiner>(before: Self::Half, after: Self::Half) -> Self {
         O::combine64(before, after)

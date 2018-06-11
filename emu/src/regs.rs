@@ -26,7 +26,7 @@ impl Reg32 {
         }
     }
 
-    fn mem_io_w32(&mut self, _pc: u32) -> MemIoW {
+    fn mem_io_w32(&mut self, _pc: u32) -> MemIoW<LittleEndian,u32> {
         if self.romask == 0 && self.wcb.is_none() {
             MemIoW::Raw(RawPtrMut(&mut self.raw[0]))
         } else {

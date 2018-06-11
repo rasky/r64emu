@@ -40,9 +40,12 @@ fn main() {
 
     bus.borrow_mut().map_mem(0x00000000, 0x03EFFFFF, hw.rdram.clone()).unwrap();
 
-    bus.borrow_mut().write32(0x01000234, 4);
-    let val = bus.borrow().read::<u32>(0x01000234);
-    println!("Hello, world! {:x}", val);
+    bus.borrow_mut().write::<u32>(0x01000234, 4);
+    let val1 = bus.borrow().read::<u16>(0x01000234);
+    let val2 = bus.borrow().read::<u16>(0x01000234+2);
+    // let val3 = bus.borrow().fetch_read::<u16>(0x01000234+2).read();
+    println!("Hello, world! {:x} / {:x}", val1, val2);
+
 
     cpu.step(args[1].parse::<u32>().expect("invalid argument"));
 

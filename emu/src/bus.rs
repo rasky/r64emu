@@ -16,18 +16,18 @@ pub struct RawPtrMut(pub *mut u8);
 
 impl RawPtr {
     #[inline(always)]
-    fn slice64(&self) -> &[u8] {
+    fn slice_for<O:MemInt>(&self) -> &[u8] {
         unsafe {
-            slice::from_raw_parts(self.0, 8)
+            slice::from_raw_parts(self.0, mem::size_of::<O>())
         }
     }
 }
 
 impl RawPtrMut {
     #[inline(always)]
-    fn slice64(&mut self) -> &mut [u8] {
+    fn slice_for<O:MemInt>(&mut self) -> &mut [u8] {
         unsafe {
-            slice::from_raw_parts_mut(self.0, 8)
+            slice::from_raw_parts_mut(self.0, mem::size_of::<O>())
         }
     }
 }
@@ -49,31 +49,29 @@ where
 {
     pub fn read(&self) -> U {
         match self {
-            MemIoR::Raw(buf) => U::endian_read_from::<O>(buf.slice64()),
+            MemIoR::Raw(buf) => U::endian_read_from::<O>(buf.slice_for::<U>()),
             MemIoR::Func(f) => U::truncate_from(f()),
             MemIoR::Unmapped(_,_) => U::truncate_from(0xffffffffffffffff),
         }
     }
-
-    pub fn mem(&'a self) -> Option<&'a [u8]> {
-        match self {
-            MemIoR::Raw(buf) => Some(buf.slice64()),
-            _ => None,
-        }
-    }
 }
 
-pub enum MemIoW<'a> {
-    Unmapped(),
+pub enum MemIoW<'a, O:ByteOrder, U:MemInt> {
+    Unmapped(PhantomData<O>,PhantomData<U>),
     Raw(RawPtrMut),
     Func(Box<'a + FnMut(u64)>),
 }
 
-impl<'a> MemIoW<'a> {
-    fn mem(&'a mut self) -> Option<&'a mut [u8]> {
+impl<'a,O,U> MemIoW<'a, O, U>
+where
+    O: ByteOrder,
+    U: MemInt,
+{
+    pub fn write(&mut self, val: U) {
         match self {
-            MemIoW::Raw(buf) => Some(buf.slice64()),
-            _ => None,
+            MemIoW::Raw(ref mut buf) => U::endian_write_to::<O>(buf.slice_for::<U>(), val),
+            MemIoW::Func(ref mut f) => f(val.into()),
+            MemIoW::Unmapped(_,_) => {}
         }
     }
 }
@@ -92,11 +90,11 @@ impl MemArea {
         MemIoR::Raw::<O,U>(RawPtr(&buf[pc as usize]))
     }
     #[inline(always)]
-    fn mem_io_w<'a, 'b:'a>(&'a mut self, mut pc: u32) -> MemIoW<'b> {
+    fn mem_io_w<'a, 'b:'a, O:ByteOrder, U:MemInt>(&'a mut self, mut pc: u32) -> MemIoW<'b,O,U> {
         pc &= self.mask;
 
         let mut buf = self.data.borrow_mut();
-        MemIoW::Raw(RawPtrMut(&mut buf[pc as usize]))
+        MemIoW::Raw::<O,U>(RawPtrMut(&mut buf[pc as usize]))
     }
 }
 
@@ -161,40 +159,16 @@ where
         self.internal_fetch_read::<U>(addr).read()
     }
 
-    pub fn write8(&mut self, pc: u32, val: u8) {
-        match self.fetch_write(pc, AccessSize::Size8) {
-            MemIoW::Raw(mut buf) => buf.slice64()[0] = val,
-            MemIoW::Func(mut f) => f(val as u64),
-            MemIoW::Unmapped() => {}
-        }
-    }
-
-    pub fn write16(&mut self, pc: u32, val: u16) {
-        match self.fetch_write(pc, AccessSize::Size16) {
-            MemIoW::Raw(mut buf) => Order::write_u16(buf.slice64(), val),
-            MemIoW::Func(mut f) => f(val as u64),
-            MemIoW::Unmapped() => {}
-        }
-    }
-
-    pub fn write32(&mut self, pc: u32, val: u32) {
-        match self.fetch_write(pc, AccessSize::Size32) {
-            MemIoW::Raw(mut buf) => Order::write_u32(buf.slice64(), val),
-            MemIoW::Func(mut f) => f(val as u64),
-            MemIoW::Unmapped() => {}
-        }
-    }
-
-    pub fn write64(&mut self, pc: u32, val: u64) {
-        match self.fetch_write(pc, AccessSize::Size64) {
-            MemIoW::Raw(mut buf) => Order::write_u64(buf.slice64(), val),
-            MemIoW::Func(mut f) => f(val as u64),
-            MemIoW::Unmapped() => {}
-        }
+    pub fn write<U:MemInt+'a>(&mut self, addr: u32, val: U) {
+        self.internal_fetch_write::<U>(addr).write(val);
     }
 
     pub fn fetch_read<U:MemInt+'a>(&self, addr: u32) -> MemIoR<Order,U> {
         self.internal_fetch_read::<U>(addr)
+    }
+
+    pub fn fetch_write<U:MemInt+'a>(&mut self, addr: u32) -> MemIoW<Order,U> {
+        self.internal_fetch_write::<U>(addr)
     }
 
     #[inline(always)]
@@ -217,22 +191,22 @@ where
     }
 
     #[inline(always)]
-    fn fetch_write(&mut self, addr: u32, size: AccessSize) -> MemIoW {
-        let node = &mut self.roots[size];
+    fn internal_fetch_write<U:MemInt+'a>(&mut self, addr: u32) -> MemIoW<Order, U> {
+        let node = &mut self.roots[U::ACCESS_SIZE];
         let io = &mut node.iow[(addr >> 16) as usize];
 
         match io {
             HwIo::Mem(mem) => mem.borrow_mut().mem_io_w(addr),
             HwIo::Unmapped() => {
                 println!("unmapped bus write: addr={:x}", addr);
-                MemIoW::Unmapped()
+                MemIoW::Unmapped(PhantomData, PhantomData)
             }
             HwIo::Combined() => unimplemented!(),
             HwIo::Node(node) => match &mut node.iow[(addr & 0xffff) as usize] {
                 HwIo::Mem(mem) => mem.borrow_mut().mem_io_w(addr),
                 HwIo::Unmapped() => {
                     println!("unmapped bus write: addr={:x}", addr);
-                    MemIoW::Unmapped()
+                    MemIoW::Unmapped(PhantomData, PhantomData)
                 }
                 HwIo::Node(_) => panic!("internal error: invalid bus table"),
                 HwIo::Combined() => unimplemented!(),
