@@ -47,6 +47,7 @@ where
     O: ByteOrder,
     U: MemInt,
 {
+    #[inline(always)]
     pub fn read(&self) -> U {
         match self {
             MemIoR::Raw(buf) => U::endian_read_from::<O>(buf.slice_for::<U>()),
@@ -67,6 +68,7 @@ where
     O: ByteOrder,
     U: MemInt,
 {
+    #[inline(always)]
     pub fn write(&mut self, val: U) {
         match self {
             MemIoW::Raw(ref mut buf) => U::endian_write_to::<O>(buf.slice_for::<U>(), val),
