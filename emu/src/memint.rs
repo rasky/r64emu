@@ -1,6 +1,8 @@
 extern crate byteorder;
+extern crate num;
 
 use self::byteorder::{BigEndian, ByteOrder, LittleEndian};
+use self::num::PrimInt;
 
 #[derive(Debug, Enum, Copy, Clone)]
 pub enum AccessSize {
@@ -10,8 +12,9 @@ pub enum AccessSize {
     Size64,
 }
 
-pub trait MemInt: Into<u64> {
+pub trait MemInt: PrimInt+Into<u64> {
     type Half: MemInt;
+    const SIZE: usize = ::std::mem::size_of::<Self>();
     const ACCESS_SIZE: AccessSize;
     fn truncate_from(v: u64) -> Self;
     fn endian_read_from<O: ByteOrder>(buf: &[u8]) -> Self;

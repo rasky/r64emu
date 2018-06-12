@@ -158,10 +158,12 @@ where
         self.internal_fetch_write::<U>(addr).write(val);
     }
 
+    #[inline(never)]
     pub fn fetch_read<U: MemInt + 'a>(&self, addr: u32) -> MemIoR<Order, U> {
         self.internal_fetch_read::<U>(addr)
     }
 
+    #[inline(never)]
     pub fn fetch_write<U: MemInt + 'a>(&mut self, addr: u32) -> MemIoW<Order, U> {
         self.internal_fetch_write::<U>(addr)
     }
@@ -233,14 +235,14 @@ where
             }
 
             for idx in begin >> 16..(end >> 16) + 1 {
-                for sz in vec![
+                for sz in [
                     AccessSize::Size8,
                     AccessSize::Size16,
                     AccessSize::Size32,
                     AccessSize::Size64,
-                ] {
-                    self.roots[sz].ior[idx as usize] = HwIo::Mem(mem.clone());
-                    self.roots[sz].iow[idx as usize] = HwIo::Mem(mem.clone());
+                ].iter() {
+                    self.roots[*sz].ior[idx as usize] = HwIo::Mem(mem.clone());
+                    self.roots[*sz].iow[idx as usize] = HwIo::Mem(mem.clone());
                 }
             }
         }

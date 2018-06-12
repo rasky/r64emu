@@ -1,42 +1,71 @@
 extern crate byteorder;
 
-use self::byteorder::{ByteOrder, LittleEndian};
+use self::byteorder::ByteOrder;
 use super::bus::{MemIoR, MemIoW, RawPtr, RawPtrMut};
+use super::memint::MemInt;
+use std::cell::RefCell;
+use std::marker::PhantomData;
+use std::mem;
 
-struct Reg32 {
-    raw: [u8; 4],
-    romask: u32,
-    wcb: Option<fn(old: u32, new: u32)>,
-    rcb: Option<fn(cur: u32) -> u32>,
+trait Register {
+    type U: MemInt;
 }
 
-impl Reg32 {
-    fn get(&self) -> u32 {
-        LittleEndian::read_u32(&self.raw)
+trait RegBank {
+    fn get_regs<'a, U: MemInt>(&'a self) -> Vec<&(Register<U = U> + 'a)>;
+}
+
+pub struct Reg<O,U>
+where
+    O: ByteOrder,
+    U: MemInt,
+{
+    raw: RefCell<[u8; 8]>,
+    romask: U,
+    wcb: Option<fn(old: U, new: U)>,
+    rcb: Option<fn(cur: U) -> U>,
+    phantom: PhantomData<O>,
+}
+
+impl<O,U> Reg<O,U>
+where
+    O: ByteOrder,
+    U: MemInt,
+{
+    fn raw_get(&self) -> U {
+        U::endian_read_from::<O>(&self.raw.borrow()[..])
     }
 
-    fn set(&mut self, val: u32) {
-        LittleEndian::write_u32(&mut self.raw, val)
+    fn raw_set(&self, val: U) {
+        U::endian_write_to::<O>(&mut self.raw.borrow_mut()[..], val)
     }
 
-    fn mem_io_r32(&self, _pc: u32) -> MemIoR<LittleEndian, u32> {
+    fn mem_io_r(&self) -> MemIoR<O, U> {
         match self.rcb {
-            Some(f) => MemIoR::Func(Box::new(move || f(self.get()) as u64)),
-            None => MemIoR::Raw(RawPtr(&self.raw[0])),
+            Some(f) => MemIoR::Func(Box::new(move || f(self.raw_get()).into())),
+            None => MemIoR::Raw(RawPtr(&self.raw.borrow()[0])),
         }
     }
 
-    fn mem_io_w32(&mut self, _pc: u32) -> MemIoW<LittleEndian, u32> {
-        if self.romask == 0 && self.wcb.is_none() {
-            MemIoW::Raw(RawPtrMut(&mut self.raw[0]))
+    fn mem_io_w(&mut self) -> MemIoW<O, U> {
+        if self.romask == U::zero() && self.wcb.is_none() {
+            MemIoW::Raw(RawPtrMut(&mut self.raw.borrow_mut()[0]))
         } else {
             MemIoW::Func(Box::new(move |val64| {
-                let mut val = val64 as u32;
-                let old = self.get();
+                let mut val = U::truncate_from(val64);
+                let old = self.raw_get();
                 val = (val & !self.romask) | (old & self.romask);
-                self.set(val);
+                self.raw_set(val);
                 self.wcb.map(|f| f(old, val));
             }))
         }
+    }
+
+    pub fn get(&self) -> U {
+        self.mem_io_r().read()
+    }
+
+    pub fn set(&mut self, val: U) {
+        self.mem_io_w().write(val);
     }
 }
