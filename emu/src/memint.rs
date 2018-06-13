@@ -106,13 +106,28 @@ impl MemInt for u64 {
     }
 }
 
-pub trait ByteOrderCombiner {
+pub trait ByteOrderCombiner : ByteOrder {
     fn combine64(before: u32, after: u32) -> u64;
     fn combine32(before: u16, after: u16) -> u32;
     fn combine16(before: u8, after: u8) -> u16;
+    fn subint_mask<U,S>(off: usize) -> (U, usize)
+        where U: MemInt, S:MemInt+Into<u64>;
 }
 
 impl ByteOrderCombiner for LittleEndian {
+    #[inline(always)]
+    fn subint_mask<U,S>(off: usize) -> (U, usize)
+    where
+        U: MemInt,
+        S: MemInt+Into<u64>,
+    {
+        let off = off & (U::SIZE-1) & !(S::SIZE-1);
+        let shift = off*8;
+        let full: u64 = (!S::zero()).into();
+        let mask = U::truncate_from(full) << shift;
+        (mask, shift)
+    }
+
     #[inline(always)]
     fn combine64(before: u32, after: u32) -> u64 {
         (before as u64) | ((after as u64) << 32)
@@ -129,6 +144,19 @@ impl ByteOrderCombiner for LittleEndian {
 
 impl ByteOrderCombiner for BigEndian {
     #[inline(always)]
+    fn subint_mask<U,S>(off: usize) -> (U, usize)
+    where
+        U: MemInt,
+        S: MemInt+Into<u64>,
+    {
+        let off = !off & (U::SIZE-1) & !(S::SIZE-1);
+        let shift = off*8;
+        let full: u64 = (!S::zero()).into();
+        let mask = U::truncate_from(full) << shift;
+        return (mask, shift)
+    }
+
+    #[inline(always)]
     fn combine64(before: u32, after: u32) -> u64 {
         ((before as u64) << 32) | (after as u64)
     }
@@ -139,5 +167,80 @@ impl ByteOrderCombiner for BigEndian {
     #[inline(always)]
     fn combine16(before: u8, after: u8) -> u16 {
         ((before as u16) << 8) | (after as u16)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subint_mask_le() {
+        let subint_32_8 = |val, pc| {
+            let (mask,shift) = LittleEndian::subint_mask::<u32,u8>(pc);
+            (val & mask) >> shift
+        };
+        let subint_64_16 = |val, pc| {
+            let (mask,shift) = LittleEndian::subint_mask::<u64,u16>(pc);
+            (val & mask) >> shift
+        };
+        let subint_32_32 = |val, pc| {
+            let (mask,shift) = LittleEndian::subint_mask::<u32,u32>(pc);
+            (val & mask) >> shift
+        };
+
+        assert_eq!(subint_32_8(0x12345678, 0xFF00), 0x78);
+        assert_eq!(subint_32_8(0x12345678, 0xFF01), 0x56);
+        assert_eq!(subint_32_8(0x12345678, 0xFF02), 0x34);
+        assert_eq!(subint_32_8(0x12345678, 0xFF03), 0x12);
+
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF00), 0xCDEF);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF01), 0xCDEF);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF02), 0x89AB);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF03), 0x89AB);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF04), 0x4567);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF05), 0x4567);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF06), 0x0123);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF07), 0x0123);
+
+        assert_eq!(subint_32_32(0x12345678, 0xFF00), 0x12345678);
+        assert_eq!(subint_32_32(0x12345678, 0xFF01), 0x12345678);
+        assert_eq!(subint_32_32(0x12345678, 0xFF02), 0x12345678);
+        assert_eq!(subint_32_32(0x12345678, 0xFF03), 0x12345678);
+    }
+
+    #[test]
+    fn subint_mask_be() {
+        let subint_32_8 = |val, pc| {
+            let (mask,shift) = BigEndian::subint_mask::<u32,u8>(pc);
+            (val & mask) >> shift
+        };
+        let subint_64_16 = |val, pc| {
+            let (mask,shift) = BigEndian::subint_mask::<u64,u16>(pc);
+            (val & mask) >> shift
+        };
+        let subint_32_32 = |val, pc| {
+            let (mask,shift) = BigEndian::subint_mask::<u32,u32>(pc);
+            (val & mask) >> shift
+        };
+
+        assert_eq!(subint_32_8(0x12345678, 0xFF00), 0x12);
+        assert_eq!(subint_32_8(0x12345678, 0xFF01), 0x34);
+        assert_eq!(subint_32_8(0x12345678, 0xFF02), 0x56);
+        assert_eq!(subint_32_8(0x12345678, 0xFF03), 0x78);
+
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF07), 0xCDEF);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF06), 0xCDEF);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF05), 0x89AB);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF04), 0x89AB);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF03), 0x4567);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF02), 0x4567);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF01), 0x0123);
+        assert_eq!(subint_64_16(0x0123456789ABCDEF, 0xFF00), 0x0123);
+
+        assert_eq!(subint_32_32(0x12345678, 0xFF00), 0x12345678);
+        assert_eq!(subint_32_32(0x12345678, 0xFF01), 0x12345678);
+        assert_eq!(subint_32_32(0x12345678, 0xFF02), 0x12345678);
+        assert_eq!(subint_32_32(0x12345678, 0xFF03), 0x12345678);
     }
 }

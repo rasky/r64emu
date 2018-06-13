@@ -266,16 +266,12 @@ mod tests {
     use std::mem;
 
     extern crate byteorder;
-    use self::byteorder::{ByteOrder, LittleEndian};
+    use self::byteorder::LittleEndian;
 
     #[test]
     fn table_mem() {
         let t = &Bus::<LittleEndian>::new();
 
         println!("sizeof HwIo: {}", mem::size_of::<HwIo>());
-
-        let val = t.read64(0x12000000);
-        println!("{:x}", val);
-        assert_eq!(4, 5);
     }
 }
