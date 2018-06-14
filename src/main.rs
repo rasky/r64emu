@@ -32,7 +32,7 @@ impl Hw {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut hw = Hw::new();
+    let hw = Hw::new();
 
     let bus = Rc::new(RefCell::new(Bus::<BigEndian>::new()));
 
@@ -45,8 +45,8 @@ fn main() {
     bus.borrow_mut().write::<u32>(0x01000234, 4);
     let val1 = bus.borrow().read::<u16>(0x01000234);
     let val2 = bus.borrow().read::<u16>(0x01000234 + 2);
-    // let val3 = bus.borrow().fetch_read::<u16>(0x01000234+2).read();
-    println!("Hello, world! {:x} / {:x}", val1, val2);
+    let val3 = bus.borrow().fetch_read::<u16>(0x01000234 + 2).read();
+    println!("Hello, world! {:x} / {:x} : {:x}", val1, val2, val3);
 
     cpu.step(args[1].parse::<u32>().expect("invalid argument"));
 }
