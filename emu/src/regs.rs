@@ -64,7 +64,7 @@ where
                 let mut val = U::truncate_from(val64) << shift;
                 let old = self.raw_get();
                 mask = !mask | self.romask;
-                val = (val & !self.romask) | (old & self.romask);
+                val = (val & !mask) | (old & mask);
                 self.raw_set(val);
                 self.wcb.map(|f| f(old, val));
             }))
