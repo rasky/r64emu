@@ -126,7 +126,7 @@ pub struct Bus<'a, Order: ByteOrderCombiner+'a> {
     phantom: PhantomData<Order>,
 }
 
-impl<'a, Order> Bus<'a, Order>
+impl<'a, 'b, 'c:'b, Order: 'c> Bus<'a, Order>
 where
     Order: ByteOrderCombiner+'a
 {
@@ -153,17 +153,17 @@ where
     }
 
     #[inline(never)]
-    pub fn fetch_read<'b, 'c:'b, U: MemInt + 'c>(&'b self, addr: u32) -> MemIoR<'c, Order, U> {
+    pub fn fetch_read<U: MemInt + 'c>(&'b self, addr: u32) -> MemIoR<'c, Order, U> {
         self.internal_fetch_read::<U>(addr)
     }
 
     #[inline(never)]
-    pub fn fetch_write<'b, 'c:'b, U: MemInt + 'c>(&'b self, addr: u32) -> MemIoW<'c, Order, U> {
+    pub fn fetch_write<U: MemInt + 'c>(&'b self, addr: u32) -> MemIoW<'c, Order, U> {
         self.internal_fetch_write::<U>(addr)
     }
 
     #[inline(always)]
-    fn internal_fetch_read<'b, 'c:'b, U: MemInt + 'c>(&'b self, addr: u32) -> MemIoR<'c, Order, U> {
+    fn internal_fetch_read<U: MemInt + 'c>(&'b self, addr: u32) -> MemIoR<'c, Order, U> {
         let node = &self.roots[U::ACCESS_SIZE];
         let mut io = &node.io[(addr >> 16) as usize];
         if let HwIo::Node(node) = io {
@@ -176,14 +176,13 @@ where
                 println!("unmapped bus read: addr={:x}", addr);
                 MemIoR::Unmapped(PhantomData, PhantomData)
             }
-            HwIo::Combined() => unimplemented!(),
-            // HwIo::Combined() => self.fetch_read_combined::<U>(addr),
+            HwIo::Combined() => self.fetch_read_combined::<U>(addr),
             HwIo::Node(_) => panic!("internal error: invalid bus table"),
         }
     }
 
     #[inline(always)]
-    fn internal_fetch_write<'b, 'c:'b, U: MemInt + 'c>(&'b self, addr: u32) -> MemIoW<'c, Order, U> {
+    fn internal_fetch_write<U: MemInt + 'c>(&'b self, addr: u32) -> MemIoW<'c, Order, U> {
         let node = &self.roots[U::ACCESS_SIZE];
         let mut io = &node.io[(addr >> 16) as usize];
         if let HwIo::Node(node) = io {
@@ -196,8 +195,7 @@ where
                 println!("unmapped bus write: addr={:x}", addr);
                 MemIoW::Unmapped(PhantomData, PhantomData)
             }
-            HwIo::Combined() => unimplemented!(),
-            // HwIo::Combined() => self.fetch_write_combined::<U>(addr),
+            HwIo::Combined() => self.fetch_write_combined::<U>(addr),
             HwIo::Node(_) => panic!("internal error: invalid bus table"),
         }
     }
@@ -240,31 +238,30 @@ where
         return Ok(());
     }
 
+    fn fetch_read_combined<U: MemInt + 'c>(&'b self, addr: u32) -> MemIoR<'c, Order, U> {
+        let before = self.fetch_read::<U::Half>(addr);
+        let after = self.fetch_read::<U::Half>(addr + (mem::size_of::<U>() as u32) / 2);
 
-    // fn fetch_read_combined<'b, 'c:'b, U: MemInt + 'c>(&'b self, addr: u32) -> MemIoR<'c, Order, U> {
-    //     let before = self.fetch_read::<U::Half>(addr);
-    //     let after = self.fetch_read::<U::Half>(addr + (mem::size_of::<U>() as u32) / 2);
+        MemIoR::Func(Box::new(move || {
+            U::from_halves::<Order>(before.read(), after.read()).into()
+        }))
+    }
 
-    //     MemIoR::Func(Box::new(move || {
-    //         U::from_halves::<Order>(before.read(), after.read()).into()
-    //     }))
-    // }
+    fn fetch_write_combined<U: MemInt + 'c>(&'b self, addr: u32) -> MemIoW<'c, Order, U> {
+        let off = (mem::size_of::<U>() as u32) / 2;
 
-    // fn fetch_write_combined<'b, 'c:'b, U: MemInt + 'c>(&'b self, addr: u32) -> MemIoW<'c, Order, U> {
-    //     let off = (mem::size_of::<U>() as u32) / 2;
+        let mut before = self.fetch_write::<U::Half>(addr);
+        let mut after = self.fetch_write::<U::Half>(addr+off);
 
-    //     let before = self.fetch_write::<U::Half>(addr);
-    //     let after = self.fetch_write::<U::Half>(addr+off);
-
-    //     MemIoW::Func(Box::new(move |val64| {
-    //         let (mask1, shift1) = Order::subint_mask::<U,U::Half>(0);
-    //         let (mask2, shift2) = Order::subint_mask::<U,U::Half>(off as usize);
-    //         let val_before = (val64 & mask1.into()) >> shift1;
-    //         let val_after = (val64 & mask2.into()) >> shift2;
-    //         before.write(U::Half::truncate_from(val_before));
-    //         after.write(U::Half::truncate_from(val_after));
-    //     }))
-    // }
+        MemIoW::Func(Box::new(move |val64| {
+            let (mask1, shift1) = Order::subint_mask::<U,U::Half>(0);
+            let (mask2, shift2) = Order::subint_mask::<U,U::Half>(off as usize);
+            let val_before = (val64 & mask1.into()) >> shift1;
+            let val_after = (val64 & mask2.into()) >> shift2;
+            before.write(U::Half::truncate_from(val_before));
+            after.write(U::Half::truncate_from(val_after));
+        }))
+    }
 }
 
 #[cfg(test)]
