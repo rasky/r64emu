@@ -280,18 +280,18 @@ where
     // }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::mem;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use std::mem;
 
-    extern crate byteorder;
-    use self::byteorder::LittleEndian;
+//     extern crate byteorder;
+//     use self::byteorder::LittleEndian;
 
-    #[test]
-    fn table_mem() {
-        let t = &Bus::<LittleEndian>::new();
+//     #[test]
+//     fn table_mem() {
+//         let t = &Bus::<LittleEndian>::new();
 
-        println!("sizeof HwIo: {}", mem::size_of::<HwIo>());
-    }
-}
+//         println!("sizeof HwIo: {}", mem::size_of::<HwIo>());
+//     }
+// }

@@ -1,6 +1,6 @@
 extern crate byteorder;
 
-use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
+use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW, MemIoR, MemIoW};
 use super::memint::{MemInt,ByteOrderCombiner};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -102,6 +102,14 @@ where
             }))
         }
     }
+
+    fn read<S:MemInt+Into<U>>(&self, addr: u32) -> S {
+        self.hw_io_r::<S>().at::<O,S>(addr).read()
+    }
+
+    fn write<S:MemInt+Into<U>>(&mut self, addr: u32, val: S) {
+        self.hw_io_w::<S>().at::<O,S>(addr).write(val);
+    }
 }
 
 pub mod le {
@@ -131,11 +139,11 @@ mod tests {
         let mut r = le::Reg32::new();
         r.set(0xaaaaaaaa);
 
-        r.hw_io_w::<u32>().at(0).write(0x12345678);
-        assert_eq!(r.hw_io_r::<u8>().at(0).read(), 0x78);
-        assert_eq!(r.hw_io_r::<u8>().at(1).read(), 0x56);
-        assert_eq!(r.hw_io_r::<u16>().at(2).read(), 0x1234);
-        r.hw_io_w::<u16>().at(0).write(0x6789);
+        r.write::<u32>(0, 0x12345678);
+        assert_eq!(r.read::<u8>(0), 0x78);
+        assert_eq!(r.read::<u8>(1), 0x56);
+        assert_eq!(r.read::<u16>(2), 0x1234);
+        r.write::<u16>(0, 0x6789);
         assert_eq!(r.get(), 0x12346789);
     }
 
@@ -143,11 +151,11 @@ mod tests {
     fn reg32be_bare() {
         let mut r = be::Reg32::new();
         r.set(0xaaaaaaaa);
-        r.hw_io_w::<u32>().at(0).write(0x12345678);
-        assert_eq!(r.hw_io_r::<u8>().at(0).read(), 0x12);
-        assert_eq!(r.hw_io_r::<u8>().at(1).read(), 0x34);
-        assert_eq!(r.hw_io_r::<u16>().at(2).read(), 0x5678);
-        r.hw_io_w::<u16>().at(0).write(0x6789);
+        r.write::<u32>(0, 0x12345678);
+        assert_eq!(r.read::<u8>(0), 0x12);
+        assert_eq!(r.read::<u8>(1), 0x34);
+        assert_eq!(r.read::<u16>(2), 0x5678);
+        r.write::<u16>(0, 0x6789);
         assert_eq!(r.get(), 0x67895678);
     }
 
@@ -155,12 +163,12 @@ mod tests {
     fn reg32le_mask() {
         let mut r = le::Reg32{romask:0xff00ff00, ..Default::default()};
         r.set(0xddccbbaa);
-        r.hw_io_w::<u32>().at(0).write(0x12345678);
+        r.write::<u32>(0, 0x12345678);
         assert_eq!(r.get(), 0xdd34bb78);
-        assert_eq!(r.hw_io_r::<u8>().at(0).read(), 0x78);
-        assert_eq!(r.hw_io_r::<u8>().at(1).read(), 0xbb);
-        assert_eq!(r.hw_io_r::<u16>().at(2).read(), 0xdd34);
-        r.hw_io_w::<u16>().at(0).write(0x6789);
+        assert_eq!(r.read::<u8>(0), 0x78);
+        assert_eq!(r.read::<u8>(1), 0xbb);
+        assert_eq!(r.read::<u16>(2), 0xdd34);
+        r.write::<u16>(0, 0x6789);
         assert_eq!(r.get(), 0xdd34bb89);
     }
 
@@ -168,12 +176,12 @@ mod tests {
     fn reg32be_mask() {
         let mut r = be::Reg32{romask:0xff00ff00, ..Default::default()};
         r.set(0xddccbbaa);
-        r.hw_io_w::<u32>(0).write(0x12345678);
+        r.write::<u32>(0, 0x12345678);
         assert_eq!(r.get(), 0xdd34bb78);
-        assert_eq!(r.hw_io_r::<u8>(0).read(), 0xdd);
-        assert_eq!(r.hw_io_r::<u8>(1).read(), 0x34);
-        assert_eq!(r.hw_io_r::<u16>(2).read(), 0xbb78);
-        r.hw_io_w::<u16>(0).write(0x6789);
+        assert_eq!(r.read::<u8>(0), 0xdd);
+        assert_eq!(r.read::<u8>(1), 0x34);
+        assert_eq!(r.read::<u16>(2), 0xbb78);
+        r.write::<u16>(0, 0x6789);
         assert_eq!(r.get(), 0xdd89bb78);
     }
 
@@ -186,9 +194,9 @@ mod tests {
             ..Default::default()};
 
         r.set(0x12345678);
-        assert_eq!(r.hw_io_r::<u32>(0).read(), 0x12345679);
-        r.hw_io_w::<u16>(0).write(0x6788);
-        assert_eq!(r.hw_io_r::<u32>(0).read(), 0x12346789);
+        assert_eq!(r.read::<u32>(0), 0x12345679);
+        r.write::<u16>(0, 0x6788);
+        assert_eq!(r.read::<u32>(0), 0x12346789);
         assert_eq!(r.get(), 0x12346788);
     }
 
@@ -196,14 +204,14 @@ mod tests {
     fn reg32le_rowo() {
         let mut r = le::Reg32{flags:RegFlags::READACCESS,..Default::default()};
         r.set(0x12345678);
-        assert_eq!(r.hw_io_r::<u32>(0).read(), 0x12345678);
-        r.hw_io_w::<u32>(0).write(0xaabbccdd);
-        assert_eq!(r.hw_io_r::<u32>(0).read(), 0x12345678);
+        assert_eq!(r.read::<u32>(0), 0x12345678);
+        r.write::<u32>(0, 0xaabbccdd);
+        assert_eq!(r.read::<u32>(0), 0x12345678);
 
         let mut r = le::Reg32{flags:RegFlags::WRITEACCESS,..Default::default()};
         r.set(0x12345678);
-        assert_eq!(r.hw_io_r::<u32>(0).read(), 0xffffffff);
-        r.hw_io_w::<u32>(0).write(0xaabbccdd);
-        assert_eq!(r.hw_io_r::<u32>(0).read(), 0xffffffff);
+        assert_eq!(r.read::<u32>(0), 0xffffffff);
+        r.write::<u32>(0, 0xaabbccdd);
+        assert_eq!(r.read::<u32>(0), 0xffffffff);
     }
 }
