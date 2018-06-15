@@ -12,7 +12,7 @@ pub enum AccessSize {
     Size64,
 }
 
-pub trait MemInt: PrimInt+Into<u64>+Default {
+pub trait MemInt: PrimInt + Into<u64> + Default {
     type Half: MemInt;
     const SIZE: usize = ::std::mem::size_of::<Self>();
     const ACCESS_SIZE: AccessSize;
@@ -106,23 +106,25 @@ impl MemInt for u64 {
     }
 }
 
-pub trait ByteOrderCombiner : ByteOrder {
+pub trait ByteOrderCombiner: ByteOrder {
     fn combine64(before: u32, after: u32) -> u64;
     fn combine32(before: u16, after: u16) -> u32;
     fn combine16(before: u8, after: u8) -> u16;
-    fn subint_mask<U,S>(off: usize) -> (U, usize)
-        where U: MemInt, S:MemInt+Into<u64>;
+    fn subint_mask<U, S>(off: usize) -> (U, usize)
+    where
+        U: MemInt,
+        S: MemInt + Into<u64>;
 }
 
 impl ByteOrderCombiner for LittleEndian {
     #[inline(always)]
-    fn subint_mask<U,S>(off: usize) -> (U, usize)
+    fn subint_mask<U, S>(off: usize) -> (U, usize)
     where
         U: MemInt,
-        S: MemInt+Into<u64>,
+        S: MemInt + Into<u64>,
     {
-        let off = off & (U::SIZE-1) & !(S::SIZE-1);
-        let shift = off*8;
+        let off = off & (U::SIZE - 1) & !(S::SIZE - 1);
+        let shift = off * 8;
         let full: u64 = (!S::zero()).into();
         let mask = U::truncate_from(full) << shift;
         (mask, shift)
@@ -144,16 +146,16 @@ impl ByteOrderCombiner for LittleEndian {
 
 impl ByteOrderCombiner for BigEndian {
     #[inline(always)]
-    fn subint_mask<U,S>(off: usize) -> (U, usize)
+    fn subint_mask<U, S>(off: usize) -> (U, usize)
     where
         U: MemInt,
-        S: MemInt+Into<u64>,
+        S: MemInt + Into<u64>,
     {
-        let off = !off & (U::SIZE-1) & !(S::SIZE-1);
-        let shift = off*8;
+        let off = !off & (U::SIZE - 1) & !(S::SIZE - 1);
+        let shift = off * 8;
         let full: u64 = (!S::zero()).into();
         let mask = U::truncate_from(full) << shift;
-        return (mask, shift)
+        return (mask, shift);
     }
 
     #[inline(always)]
@@ -177,15 +179,15 @@ mod tests {
     #[test]
     fn subint_mask_le() {
         let subint_32_8 = |val, pc| {
-            let (mask,shift) = LittleEndian::subint_mask::<u32,u8>(pc);
+            let (mask, shift) = LittleEndian::subint_mask::<u32, u8>(pc);
             (val & mask) >> shift
         };
         let subint_64_16 = |val, pc| {
-            let (mask,shift) = LittleEndian::subint_mask::<u64,u16>(pc);
+            let (mask, shift) = LittleEndian::subint_mask::<u64, u16>(pc);
             (val & mask) >> shift
         };
         let subint_32_32 = |val, pc| {
-            let (mask,shift) = LittleEndian::subint_mask::<u32,u32>(pc);
+            let (mask, shift) = LittleEndian::subint_mask::<u32, u32>(pc);
             (val & mask) >> shift
         };
 
@@ -212,15 +214,15 @@ mod tests {
     #[test]
     fn subint_mask_be() {
         let subint_32_8 = |val, pc| {
-            let (mask,shift) = BigEndian::subint_mask::<u32,u8>(pc);
+            let (mask, shift) = BigEndian::subint_mask::<u32, u8>(pc);
             (val & mask) >> shift
         };
         let subint_64_16 = |val, pc| {
-            let (mask,shift) = BigEndian::subint_mask::<u64,u16>(pc);
+            let (mask, shift) = BigEndian::subint_mask::<u64, u16>(pc);
             (val & mask) >> shift
         };
         let subint_32_32 = |val, pc| {
-            let (mask,shift) = BigEndian::subint_mask::<u32,u32>(pc);
+            let (mask, shift) = BigEndian::subint_mask::<u32, u32>(pc);
             (val & mask) >> shift
         };
 

@@ -1,8 +1,8 @@
 extern crate byteorder;
 
 use self::byteorder::ByteOrder;
-use super::regs::Reg;
 use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
+use super::regs::Reg;
 use enum_map::EnumMap;
 use std;
 use std::cell::RefCell;
@@ -24,14 +24,22 @@ pub enum HwIoW<'a> {
 }
 
 impl<'a> HwIoR<'a> {
-    pub fn at<O:ByteOrder, U:MemInt>(&'a self, addr: u32) -> MemIoR<'a, O, U> {
-        MemIoR{hwio: self, addr, phantom: PhantomData}
+    pub fn at<O: ByteOrder, U: MemInt>(&'a self, addr: u32) -> MemIoR<'a, O, U> {
+        MemIoR {
+            hwio: self,
+            addr,
+            phantom: PhantomData,
+        }
     }
 }
 
 impl<'a> HwIoW<'a> {
-    pub fn at<O:ByteOrder, U:MemInt>(&'a self, addr: u32) -> MemIoW<'a, O, U> {
-        MemIoW{hwio: self, addr, phantom: PhantomData}
+    pub fn at<O: ByteOrder, U: MemInt>(&'a self, addr: u32) -> MemIoW<'a, O, U> {
+        MemIoW {
+            hwio: self,
+            addr,
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -74,10 +82,9 @@ where
     pub fn write(&self, val: U) {
         let addr = self.addr;
         match self.hwio {
-            HwIoW::Mem(buf, mask) => U::endian_write_to::<O>(
-                &mut buf.borrow_mut()[(addr & mask) as usize..],
-                val,
-            ),
+            HwIoW::Mem(buf, mask) => {
+                U::endian_write_to::<O>(&mut buf.borrow_mut()[(addr & mask) as usize..], val)
+            }
             HwIoW::Func(f) => f(addr, val.into()),
             _ => unreachable!(),
         }
@@ -151,7 +158,6 @@ where
     Order: ByteOrderCombiner + 'a,
 {
     pub fn new() -> Box<Bus<'a, Order>> {
-
         assert_eq_size!(HwIoR, [u8; 24]);
         assert_eq_size!(HwIoW, [u8; 24]);
 
@@ -212,11 +218,11 @@ where
 
     // fn mapreg_partial<U: MemInt, S: MemInt+Into<U>>(&mut self, addr: u32, reg: Reg<Order,U>) {
     //     let node = &self.reads[S::ACCESS_SIZE];
-        
+
     // }
 
     // pub fn map_reg(&mut self, addr: u32, reg: Reg<Order,u32>) {
-        
+
     // }
 
     pub fn map_mem(

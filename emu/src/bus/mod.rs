@@ -1,11 +1,11 @@
 extern crate byteorder;
 
-mod memint;
 mod bus;
+mod memint;
 mod regs;
 
-pub use self::regs::Reg;
 pub use self::bus::Bus;
+pub use self::regs::Reg;
 
 pub mod le {
     use super::byteorder::LittleEndian;
