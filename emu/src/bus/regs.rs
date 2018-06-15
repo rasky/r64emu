@@ -112,26 +112,10 @@ where
     }
 }
 
-pub mod le {
-    use super::byteorder::LittleEndian;
-    pub type Reg8<'a> = super::Reg<'a, LittleEndian, u8>;
-    pub type Reg16<'a> = super::Reg<'a, LittleEndian, u16>;
-    pub type Reg32<'a> = super::Reg<'a, LittleEndian, u32>;
-    pub type Reg64<'a> = super::Reg<'a, LittleEndian, u64>;
-}
-
-pub mod be {
-    use super::byteorder::BigEndian;
-    pub type Reg8<'a> = super::Reg<'a, BigEndian, u8>;
-    pub type Reg16<'a> = super::Reg<'a, BigEndian, u16>;
-    pub type Reg32<'a> = super::Reg<'a, BigEndian, u32>;
-    pub type Reg64<'a> = super::Reg<'a, BigEndian, u64>;
-}
-
-
 #[cfg(test)]
 mod tests {
-    use super::{le,be,RegFlags};
+    use super::super::{le,be};
+    use super::RegFlags;
     use std::cell::RefCell;
 
     #[test]

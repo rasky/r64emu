@@ -9,6 +9,4 @@ extern crate bitflags;
 #[macro_use]
 extern crate static_assertions;
 
-mod memint;
 pub mod bus;
-pub mod regs;

@@ -1,6 +1,7 @@
 extern crate byteorder;
 
 use self::byteorder::ByteOrder;
+use super::regs::Reg;
 use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use enum_map::EnumMap;
 use std;
@@ -209,8 +210,13 @@ where
         io.at(addr)
     }
 
-    // pub fn map_reg32(&mut self) {
-    //     self.roots[AccessSize::Size32].io[0x1234] = HwIo::Combined()
+    // fn mapreg_partial<U: MemInt, S: MemInt+Into<U>>(&mut self, addr: u32, reg: Reg<Order,U>) {
+    //     let node = &self.reads[S::ACCESS_SIZE];
+        
+    // }
+
+    // pub fn map_reg(&mut self, addr: u32, reg: Reg<Order,u32>) {
+        
     // }
 
     pub fn map_mem(
