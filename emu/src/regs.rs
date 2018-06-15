@@ -1,6 +1,6 @@
 extern crate byteorder;
 
-use super::bus::{unmapped_area_r, unmapped_area_w, MemArea, HwIoR, HwIoW};
+use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
 use super::memint::{MemInt,ByteOrderCombiner};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -58,10 +58,6 @@ where
         U::endian_write_to::<O>(&mut self.raw.borrow_mut()[..], val)
     }
 
-    fn mem(&self) -> MemArea {
-        MemArea{data: &self.raw, mask: (U::SIZE-1) as u32}
-    }
-
     fn hw_io_r<S>(&self) -> HwIoR
     where
         S: MemInt+Into<U>    // S is a smaller MemInt type than U
@@ -77,7 +73,7 @@ where
                 let val : u64 = f(self.get()).into();
                 S::truncate_from(val >> shift).into()
             })),
-            None => HwIoR::Mem(Rc::new(self.mem())),
+            None => HwIoR::Mem(&self.raw, (U::SIZE-1) as u32),
         }
     }
 
@@ -90,7 +86,7 @@ where
         }
 
         if self.romask == U::zero() && self.wcb.is_none() {
-            HwIoW::Mem(Rc::new(self.mem()))
+            HwIoW::Mem(&self.raw, (U::SIZE-1) as u32)
         } else {
             HwIoW::Func(Rc::new(move |addr: u32, val64: u64| {
                 let off = (addr as usize) & (U::SIZE-1);

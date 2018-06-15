@@ -10,31 +10,14 @@ use std::mem;
 use std::rc::Rc;
 use std::slice;
 
-pub struct RawPtr(pub *const u8);
-pub struct RawPtrMut(pub *mut u8);
-
-impl RawPtr {
-    #[inline(always)]
-    fn slice_for<O: MemInt>(&self) -> &[u8] {
-        unsafe { slice::from_raw_parts(self.0, mem::size_of::<O>()) }
-    }
-}
-
-impl RawPtrMut {
-    #[inline(always)]
-    fn slice_for<O: MemInt>(&mut self) -> &mut [u8] {
-        unsafe { slice::from_raw_parts_mut(self.0, mem::size_of::<O>()) }
-    }
-}
-
 pub enum HwIoR<'a> {
-    Mem(Rc<MemArea<'a>>),
+    Mem(&'a RefCell<[u8]>, u32),
     Func(Rc<'a + Fn(u32) -> u64>),
     Node(Box<NodeR<'a>>),
 }
 
 pub enum HwIoW<'a> {
-    Mem(Rc<MemArea<'a>>),
+    Mem(&'a RefCell<[u8]>, u32),
     Func(Rc<'a + Fn(u32, u64)>),
     Node(Box<NodeW<'a>>),
 }
@@ -72,8 +55,8 @@ where
     pub fn read<'b>(&'b self) -> U {
         let addr = self.addr;
         match self.hwio {
-            HwIoR::Mem(mem) => {
-                U::endian_read_from::<O>(&mem.data.borrow()[(addr & mem.mask) as usize..])
+            HwIoR::Mem(buf, mask) => {
+                U::endian_read_from::<O>(&buf.borrow()[(addr & mask) as usize..])
             }
             HwIoR::Func(f) => U::truncate_from(f(addr)),
             _ => unreachable!(),
@@ -90,19 +73,14 @@ where
     pub fn write(&self, val: U) {
         let addr = self.addr;
         match self.hwio {
-            HwIoW::Mem(mem) => U::endian_write_to::<O>(
-                &mut mem.data.borrow_mut()[(addr & mem.mask) as usize..],
+            HwIoW::Mem(buf, mask) => U::endian_write_to::<O>(
+                &mut buf.borrow_mut()[(addr & mask) as usize..],
                 val,
             ),
             HwIoW::Func(f) => f(addr, val.into()),
             _ => unreachable!(),
         }
     }
-}
-
-pub struct MemArea<'m> {
-    pub data: &'m RefCell<[u8]>,
-    pub mask: u32,
 }
 
 pub fn unmapped_area_r<'a>() -> HwIoR<'a> {
@@ -172,6 +150,7 @@ where
     Order: ByteOrderCombiner + 'a,
 {
     pub fn new() -> Box<Bus<'a, Order>> {
+
         assert_eq_size!(HwIoR, [u8; 24]);
         assert_eq_size!(HwIoW, [u8; 24]);
 
@@ -246,10 +225,7 @@ where
             return Err("map_mem: memory buffer should be a power of two");
         }
 
-        let mem = Rc::new(MemArea {
-            data: buf,
-            mask: (pmemsize - 1) as u32,
-        });
+        let mask = (pmemsize - 1) as u32;
 
         let vmemsize = end - begin + 1;
         if vmemsize < 0x10000 {
@@ -267,9 +243,9 @@ where
                     AccessSize::Size64,
                 ].iter()
                 {
-                    self.reads[*sz].io[idx as usize] = HwIoR::Mem(mem.clone());
+                    self.reads[*sz].io[idx as usize] = HwIoR::Mem(buf, mask);
                     if !readonly {
-                        self.writes[*sz].io[idx as usize] = HwIoW::Mem(mem.clone());
+                        self.writes[*sz].io[idx as usize] = HwIoW::Mem(buf, mask);
                     }
                 }
             }
