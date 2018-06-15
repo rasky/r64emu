@@ -4,7 +4,9 @@ version = "0.1.0"
 authors = ["Giovanni Bajo <rasky@develer.com>"]
 
 [dependencies]
+emu-derive = { path = "emu-derive" }
 byteorder = "1"
 enum-map = "0.4.0"
 static_assertions = "0.2.5"
 num = "0.1.42"
+bitflags = "1.0"

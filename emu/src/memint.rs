@@ -12,7 +12,7 @@ pub enum AccessSize {
     Size64,
 }
 
-pub trait MemInt: PrimInt+Into<u64> {
+pub trait MemInt: PrimInt+Into<u64>+Default {
     type Half: MemInt;
     const SIZE: usize = ::std::mem::size_of::<Self>();
     const ACCESS_SIZE: AccessSize;
