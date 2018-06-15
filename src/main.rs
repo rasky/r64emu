@@ -39,7 +39,7 @@ fn main() {
     let mut cpu = mips64::Cpu::new(/*bus.clone()*/);
 
     bus.borrow_mut()
-        .map_mem(0x00000000, 0x03EFFFFF, &hw.rdram)
+        .map_mem(0x00000000, 0x03EFFFFF, &hw.rdram, false)
         .unwrap();
 
     bus.borrow_mut().write::<u32>(0x01000234, 4);
