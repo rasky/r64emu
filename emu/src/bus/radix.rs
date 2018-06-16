@@ -147,14 +147,14 @@ impl<T: Clone> RadixTree<T> {
         Ok(())
     }
 
-    pub fn lookup(&self, mut key: u32) -> Option<T> {
+    pub fn lookup(&self, mut key: u32) -> Option<&T> {
         let mut nodes = &self.nodes;
         let mut shift = RADIX_FIRST_SHIFT;
         for i in 0..RADIX_DEPTH {
             let idx: usize = ((key >> shift) & RADIX_MASK) as usize;
             match nodes[idx] {
                 Node::Internal(ref n) => nodes = &n.nodes,
-                Node::Leaf(ref t) => return t.clone(),
+                Node::Leaf(ref t) => return t.as_ref(),
             }
             key &= ((1 << shift) - 1) as u32;
             if i == RADIX_DEPTH - 2 {
@@ -173,7 +173,7 @@ mod tests {
 
     fn lookup(t: &RadixTree<u8>, key: u32) -> u8 {
         println!("lookup: {:x}", key);
-        t.lookup(key).or_else(|| Some(0)).unwrap()
+        *t.lookup(key).or_else(|| Some(&0)).unwrap()
     }
 
     #[test]
