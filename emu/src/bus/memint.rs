@@ -113,7 +113,7 @@ pub trait ByteOrderCombiner: ByteOrder {
     fn subint_mask<U, S>(off: usize) -> (U, usize)
     where
         U: MemInt,
-        S: MemInt + Into<u64>;
+        S: MemInt + Into<U>;
 }
 
 impl ByteOrderCombiner for LittleEndian {
@@ -121,7 +121,7 @@ impl ByteOrderCombiner for LittleEndian {
     fn subint_mask<U, S>(off: usize) -> (U, usize)
     where
         U: MemInt,
-        S: MemInt + Into<u64>,
+        S: MemInt + Into<U>,
     {
         let off = off & (U::SIZE - 1) & !(S::SIZE - 1);
         let shift = off * 8;
@@ -149,7 +149,7 @@ impl ByteOrderCombiner for BigEndian {
     fn subint_mask<U, S>(off: usize) -> (U, usize)
     where
         U: MemInt,
-        S: MemInt + Into<u64>,
+        S: MemInt + Into<U>,
     {
         let off = !off & (U::SIZE - 1) & !(S::SIZE - 1);
         let shift = off * 8;

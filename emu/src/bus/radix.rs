@@ -1,39 +1,37 @@
-const RADIX_BITS: usize = 8;
+const RADIX_BITS: usize = 11;
+const RADIX_BREADTH: usize = 1 << RADIX_BITS;
+const RADIX_DEPTH: usize = (32 + RADIX_BITS - 1) / RADIX_BITS;
 const RADIX_FIRST_SHIFT: usize = 32 - RADIX_BITS;
-const RADIX_DEPTH: usize = 1 << RADIX_BITS;
 const RADIX_MASK: u32 = (1 << RADIX_BITS as u32) - 1;
 
-enum Node<'a, T: 'a> {
-    Leaf(Option<&'a T>),
-    Internal(Box<RadixTree<'a, T>>),
+enum Node<T: Clone> {
+    Leaf(Option<T>),
+    Internal(Box<RadixTree<T>>),
 }
 
-impl<'a, 'b, T> Node<'a, T>
-where
-    'a: 'b,
-{
-    fn clone(&'b self) -> Option<Node<'a, T>> {
+impl<T: Clone> Node<T> {
+    fn clone(&self) -> Option<Node<T>> {
         match self {
-            Node::Internal(ot) => None,
-            Node::Leaf(t) => Some(Node::Leaf(*t)),
+            Node::Internal(_) => None,
+            Node::Leaf(t) => Some(Node::Leaf(t.clone())),
         }
     }
 
-    fn leaf(&'b mut self) -> Option<&'b mut Node<'a, T>> {
+    fn leaf(&mut self) -> Option<&mut Node<T>> {
         match self {
             Node::Internal(_) => None,
             Node::Leaf(_) => Some(self),
         }
     }
 
-    fn internal(&'b mut self) -> Option<&'b mut RadixTree<'a, T>> {
+    fn internal(&mut self) -> Option<&mut RadixTree<T>> {
         match self {
             Node::Internal(ot) => Some(ot.as_mut()),
             Node::Leaf(_) => None,
         }
     }
 
-    fn split(&'b mut self) -> &'b mut Node<'a, T> {
+    fn split(&mut self) -> &mut Node<T> {
         if self.leaf().is_some() {
             *self = Node::Internal(RadixTree::new_with_node(self.clone().unwrap()));
         }
@@ -41,21 +39,18 @@ where
     }
 }
 
-pub struct RadixTree<'a, T: 'a> {
-    nodes: [Node<'a, T>; RADIX_DEPTH],
+pub struct RadixTree<T: Clone> {
+    nodes: [Node<T>; RADIX_BREADTH],
 }
 
-impl<'a, 'b, T> RadixTree<'a, T>
-where
-    'a: 'b,
-{
-    pub fn new() -> Box<RadixTree<'a, T>> {
+impl<T: Clone> RadixTree<T> {
+    pub fn new() -> Box<RadixTree<T>> {
         return box RadixTree {
-            nodes: array![Node::Leaf(None); RADIX_DEPTH],
+            nodes: array![Node::Leaf(None); RADIX_BREADTH],
         };
     }
 
-    fn new_with_node(n: Node<'a, T>) -> Box<RadixTree<'a, T>> {
+    fn new_with_node(n: Node<T>) -> Box<RadixTree<T>> {
         let mut t = RadixTree::new();
         for tn in t.nodes.iter_mut() {
             *tn = n.clone().unwrap();
@@ -63,12 +58,12 @@ where
         return t;
     }
 
-    fn iter_range(
-        &'b mut self,
+    fn iter_range<'a>(
+        &'a mut self,
         beg: u32,
         end: u32,
         shift: usize,
-    ) -> Box<'b + Iterator<Item = &'b mut Node<'a, T>>> {
+    ) -> Box<'a + Iterator<Item = &mut Node<T>>> {
         let idx1 = (beg >> shift) as usize;
         let idx2 = (end >> shift) as usize;
         let mask = ((1 << shift) - 1);
@@ -101,7 +96,7 @@ where
         let (first, mid) = self.nodes[idx1..=idx2].split_at_mut(1);
         let (mid, last) = mid.split_at_mut(idx2 - idx1 - 1);
 
-        let mut iter: Box<'b + Iterator<Item = &'b mut Node<'a, T>>> = box mid.iter_mut();
+        let mut iter: Box<Iterator<Item = &mut Node<T>>> = box mid.iter_mut();
 
         if beg == 0 {
             iter = box iter.chain(box first.iter_mut());
@@ -128,34 +123,39 @@ where
         return iter;
     }
 
-    pub fn insert_range(&'b mut self, begin: u32, end: u32, val: &'a T) -> Result<(), &str> {
+    pub fn insert_range<'s, 'r>(&'s mut self, begin: u32, end: u32, val: T) -> Result<(), &'r str>
+    where
+        'r: 's,
+    {
         for n in self.iter_range(begin, end, RADIX_FIRST_SHIFT) {
             *n = match n {
                 Node::Internal(_) => unreachable!(),
                 Node::Leaf(ot) => match ot {
                     Some(_) => return Err("insert_range over non-empty range"),
-                    None => Node::Leaf(Some(val)),
+                    None => Node::Leaf(Some(val.clone())),
                 },
             };
         }
         Ok(())
     }
 
-    pub fn lookup(&'b self, mut key: u32) -> Option<&'a T> {
+    pub fn lookup(&self, mut key: u32) -> Option<&T> {
         let mut nodes = &self.nodes;
         let mut shift = RADIX_FIRST_SHIFT;
-        loop {
+        for i in 0..RADIX_DEPTH {
             let idx: usize = ((key >> shift) & RADIX_MASK) as usize;
             match nodes[idx] {
                 Node::Internal(ref n) => nodes = &n.nodes,
-                Node::Leaf(t) => return t,
+                Node::Leaf(ref t) => return t.as_ref(),
             }
-            if shift == 0 {
-                return None;
+            key &= ((1 << shift) - 1) as u32;
+            if i == RADIX_DEPTH - 2 {
+                shift = 0;
+            } else {
+                shift -= RADIX_BITS;
             }
-            key &= (1 << shift) - 1;
-            shift = shift.saturating_sub(RADIX_BITS);
         }
+        None
     }
 }
 
@@ -172,9 +172,9 @@ mod tests {
     #[test]
     fn big_spans() {
         let mut t = RadixTree::<u8>::new();
-        assert_eq!(t.insert_range(0x04000000, 0x04ffffff, &1).is_err(), false);
-        assert_eq!(t.insert_range(0x05000000, 0x05ffffff, &2).is_err(), false);
-        assert_eq!(t.insert_range(0x06000000, 0x09ffffff, &3).is_err(), false);
+        assert_eq!(t.insert_range(0x04000000, 0x04ffffff, 1).is_err(), false);
+        assert_eq!(t.insert_range(0x05000000, 0x05ffffff, 2).is_err(), false);
+        assert_eq!(t.insert_range(0x06000000, 0x09ffffff, 3).is_err(), false);
         assert_eq!(lookup(&t, 0x04000000), 1);
         assert_eq!(lookup(&t, 0x04111111), 1);
         assert_eq!(lookup(&t, 0x05111111), 2);
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn large_uneven() {
         let mut t = RadixTree::<u8>::new();
-        assert_eq!(t.insert_range(0x040000F0, 0x07ffffef, &1).is_err(), false);
+        assert_eq!(t.insert_range(0x040000F0, 0x07ffffef, 1).is_err(), false);
         assert_eq!(lookup(&t, 0x04000000), 0);
         assert_eq!(lookup(&t, 0x040000ef), 0);
         assert_eq!(lookup(&t, 0x040000f0), 1);
@@ -203,14 +203,14 @@ mod tests {
     #[test]
     fn insert_deep() {
         let mut t = RadixTree::<u8>::new();
-        assert_eq!(t.insert_range(0x04000501, 0x04000505, &1).is_err(), false);
+        assert_eq!(t.insert_range(0x04000501, 0x04000505, 1).is_err(), false);
         assert_eq!(lookup(&t, 0x04000500), 0);
         assert_eq!(lookup(&t, 0x04000501), 1);
         assert_eq!(lookup(&t, 0x04000502), 1);
         assert_eq!(lookup(&t, 0x04000504), 1);
         assert_eq!(lookup(&t, 0x04000505), 1);
         assert_eq!(lookup(&t, 0x04000506), 0);
-        assert_eq!(t.insert_range(0x04000501, 0x04000505, &2).is_err(), true);
-        assert_eq!(t.insert_range(0x04000500, 0x04000502, &2).is_err(), true);
+        assert_eq!(t.insert_range(0x04000501, 0x04000505, 2).is_err(), true);
+        assert_eq!(t.insert_range(0x04000500, 0x04000502, 2).is_err(), true);
     }
 }

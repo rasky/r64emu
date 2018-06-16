@@ -15,7 +15,7 @@ trait RegBank {
 }
 
 bitflags! {
-    struct RegFlags: u8 {
+   pub struct RegFlags: u8 {
         const READACCESS = 0b00000001;
         const WRITEACCESS = 0b00000010;
     }
@@ -27,6 +27,9 @@ impl Default for RegFlags {
     }
 }
 
+type Wcb<'a, U> = Option<Box<'a + Fn(U, U)>>;
+type Rcb<'a, U> = Option<Box<'a + Fn(U) -> U>>;
+
 #[derive(Default)]
 pub struct Reg<'a, O, U>
 where
@@ -36,8 +39,8 @@ where
     raw: RefCell<[u8; 8]>,
     romask: U,
     flags: RegFlags,
-    wcb: Option<Box<'a + Fn(U, U)>>,
-    rcb: Option<Box<'a + Fn(U) -> U>>,
+    wcb: Wcb<'a, U>,
+    rcb: Rcb<'a, U>,
     phantom: PhantomData<O>,
 }
 
@@ -46,8 +49,16 @@ where
     O: ByteOrderCombiner,
     U: MemInt,
 {
-    fn new() -> Self {
-        Default::default()
+    pub fn new(init: U, rwmask: U, flags: RegFlags, wcb: Wcb<'a, U>, rcb: Rcb<'a, U>) -> Self {
+        let reg = Reg {
+            romask: !rwmask,
+            flags,
+            wcb,
+            rcb,
+            ..Default::default()
+        };
+        reg.set(init);
+        return reg;
     }
 
     /// Get the current value of the register in memory, bypassing any callback.
@@ -60,7 +71,7 @@ where
         U::endian_write_to::<O>(&mut self.raw.borrow_mut()[..], val)
     }
 
-    fn hw_io_r<S>(&self) -> HwIoR
+    pub fn hw_io_r<S>(&self) -> HwIoR
     where
         S: MemInt + Into<U>, // S is a smaller MemInt type than U
     {
@@ -79,7 +90,7 @@ where
         }
     }
 
-    fn hw_io_w<S>(&mut self) -> HwIoW
+    pub fn hw_io_w<S>(&self) -> HwIoW
     where
         S: MemInt + Into<U>, // S is a smaller MemInt type than U
     {
@@ -122,7 +133,7 @@ mod tests {
 
     #[test]
     fn reg32le_bare() {
-        let mut r = le::Reg32::new();
+        let mut r = le::Reg32::default();
         r.set(0xaaaaaaaa);
 
         r.write::<u32>(0, 0x12345678);
@@ -135,7 +146,7 @@ mod tests {
 
     #[test]
     fn reg32be_bare() {
-        let mut r = be::Reg32::new();
+        let mut r = be::Reg32::default();
         r.set(0xaaaaaaaa);
         r.write::<u32>(0, 0x12345678);
         assert_eq!(r.read::<u8>(0), 0x12);

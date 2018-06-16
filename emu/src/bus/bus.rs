@@ -2,6 +2,7 @@ extern crate byteorder;
 
 use self::byteorder::ByteOrder;
 use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
+use super::radix::RadixTree;
 use super::regs::Reg;
 use enum_map::EnumMap;
 use std;
@@ -14,13 +15,32 @@ use std::slice;
 pub enum HwIoR<'a> {
     Mem(&'a RefCell<[u8]>, u32),
     Func(Rc<'a + Fn(u32) -> u64>),
-    Node(Box<NodeR<'a>>),
+}
+
+impl<'a, 'b> Clone for HwIoR<'a>
+where
+    'a: 'b,
+{
+    fn clone(&self) -> HwIoR<'a> {
+        match self {
+            HwIoR::Mem(ref mem, mask) => HwIoR::Mem(mem, *mask),
+            HwIoR::Func(f) => HwIoR::Func(f.clone()),
+        }
+    }
 }
 
 pub enum HwIoW<'a> {
     Mem(&'a RefCell<[u8]>, u32),
     Func(Rc<'a + Fn(u32, u64)>),
-    Node(Box<NodeW<'a>>),
+}
+
+impl<'a> Clone for HwIoW<'a> {
+    fn clone(&self) -> HwIoW<'a> {
+        match self {
+            HwIoW::Mem(ref mem, mask) => HwIoW::Mem(mem, *mask),
+            HwIoW::Func(f) => HwIoW::Func(f.clone()),
+        }
+    }
 }
 
 impl<'a> HwIoR<'a> {
@@ -68,7 +88,6 @@ where
                 U::endian_read_from::<O>(&buf.borrow()[(addr & mask) as usize..])
             }
             HwIoR::Func(f) => U::truncate_from(f(addr)),
-            _ => unreachable!(),
         }
     }
 }
@@ -86,7 +105,6 @@ where
                 U::endian_write_to::<O>(&mut buf.borrow_mut()[(addr & mask) as usize..], val)
             }
             HwIoW::Func(f) => f(addr, val.into()),
-            _ => unreachable!(),
         }
     }
 }
@@ -110,45 +128,12 @@ pub fn unmapped_area_w<'a>() -> HwIoW<'a> {
     HwIoW::Func(FN.with(|c| c.clone()))
 }
 
-pub struct NodeR<'a> {
-    io: [HwIoR<'a>; 65536],
-}
-
-pub struct NodeW<'a> {
-    io: [HwIoW<'a>; 65536],
-}
-
-impl<'a> NodeW<'a> {
-    fn new() -> Box<NodeW<'a>> {
-        let mut n = box NodeW {
-            io: unsafe { std::mem::uninitialized() },
-        };
-
-        for i in 0..n.io.len() {
-            n.io[i] = unmapped_area_w();
-        }
-
-        return n;
-    }
-}
-
-impl<'a> NodeR<'a> {
-    fn new() -> Box<NodeR<'a>> {
-        let mut n = box NodeR {
-            io: unsafe { std::mem::uninitialized() },
-        };
-
-        for i in 0..n.io.len() {
-            n.io[i] = unmapped_area_r();
-        }
-
-        return n;
-    }
-}
-
 pub struct Bus<'a, Order: ByteOrderCombiner + 'a> {
-    reads: EnumMap<AccessSize, Box<NodeR<'a>>>,
-    writes: EnumMap<AccessSize, Box<NodeW<'a>>>,
+    reads: EnumMap<AccessSize, Box<RadixTree<HwIoR<'a>>>>,
+    writes: EnumMap<AccessSize, Box<RadixTree<HwIoW<'a>>>>,
+
+    unmap_r: HwIoR<'a>,
+    unmap_w: HwIoW<'a>,
 
     phantom: PhantomData<Order>,
 }
@@ -163,17 +148,19 @@ where
 
         Box::new(Bus {
             reads: enum_map!{
-                AccessSize::Size8 => NodeR::new(),
-                AccessSize::Size16 => NodeR::new(),
-                AccessSize::Size32 => NodeR::new(),
-                AccessSize::Size64 => NodeR::new(),
+                AccessSize::Size8 => RadixTree::new(),
+                AccessSize::Size16 => RadixTree::new(),
+                AccessSize::Size32 => RadixTree::new(),
+                AccessSize::Size64 => RadixTree::new(),
             },
             writes: enum_map!{
-                AccessSize::Size8 => NodeW::new(),
-                AccessSize::Size16 => NodeW::new(),
-                AccessSize::Size32 => NodeW::new(),
-                AccessSize::Size64 => NodeW::new(),
+                AccessSize::Size8 => RadixTree::new(),
+                AccessSize::Size16 => RadixTree::new(),
+                AccessSize::Size32 => RadixTree::new(),
+                AccessSize::Size64 => RadixTree::new(),
             },
+            unmap_r: unmapped_area_r(),
+            unmap_w: unmapped_area_w(),
             phantom: PhantomData,
         })
     }
@@ -198,32 +185,81 @@ where
 
     #[inline(always)]
     fn internal_fetch_read<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoR<'b, Order, U> {
-        let node = &self.reads[U::ACCESS_SIZE];
-        let mut io = &node.io[(addr >> 16) as usize];
-        while let HwIoR::Node(node) = io {
-            io = &node.io[(addr & 0xffff) as usize];
-        }
-        io.at(addr)
+        self.reads[U::ACCESS_SIZE]
+            .lookup(addr)
+            .or(Some(&self.unmap_r))
+            .unwrap()
+            .at(addr)
     }
 
     #[inline(always)]
     fn internal_fetch_write<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoW<'b, Order, U> {
-        let node = &self.writes[U::ACCESS_SIZE];
-        let mut io = &node.io[(addr >> 16) as usize];
-        while let HwIoW::Node(node) = io {
-            io = &node.io[(addr & 0xffff) as usize];
-        }
-        io.at(addr)
+        self.writes[U::ACCESS_SIZE]
+            .lookup(addr)
+            .or(Some(&self.unmap_w))
+            .unwrap()
+            .at(addr)
     }
 
-    // fn mapreg_partial<U: MemInt, S: MemInt+Into<U>>(&mut self, addr: u32, reg: Reg<Order,U>) {
-    //     let node = &self.reads[S::ACCESS_SIZE];
+    fn mapreg_partial<'s, 'r: 's, U, S>(
+        &'s mut self,
+        addr: u32,
+        reg: &'a Reg<Order, U>,
+    ) -> Result<(), &'r str>
+    where
+        U: MemInt,
+        S: MemInt + Into<U>,
+    {
+        self.reads[S::ACCESS_SIZE].insert_range(
+            addr,
+            addr + U::SIZE as u32 - 1,
+            reg.hw_io_r::<S>(),
+        )?;
+        self.writes[S::ACCESS_SIZE].insert_range(
+            addr,
+            addr + U::SIZE as u32 - 1,
+            reg.hw_io_w::<S>(),
+        )?;
+        Ok(())
+    }
 
-    // }
+    pub fn map_reg8(&mut self, addr: u32, reg: &'a Reg<Order, u8>) -> Result<(), &str> {
+        self.mapreg_partial::<u8, u8>(addr, reg)?;
+        Ok(())
+    }
 
-    // pub fn map_reg(&mut self, addr: u32, reg: Reg<Order,u32>) {
+    pub fn map_reg16<'s, 'r: 's>(
+        &'s mut self,
+        addr: u32,
+        reg: &'a Reg<Order, u16>,
+    ) -> Result<(), &'r str> {
+        self.mapreg_partial::<u16, u8>(addr, reg)?;
+        self.mapreg_partial::<u16, u16>(addr, reg)?;
+        Ok(())
+    }
 
-    // }
+    pub fn map_reg32<'s, 'r: 's>(
+        &'s mut self,
+        addr: u32,
+        reg: &'a Reg<Order, u32>,
+    ) -> Result<(), &'r str> {
+        self.mapreg_partial::<u32, u8>(addr, reg)?;
+        self.mapreg_partial::<u32, u16>(addr, reg)?;
+        self.mapreg_partial::<u32, u32>(addr, reg)?;
+        Ok(())
+    }
+
+    pub fn map_reg64<'s, 'r: 's>(
+        &'s mut self,
+        addr: u32,
+        reg: &'a Reg<Order, u64>,
+    ) -> Result<(), &'r str> {
+        self.mapreg_partial::<u64, u8>(addr, reg)?;
+        self.mapreg_partial::<u64, u16>(addr, reg)?;
+        self.mapreg_partial::<u64, u32>(addr, reg)?;
+        self.mapreg_partial::<u64, u64>(addr, reg)?;
+        Ok(())
+    }
 
     pub fn map_mem(
         &mut self,
@@ -236,30 +272,14 @@ where
         if pmemsize & (pmemsize - 1) != 0 {
             return Err("map_mem: memory buffer should be a power of two");
         }
-
         let mask = (pmemsize - 1) as u32;
 
-        let vmemsize = end - begin + 1;
-        if vmemsize < 0x10000 {
-            unimplemented!();
-        } else {
-            if (begin & 0xffff) != 0 || (end & 0xffff) != 0xffff {
-                unimplemented!();
-            }
-
-            for idx in begin >> 16..(end >> 16) + 1 {
-                for sz in [
-                    AccessSize::Size8,
-                    AccessSize::Size16,
-                    AccessSize::Size32,
-                    AccessSize::Size64,
-                ].iter()
-                {
-                    self.reads[*sz].io[idx as usize] = HwIoR::Mem(buf, mask);
-                    if !readonly {
-                        self.writes[*sz].io[idx as usize] = HwIoW::Mem(buf, mask);
-                    }
-                }
+        for (_, node) in self.reads.iter_mut() {
+            node.insert_range(begin, end, HwIoR::Mem(buf, mask))?;
+        }
+        if !readonly {
+            for (_, node) in self.writes.iter_mut() {
+                node.insert_range(begin, end, HwIoW::Mem(buf, mask))?;
             }
         }
 
@@ -292,18 +312,56 @@ where
     // }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use std::mem;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bus::le::{Reg32, RegFlags};
+    use std::mem;
 
-//     extern crate byteorder;
-//     use self::byteorder::LittleEndian;
+    extern crate byteorder;
+    use self::byteorder::LittleEndian;
 
-//     #[test]
-//     fn table_mem() {
-//         let t = &Bus::<LittleEndian>::new();
+    #[test]
+    fn basic_mem() {
+        let ram1 = RefCell::new([0u8; 1024]);
+        let mut bus = Bus::<LittleEndian>::new();
 
-//         println!("sizeof HwIo: {}", mem::size_of::<HwIo>());
-//     }
-// }
+        assert_eq!(
+            bus.map_mem(0x04000000, 0x06000000, &ram1, false).is_ok(),
+            true
+        );
+        bus.write::<u32>(0x04000123, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0x04000123), 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0x05aaa123), 0xaabbccdd);
+        assert_eq!(bus.read::<u8>(0x04bbb125), 0xbb);
+    }
+
+    #[test]
+    fn basic_reg() {
+        let reg1 = Reg32::default();
+        reg1.set(0x12345678);
+
+        let reg2 = Reg32::new(
+            0x12345678,
+            0xffff0000,
+            RegFlags::default(),
+            None,
+            Some(box |x| x | 0xf0),
+        );
+
+        let mut bus = Bus::<LittleEndian>::new();
+        assert_eq!(bus.map_reg32(0x04000120, &reg1).is_ok(), true);
+        assert_eq!(bus.map_reg32(0x04000124, &reg2).is_ok(), true);
+
+        assert_eq!(bus.read::<u32>(0x04000120), 0x12345678);
+        assert_eq!(bus.read::<u16>(0x04000122), 0x1234);
+        assert_eq!(bus.read::<u8>(0x04000121), 0x56);
+
+        assert_eq!(bus.read::<u32>(0x04000124), 0x123456f8);
+        bus.write::<u8>(0x04000124, 0x00);
+        bus.write::<u16>(0x04000126, 0xaabb);
+        assert_eq!(bus.read::<u32>(0x04000124), 0xaabb56f8);
+
+        // assert_eq!(bus.read::<u64>(0x04000120), 0xaabb56f812345678);
+    }
+}
