@@ -2,6 +2,7 @@ extern crate byteorder;
 
 mod bus;
 mod memint;
+mod radix;
 mod regs;
 
 pub use self::bus::Bus;

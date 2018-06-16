@@ -9,4 +9,7 @@ extern crate bitflags;
 #[macro_use]
 extern crate static_assertions;
 
+#[macro_use]
+extern crate array_macro;
+
 pub mod bus;

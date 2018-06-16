@@ -17,6 +17,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "emu"
 version = "0.1.0"
 dependencies = [
+ "array-macro 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitflags 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "emu-derive 0.1.0",
