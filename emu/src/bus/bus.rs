@@ -5,22 +5,18 @@ use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use super::radix::RadixTree;
 use super::regs::Reg;
 use enum_map::EnumMap;
-use std;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::mem;
 use std::rc::Rc;
-use std::slice;
 
 pub enum HwIoR<'a> {
     Mem(&'a RefCell<[u8]>, u32),
     Func(Rc<'a + Fn(u32) -> u64>),
 }
 
-impl<'a, 'b> Clone for HwIoR<'a>
-where
-    'a: 'b,
-{
+impl<'a> Clone for HwIoR<'a> {
+    #[inline(always)]
     fn clone(&self) -> HwIoR<'a> {
         match self {
             HwIoR::Mem(ref mem, mask) => HwIoR::Mem(mem, *mask),
@@ -35,6 +31,7 @@ pub enum HwIoW<'a> {
 }
 
 impl<'a> Clone for HwIoW<'a> {
+    #[inline(always)]
     fn clone(&self) -> HwIoW<'a> {
         match self {
             HwIoW::Mem(ref mem, mask) => HwIoW::Mem(mem, *mask),
@@ -44,7 +41,7 @@ impl<'a> Clone for HwIoW<'a> {
 }
 
 impl<'a> HwIoR<'a> {
-    pub fn at<O: ByteOrder, U: MemInt>(&'a self, addr: u32) -> MemIoR<'a, O, U> {
+    pub fn at<O: ByteOrder, U: MemInt>(self, addr: u32) -> MemIoR<'a, O, U> {
         MemIoR {
             hwio: self,
             addr,
@@ -54,7 +51,7 @@ impl<'a> HwIoR<'a> {
 }
 
 impl<'a> HwIoW<'a> {
-    pub fn at<O: ByteOrder, U: MemInt>(&'a self, addr: u32) -> MemIoW<'a, O, U> {
+    pub fn at<O: ByteOrder, U: MemInt>(self, addr: u32) -> MemIoW<'a, O, U> {
         MemIoW {
             hwio: self,
             addr,
@@ -64,13 +61,13 @@ impl<'a> HwIoW<'a> {
 }
 
 pub struct MemIoR<'a, O: ByteOrder, U: MemInt> {
-    hwio: &'a HwIoR<'a>,
+    hwio: HwIoR<'a>,
     addr: u32,
     phantom: PhantomData<(O, U)>,
 }
 
 pub struct MemIoW<'a, O: ByteOrder, U: MemInt> {
-    hwio: &'a HwIoW<'a>,
+    hwio: HwIoW<'a>,
     addr: u32,
     phantom: PhantomData<(O, U)>,
 }
@@ -84,10 +81,10 @@ where
     pub fn read<'b>(&'b self) -> U {
         let addr = self.addr;
         match self.hwio {
-            HwIoR::Mem(buf, mask) => {
+            HwIoR::Mem(ref buf, mask) => {
                 U::endian_read_from::<O>(&buf.borrow()[(addr & mask) as usize..])
             }
-            HwIoR::Func(f) => U::truncate_from(f(addr)),
+            HwIoR::Func(ref f) => U::truncate_from(f(addr)),
         }
     }
 }
@@ -101,10 +98,10 @@ where
     pub fn write(&self, val: U) {
         let addr = self.addr;
         match self.hwio {
-            HwIoW::Mem(buf, mask) => {
+            HwIoW::Mem(ref buf, mask) => {
                 U::endian_write_to::<O>(&mut buf.borrow_mut()[(addr & mask) as usize..], val)
             }
-            HwIoW::Func(f) => f(addr, val.into()),
+            HwIoW::Func(ref f) => f(addr, val.into()),
         }
     }
 }
@@ -138,7 +135,7 @@ pub struct Bus<'a, Order: ByteOrderCombiner + 'a> {
     phantom: PhantomData<Order>,
 }
 
-impl<'a, 'b, 'c: 'b, Order: 'c> Bus<'a, Order>
+impl<'a: 'b, 'b, 'c: 'b, Order: 'c> Bus<'a, Order>
 where
     Order: ByteOrderCombiner + 'a,
 {
@@ -174,29 +171,29 @@ where
     }
 
     #[inline(never)]
-    pub fn fetch_read<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoR<'b, Order, U> {
+    pub fn fetch_read<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoR<'a, Order, U> {
         self.internal_fetch_read::<U>(addr)
     }
 
     #[inline(never)]
-    pub fn fetch_write<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoW<'b, Order, U> {
+    pub fn fetch_write<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoW<'a, Order, U> {
         self.internal_fetch_write::<U>(addr)
     }
 
     #[inline(always)]
-    fn internal_fetch_read<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoR<'b, Order, U> {
+    fn internal_fetch_read<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoR<'a, Order, U> {
         self.reads[U::ACCESS_SIZE]
             .lookup(addr)
-            .or(Some(&self.unmap_r))
+            .or(Some(self.unmap_r.clone()))
             .unwrap()
             .at(addr)
     }
 
     #[inline(always)]
-    fn internal_fetch_write<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoW<'b, Order, U> {
+    fn internal_fetch_write<U: MemInt + 'b>(&'b self, addr: u32) -> MemIoW<'a, Order, U> {
         self.writes[U::ACCESS_SIZE]
             .lookup(addr)
-            .or(Some(&self.unmap_w))
+            .or(Some(self.unmap_w.clone()))
             .unwrap()
             .at(addr)
     }
@@ -213,18 +210,23 @@ where
         self.reads[S::ACCESS_SIZE].insert_range(
             addr,
             addr + U::SIZE as u32 - 1,
-            reg.hw_io_r::<S>(),
+            reg.hwio_r::<S>(),
+            false,
         )?;
         self.writes[S::ACCESS_SIZE].insert_range(
             addr,
             addr + U::SIZE as u32 - 1,
-            reg.hw_io_w::<S>(),
+            reg.hwio_w::<S>(),
+            false,
         )?;
         Ok(())
     }
 
     pub fn map_reg8(&mut self, addr: u32, reg: &'a Reg<Order, u8>) -> Result<(), &str> {
         self.mapreg_partial::<u8, u8>(addr, reg)?;
+        self.map_combine::<u16>(addr & !1)?;
+        self.map_combine::<u32>(addr & !3)?;
+        self.map_combine::<u64>(addr & !7)?;
         Ok(())
     }
 
@@ -235,6 +237,8 @@ where
     ) -> Result<(), &'r str> {
         self.mapreg_partial::<u16, u8>(addr, reg)?;
         self.mapreg_partial::<u16, u16>(addr, reg)?;
+        self.map_combine::<u32>(addr & !3)?;
+        self.map_combine::<u64>(addr & !7)?;
         Ok(())
     }
 
@@ -246,6 +250,7 @@ where
         self.mapreg_partial::<u32, u8>(addr, reg)?;
         self.mapreg_partial::<u32, u16>(addr, reg)?;
         self.mapreg_partial::<u32, u32>(addr, reg)?;
+        self.map_combine::<u64>(addr & !7)?;
         Ok(())
     }
 
@@ -275,51 +280,59 @@ where
         let mask = (pmemsize - 1) as u32;
 
         for (_, node) in self.reads.iter_mut() {
-            node.insert_range(begin, end, HwIoR::Mem(buf, mask))?;
+            node.insert_range(begin, end, HwIoR::Mem(buf, mask), false)?;
         }
         if !readonly {
             for (_, node) in self.writes.iter_mut() {
-                node.insert_range(begin, end, HwIoW::Mem(buf, mask))?;
+                node.insert_range(begin, end, HwIoW::Mem(buf, mask), false)?;
             }
         }
 
         return Ok(());
     }
 
-    // fn fetch_read_combined<U: MemInt + 'c>(&'b self, addr: u32) -> MemIoR<'c, Order, U> {
-    //     let before = self.fetch_read::<U::Half>(addr);
-    //     let after = self.fetch_read::<U::Half>(addr + (mem::size_of::<U>() as u32) / 2);
+    fn map_combine<'r: 'b, U: MemInt + 'a>(&'b mut self, addr: u32) -> Result<(), &'r str> {
+        let before = self.fetch_read::<U::Half>(addr);
+        let after = self.fetch_read::<U::Half>(addr + (mem::size_of::<U>() as u32) / 2);
 
-    //     MemIoR::Func(Box::new(move || {
-    //         U::from_halves::<Order>(before.read(), after.read()).into()
-    //     }))
-    // }
+        self.reads[U::ACCESS_SIZE].insert_range(
+            addr,
+            addr + U::SIZE as u32 - 1,
+            HwIoR::Func(Rc::new(move |_| {
+                U::from_halves::<Order>(before.read(), after.read()).into()
+            })),
+            true, // a combiner might overwrite if already existing
+        )?;
 
-    // fn fetch_write_combined<U: MemInt + 'c>(&'b self, addr: u32) -> MemIoW<'c, Order, U> {
-    //     let off = (mem::size_of::<U>() as u32) / 2;
+        let off: u32 = (mem::size_of::<U>() as u32) / 2;
+        let before = self.fetch_write::<U::Half>(addr);
+        let after = self.fetch_write::<U::Half>(addr + off);
 
-    //     let mut before = self.fetch_write::<U::Half>(addr);
-    //     let mut after = self.fetch_write::<U::Half>(addr+off);
+        self.writes[U::ACCESS_SIZE].insert_range(
+            addr,
+            addr + U::SIZE as u32 - 1,
+            HwIoW::Func(Rc::new(move |_, val64| {
+                let (mask1, shift1) = Order::subint_mask::<U, U::Half>(0);
+                let (mask2, shift2) = Order::subint_mask::<U, U::Half>(off as usize);
+                let val_before = (val64 & mask1.into()) >> shift1;
+                let val_after = (val64 & mask2.into()) >> shift2;
+                before.write(U::Half::truncate_from(val_before));
+                after.write(U::Half::truncate_from(val_after));
+            })),
+            true, // a combiner might overwrite if already existing
+        )?;
 
-    //     MemIoW::Func(Box::new(move |val64| {
-    //         let (mask1, shift1) = Order::subint_mask::<U,U::Half>(0);
-    //         let (mask2, shift2) = Order::subint_mask::<U,U::Half>(off as usize);
-    //         let val_before = (val64 & mask1.into()) >> shift1;
-    //         let val_after = (val64 & mask2.into()) >> shift2;
-    //         before.write(U::Half::truncate_from(val_before));
-    //         after.write(U::Half::truncate_from(val_after));
-    //     }))
-    // }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bus::le::{Reg32, RegFlags};
-    use std::mem;
+    use bus::le::{Reg16, Reg32, Reg8, RegFlags};
 
     extern crate byteorder;
-    use self::byteorder::LittleEndian;
+    use self::byteorder::{BigEndian, LittleEndian};
 
     #[test]
     fn basic_mem() {
@@ -362,6 +375,90 @@ mod tests {
         bus.write::<u16>(0x04000126, 0xaabb);
         assert_eq!(bus.read::<u32>(0x04000124), 0xaabb56f8);
 
-        // assert_eq!(bus.read::<u64>(0x04000120), 0xaabb56f812345678);
+        assert_eq!(bus.read::<u64>(0x04000120), 0xaabb56f812345678);
+        bus.write::<u64>(0x04000120, 0x0);
+
+        assert_eq!(bus.read::<u32>(0x04000120), 0x00000000);
+        assert_eq!(bus.read::<u32>(0x04000124), 0x000056f8);
+    }
+
+    #[test]
+    fn combiner_le() {
+        let reg1 = Reg32::default();
+        let reg2 = Reg16::default();
+        let reg3 = Reg8::default();
+        let reg4 = Reg8::default();
+
+        let mut bus = Bus::<LittleEndian>::new();
+        assert_eq!(bus.map_reg32(0xFF000000, &reg1).is_ok(), true);
+        assert_eq!(bus.map_reg16(0xFF000004, &reg2).is_ok(), true);
+        assert_eq!(bus.map_reg8(0xFF000006, &reg3).is_ok(), true);
+        assert_eq!(bus.map_reg8(0xFF000007, &reg4).is_ok(), true);
+
+        bus.write::<u64>(0xFF000000, 0xaabbccdd11223344);
+        assert_eq!(reg1.get(), 0x11223344);
+        assert_eq!(reg2.get(), 0xccdd);
+        assert_eq!(reg3.get(), 0xbb);
+        assert_eq!(reg4.get(), 0xaa);
+        assert_eq!(bus.read::<u64>(0xFF000000), 0xaabbccdd11223344);
+        assert_eq!(bus.read::<u32>(0xFF000000), 0x11223344);
+        assert_eq!(bus.read::<u32>(0xFF000004), 0xaabbccdd);
+        assert_eq!(bus.read::<u16>(0xFF000004), 0xccdd);
+        assert_eq!(bus.read::<u16>(0xFF000006), 0xaabb);
+        assert_eq!(bus.read::<u8>(0xFF000006), 0xbb);
+        assert_eq!(bus.read::<u8>(0xFF000007), 0xaa);
+
+        bus.write::<u32>(0xFF000004, 0x66778899);
+        assert_eq!(bus.read::<u32>(0xFF000004), 0x66778899);
+        assert_eq!(bus.read::<u16>(0xFF000004), 0x8899);
+        assert_eq!(bus.read::<u16>(0xFF000006), 0x6677);
+        assert_eq!(bus.read::<u8>(0xFF000006), 0x77);
+        assert_eq!(bus.read::<u8>(0xFF000007), 0x66);
+
+        bus.write::<u16>(0xFF000006, 0x1122);
+        assert_eq!(bus.read::<u16>(0xFF000006), 0x1122);
+        assert_eq!(bus.read::<u8>(0xFF000006), 0x22);
+        assert_eq!(bus.read::<u8>(0xFF000007), 0x11);
+    }
+
+    #[test]
+    fn combiner_be() {
+        use bus::be::{Reg16, Reg32, Reg8};
+        let reg1 = Reg32::default();
+        let reg2 = Reg16::default();
+        let reg3 = Reg8::default();
+        let reg4 = Reg8::default();
+
+        let mut bus = Bus::<BigEndian>::new();
+
+        assert_eq!(bus.map_reg32(0xFF000000, &reg1).is_ok(), true);
+        assert_eq!(bus.map_reg16(0xFF000004, &reg2).is_ok(), true);
+        assert_eq!(bus.map_reg8(0xFF000006, &reg3).is_ok(), true);
+        assert_eq!(bus.map_reg8(0xFF000007, &reg4).is_ok(), true);
+
+        bus.write::<u64>(0xFF000000, 0xaabbccdd11223344);
+        assert_eq!(reg1.get(), 0xaabbccdd);
+        assert_eq!(reg2.get(), 0x1122);
+        assert_eq!(reg3.get(), 0x33);
+        assert_eq!(reg4.get(), 0x44);
+        assert_eq!(bus.read::<u64>(0xFF000000), 0xaabbccdd11223344);
+        assert_eq!(bus.read::<u32>(0xFF000000), 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0xFF000004), 0x11223344);
+        assert_eq!(bus.read::<u16>(0xFF000004), 0x1122);
+        assert_eq!(bus.read::<u16>(0xFF000006), 0x3344);
+        assert_eq!(bus.read::<u8>(0xFF000006), 0x33);
+        assert_eq!(bus.read::<u8>(0xFF000007), 0x44);
+
+        bus.write::<u32>(0xFF000004, 0x66778899);
+        assert_eq!(bus.read::<u32>(0xFF000004), 0x66778899);
+        assert_eq!(bus.read::<u16>(0xFF000004), 0x6677);
+        assert_eq!(bus.read::<u16>(0xFF000006), 0x8899);
+        assert_eq!(bus.read::<u8>(0xFF000006), 0x88);
+        assert_eq!(bus.read::<u8>(0xFF000007), 0x99);
+
+        bus.write::<u16>(0xFF000006, 0x1122);
+        assert_eq!(bus.read::<u16>(0xFF000006), 0x1122);
+        assert_eq!(bus.read::<u8>(0xFF000006), 0x11);
+        assert_eq!(bus.read::<u8>(0xFF000007), 0x22);
     }
 }

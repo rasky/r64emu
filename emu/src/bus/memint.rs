@@ -13,7 +13,7 @@ pub enum AccessSize {
 }
 
 pub trait MemInt: PrimInt + Into<u64> + Default {
-    type Half: MemInt;
+    type Half: MemInt + Into<Self>;
     const SIZE: usize = ::std::mem::size_of::<Self>();
     const ACCESS_SIZE: AccessSize;
     fn truncate_from(v: u64) -> Self;

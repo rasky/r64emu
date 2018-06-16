@@ -1,6 +1,6 @@
 extern crate byteorder;
 
-use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW, MemIoR, MemIoW};
+use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
 use super::memint::{ByteOrderCombiner, MemInt};
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -71,7 +71,7 @@ where
         U::endian_write_to::<O>(&mut self.raw.borrow_mut()[..], val)
     }
 
-    pub fn hw_io_r<S>(&self) -> HwIoR
+    pub fn hwio_r<S>(&self) -> HwIoR
     where
         S: MemInt + Into<U>, // S is a smaller MemInt type than U
     {
@@ -90,7 +90,7 @@ where
         }
     }
 
-    pub fn hw_io_w<S>(&self) -> HwIoW
+    pub fn hwio_w<S>(&self) -> HwIoW
     where
         S: MemInt + Into<U>, // S is a smaller MemInt type than U
     {
@@ -116,12 +116,12 @@ where
         }
     }
 
-    fn read<S: MemInt + Into<U>>(&self, addr: u32) -> S {
-        self.hw_io_r::<S>().at::<O, S>(addr).read()
+    pub fn read<S: MemInt + Into<U>>(&self, addr: u32) -> S {
+        self.hwio_r::<S>().at::<O, S>(addr).read()
     }
 
-    fn write<S: MemInt + Into<U>>(&mut self, addr: u32, val: S) {
-        self.hw_io_w::<S>().at::<O, S>(addr).write(val);
+    pub fn write<S: MemInt + Into<U>>(&mut self, addr: u32, val: S) {
+        self.hwio_w::<S>().at::<O, S>(addr).write(val);
     }
 }
 
@@ -129,7 +129,6 @@ where
 mod tests {
     use super::super::{be, le};
     use super::RegFlags;
-    use std::cell::RefCell;
 
     #[test]
     fn reg32le_bare() {

@@ -66,7 +66,7 @@ impl<T: Clone> RadixTree<T> {
     ) -> Box<'a + Iterator<Item = &mut Node<T>>> {
         let idx1 = (beg >> shift) as usize;
         let idx2 = (end >> shift) as usize;
-        let mask = ((1 << shift) - 1);
+        let mask = (1 << shift) - 1;
         let beg = (beg as usize) & mask;
         let end = (end as usize) & mask;
 
@@ -123,30 +123,38 @@ impl<T: Clone> RadixTree<T> {
         return iter;
     }
 
-    pub fn insert_range<'s, 'r>(&'s mut self, begin: u32, end: u32, val: T) -> Result<(), &'r str>
+    pub fn insert_range<'s, 'r>(
+        &'s mut self,
+        begin: u32,
+        end: u32,
+        val: T,
+        force: bool,
+    ) -> Result<(), &'r str>
     where
         'r: 's,
     {
         for n in self.iter_range(begin, end, RADIX_FIRST_SHIFT) {
             *n = match n {
                 Node::Internal(_) => unreachable!(),
-                Node::Leaf(ot) => match ot {
-                    Some(_) => return Err("insert_range over non-empty range"),
-                    None => Node::Leaf(Some(val.clone())),
-                },
+                Node::Leaf(ot) => {
+                    if !force && ot.is_some() {
+                        return Err("insert_range over non-empty range");
+                    }
+                    Node::Leaf(Some(val.clone()))
+                }
             };
         }
         Ok(())
     }
 
-    pub fn lookup(&self, mut key: u32) -> Option<&T> {
+    pub fn lookup(&self, mut key: u32) -> Option<T> {
         let mut nodes = &self.nodes;
         let mut shift = RADIX_FIRST_SHIFT;
         for i in 0..RADIX_DEPTH {
             let idx: usize = ((key >> shift) & RADIX_MASK) as usize;
             match nodes[idx] {
                 Node::Internal(ref n) => nodes = &n.nodes,
-                Node::Leaf(ref t) => return t.as_ref(),
+                Node::Leaf(ref t) => return t.clone(),
             }
             key &= ((1 << shift) - 1) as u32;
             if i == RADIX_DEPTH - 2 {
@@ -162,19 +170,27 @@ impl<T: Clone> RadixTree<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem;
 
     fn lookup(t: &RadixTree<u8>, key: u32) -> u8 {
         println!("lookup: {:x}", key);
-        *t.lookup(key).or_else(|| Some(&0)).unwrap()
+        t.lookup(key).or_else(|| Some(0)).unwrap()
     }
 
     #[test]
     fn big_spans() {
         let mut t = RadixTree::<u8>::new();
-        assert_eq!(t.insert_range(0x04000000, 0x04ffffff, 1).is_err(), false);
-        assert_eq!(t.insert_range(0x05000000, 0x05ffffff, 2).is_err(), false);
-        assert_eq!(t.insert_range(0x06000000, 0x09ffffff, 3).is_err(), false);
+        assert_eq!(
+            t.insert_range(0x04000000, 0x04ffffff, 1, false).is_err(),
+            false
+        );
+        assert_eq!(
+            t.insert_range(0x05000000, 0x05ffffff, 2, false).is_err(),
+            false
+        );
+        assert_eq!(
+            t.insert_range(0x06000000, 0x09ffffff, 3, false).is_err(),
+            false
+        );
         assert_eq!(lookup(&t, 0x04000000), 1);
         assert_eq!(lookup(&t, 0x04111111), 1);
         assert_eq!(lookup(&t, 0x05111111), 2);
@@ -186,7 +202,10 @@ mod tests {
     #[test]
     fn large_uneven() {
         let mut t = RadixTree::<u8>::new();
-        assert_eq!(t.insert_range(0x040000F0, 0x07ffffef, 1).is_err(), false);
+        assert_eq!(
+            t.insert_range(0x040000F0, 0x07ffffef, 1, false).is_err(),
+            false
+        );
         assert_eq!(lookup(&t, 0x04000000), 0);
         assert_eq!(lookup(&t, 0x040000ef), 0);
         assert_eq!(lookup(&t, 0x040000f0), 1);
@@ -203,14 +222,23 @@ mod tests {
     #[test]
     fn insert_deep() {
         let mut t = RadixTree::<u8>::new();
-        assert_eq!(t.insert_range(0x04000501, 0x04000505, 1).is_err(), false);
+        assert_eq!(
+            t.insert_range(0x04000501, 0x04000505, 1, false).is_err(),
+            false
+        );
         assert_eq!(lookup(&t, 0x04000500), 0);
         assert_eq!(lookup(&t, 0x04000501), 1);
         assert_eq!(lookup(&t, 0x04000502), 1);
         assert_eq!(lookup(&t, 0x04000504), 1);
         assert_eq!(lookup(&t, 0x04000505), 1);
         assert_eq!(lookup(&t, 0x04000506), 0);
-        assert_eq!(t.insert_range(0x04000501, 0x04000505, 2).is_err(), true);
-        assert_eq!(t.insert_range(0x04000500, 0x04000502, 2).is_err(), true);
+        assert_eq!(
+            t.insert_range(0x04000501, 0x04000505, 2, false).is_err(),
+            true
+        );
+        assert_eq!(
+            t.insert_range(0x04000500, 0x04000502, 2, false).is_err(),
+            true
+        );
     }
 }
