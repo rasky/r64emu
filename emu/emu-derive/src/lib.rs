@@ -1,3 +1,4 @@
+#![recursion_limit = "128"]
 #[macro_use]
 extern crate synstructure;
 
@@ -6,14 +7,241 @@ extern crate quote;
 
 extern crate proc_macro2;
 
-decl_derive!([RegBank, attributes(init, rwmask, rcb, wcb)] => regbank_derive);
+use proc_macro2::{Ident, Span};
+use synstructure::BindStyle;
 
-fn regbank_derive(s: synstructure::Structure) -> proc_macro2::TokenStream {
+decl_derive!([Device, attributes(reg, mem)] => derive_device);
+
+#[derive(Default, Debug)]
+struct RegAttributes {
+    rwmask: String,
+    init: String,
+    wcb: bool,
+    rcb: bool,
+    readonly: bool,
+    writeonly: bool,
+
+    bank: usize,
+    offset: u32,
+}
+
+fn parse_reg_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> RegAttributes {
+    let mut ra = RegAttributes::default();
+    let mut offsetfound = false;
+
+    let allattrs = format!("{}", attrs);
+    for attr in allattrs[1..allattrs.len() - 1].split(",") {
+        let kv = attr.split("=").collect::<Vec<_>>();
+        match kv[0].trim().as_ref() {
+            "rwmask" => {
+                if kv.len() != 2 {
+                    panic!(format!("{}: no argument for rwmask", varname))
+                }
+                ra.rwmask = kv[1].trim().to_string();
+            }
+            "init" => {
+                if kv.len() != 2 {
+                    panic!(format!("{}: no argument for init", varname))
+                }
+                ra.init = kv[1].trim().to_string();
+            }
+            "wcb" => {
+                if kv.len() != 1 {
+                    panic!(format!("{}: unexpected argument for wcb", varname))
+                }
+                ra.wcb = true;
+            }
+            "rcb" => {
+                if kv.len() != 1 {
+                    panic!(format!("{}: unexpected argument for rcb", varname))
+                }
+                ra.rcb = true;
+            }
+            "readonly" => {
+                if kv.len() != 1 {
+                    panic!(format!("{}: unexpected argument for readonly", varname))
+                }
+                ra.readonly = true;
+            }
+            "writeonly" => {
+                if kv.len() != 1 {
+                    panic!(format!("{}: unexpected argument for writeonly", varname))
+                }
+                ra.writeonly = true;
+            }
+            "bank" => {
+                if kv.len() != 2 {
+                    panic!(format!("{}: no argument for bank", varname))
+                }
+                ra.bank = kv[1].trim().parse::<usize>().unwrap();
+            }
+            "offset" => {
+                if kv.len() != 2 {
+                    panic!(format!("{}: no argument for offset", varname))
+                }
+                ra.offset = kv[1].trim().parse::<u32>().unwrap();
+                offsetfound = true;
+            }
+            _ => panic!(format!("{}: invalid attribute: {}", varname, kv[0].trim())),
+        }
+    }
+    if ra.readonly && ra.writeonly {
+        panic!(format!(
+            "{}: cannot be both readonly and writeonly",
+            varname
+        ));
+    }
+    if ra.readonly && ra.wcb {
+        panic!(format!("{}: cannot specify wcb for readonly reg", varname));
+    }
+    if ra.writeonly && ra.rcb {
+        panic!(format!("{}: cannot specify rcb for writeonly reg", varname));
+    }
+    if !offsetfound {
+        panic!(format!("{}: mandatory offset is missing", varname));
+    }
+    if ra.init.is_empty() {
+        ra.init = String::from("0");
+    }
+    if ra.rwmask.is_empty() {
+        ra.rwmask = String::from("4294967295");
+    }
+    return ra;
+}
+
+fn expand_reg_devinit(
+    fi: &synstructure::BindingInfo,
+    varname: &str,
+    ra: &RegAttributes,
+) -> proc_macro2::TokenStream {
+    let mut qrcb = quote!{None};
+    let mut qwcb = quote!{None};
+    let mut initbody = quote!{};
+
+    if ra.wcb {
+        initbody = quote!{
+            #initbody
+            let wdevw = Rc::downgrade(&wself);
+        };
+        let cbname = Ident::new(&format!("cb_write_{}", varname), Span::call_site());
+        qwcb = quote!{
+            Some(Rc::new(Box::new(move |old, val| {
+                let dev = wdevw.upgrade().unwrap();
+                dev.borrow_mut(). #cbname (old, val);
+            })))
+        };
+    }
+
+    if ra.rcb {
+        initbody = quote!{
+            #initbody
+            let wdevr = Rc::downgrade(&wself);
+        };
+        let cbname = Ident::new(&format!("cb_read_{}", varname), Span::call_site());
+        qrcb = quote!{
+            Some(Rc::new(Box::new(move |val| {
+                let dev = wdevr.upgrade().unwrap();
+                let res = dev.borrow(). #cbname (val);
+                drop(dev);
+                res
+            })))
+        }
+    }
+
+    let init = ra.init.parse::<u32>().unwrap();
+    let rwmask = ra.rwmask.parse::<u32>().unwrap();
+    let read = !ra.readonly;
+    let write = !ra.writeonly;
+    quote! {
+        #initbody
+        *#fi = Reg::new(
+            #init,
+            #rwmask,
+            RegFlags::new(#read, #write),
+            #qwcb,
+            #qrcb,
+        );
+    }
+}
+
+fn expand_reg_devmap(
+    fi: &synstructure::BindingInfo,
+    varname: &str,
+    ra: &RegAttributes,
+) -> proc_macro2::TokenStream {
+    let off = ra.offset;
+    let varname = Ident::new(varname, Span::call_site());
+    quote!{
+        bus.map_reg32(base + #off, &self. #varname)?;
+    }
+}
+
+fn derive_device(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
+    s.filter(|fi| fi.ast().attrs.len() != 0);
+    s.bind_with(|fi| BindStyle::RefMut);
+
+    let mut dev_map = quote!{};
+    let dev_init = s.each(|fi| {
+        let varname = fi.ast().ident.as_ref().unwrap().to_string();
+        let mut ra = RegAttributes::default();
+        let mut s = String::new();
+
+        let attrs = &fi.ast().attrs;
+        if attrs.len() != 1 {
+            panic!(format!("{}: too many attributes", varname));
+        }
+
+        match attrs[0]
+            .path
+            .segments
+            .last()
+            .unwrap()
+            .value()
+            .ident
+            .to_string()
+            .as_ref()
+        {
+            "reg" => {
+                ra = parse_reg_attributes(&varname, &attrs[0].tts);
+
+                let dm = expand_reg_devmap(fi, &varname, &ra);
+                dev_map = quote!{
+                    #dev_map
+                    #dm;
+                };
+                expand_reg_devinit(fi, &varname, &ra)
+            }
+
+            "mem" => unimplemented!(),
+            _ => unreachable!(),
+        }
+    });
+
     s.gen_impl(quote! {
-        gen impl RegBank for @Self {
-            fn init_regs(&mut self) {
-                unimplemented!();
+        extern crate emu;
+        extern crate byteorder;
+        use ::std::cell::{RefCell};
+        use ::std::rc::{Rc};
+        use emu::bus::{Reg, RegFlags};
+        use emu::bus::Bus;
+        use byteorder::{LittleEndian, BigEndian};
+
+        gen impl Device for @Self {
+            type Order = LittleEndian;
+
+            fn dev_init(&mut self, wself: Rc<RefCell<Self>>) {
+                match *self {
+                    #dev_init
+                }
+            }
+
+            fn dev_map(&mut self, bus: &mut Bus<Self::Order>, bank: usize, base: u32,) -> Result<(), &'static str> {
+                #dev_map
+                Ok(())
             }
         }
     })
 }
+
+#[cfg(test)]
+mod tests {}

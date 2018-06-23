@@ -249,11 +249,16 @@ where
         return Ok(());
     }
 
-    pub fn map_device<T>(&'b mut self, device: &mut DevPtr<T>) -> Result<(), &'s str>
+    pub fn map_device<T>(
+        &'b mut self,
+        device: &mut DevPtr<T>,
+        bank: usize,
+        base: u32,
+    ) -> Result<(), &'s str>
     where
         T: Device<Order = Order>,
     {
-        device.borrow_mut().dev_map(self)
+        device.borrow_mut().dev_map(self, bank, base)
     }
 
     fn map_combine<U: MemInt + 'static>(&'b mut self, addr: u32) -> Result<(), &'s str> {

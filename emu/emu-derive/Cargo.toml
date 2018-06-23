@@ -1,5 +1,5 @@
 [package]
-name = "emu-derive"
+name = "emu_derive"
 version = "0.1.0"
 authors = ["Giovanni Bajo <rasky@develer.com>"]
 

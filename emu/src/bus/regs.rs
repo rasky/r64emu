@@ -14,6 +14,19 @@ bitflags! {
     }
 }
 
+impl RegFlags {
+    pub fn new(read: bool, write: bool) -> RegFlags {
+        let mut rf = RegFlags::default();
+        if !read {
+            rf.remove(RegFlags::READACCESS);
+        }
+        if !write {
+            rf.remove(RegFlags::WRITEACCESS);
+        }
+        return rf;
+    }
+}
+
 impl Default for RegFlags {
     fn default() -> RegFlags {
         return RegFlags::READACCESS | RegFlags::WRITEACCESS;
