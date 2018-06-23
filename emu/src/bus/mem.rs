@@ -15,6 +15,19 @@ bitflags! {
     }
 }
 
+impl MemFlags {
+    pub fn new(read: bool, write: bool) -> MemFlags {
+        let mut flags = MemFlags::default();
+        if !read {
+            flags.remove(MemFlags::READACCESS);
+        }
+        if !write {
+            flags.remove(MemFlags::WRITEACCESS);
+        }
+        return flags;
+    }
+}
+
 impl Default for MemFlags {
     fn default() -> MemFlags {
         return MemFlags::READACCESS | MemFlags::WRITEACCESS;

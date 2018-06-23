@@ -12,9 +12,10 @@ mod tests {
 
     #[derive(Default, Device)]
     struct Gpu {
+        #[mem(bank = 1, offset = 0x0, size = 4_194_304, vsize = 0x0200_0000)]
         ram: Mem,
 
-        #[reg(offset = 0xC, rwmask = 0xffff0000, rcb, wcb)]
+        #[reg(bank = 0, offset = 0xC, rwmask = 0xffff0000, rcb, wcb)]
         reg1: Reg<LittleEndian, u32>,
 
         k1: u32,
@@ -75,8 +76,8 @@ mod tests {
         let mut gpu = DevPtr::new(Gpu::default());
 
         let mut bus = Bus::<LittleEndian>::new();
-        bus.map_device(&mut gpu, 0, 0x04000000);
-        bus.map_device(&mut gpu, 1, 0x08000000);
+        bus.map_device(0x04000000, &mut gpu, 0);
+        bus.map_device(0x08000000, &mut gpu, 1);
 
         bus.write::<u32>(0x08000123, 456);
         assert_eq!(bus.read::<u32>(0x09000123), 456);

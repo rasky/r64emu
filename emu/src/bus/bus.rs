@@ -251,9 +251,9 @@ where
 
     pub fn map_device<T>(
         &'b mut self,
+        base: u32,
         device: &mut DevPtr<T>,
         bank: usize,
-        base: u32,
     ) -> Result<(), &'s str>
     where
         T: Device<Order = Order>,

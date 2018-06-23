@@ -25,6 +25,17 @@ struct RegAttributes {
     offset: u32,
 }
 
+#[derive(Default, Debug)]
+struct MemAttributes {
+    size: usize,
+    readonly: bool,
+    writeonly: bool,
+
+    bank: usize,
+    offset: u32,
+    vsize: u32,
+}
+
 fn parse_reg_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> RegAttributes {
     let mut ra = RegAttributes::default();
     let mut offsetfound = false;
@@ -109,6 +120,69 @@ fn parse_reg_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> RegA
     return ra;
 }
 
+fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemAttributes {
+    let mut ma = MemAttributes::default();
+    let mut offsetfound = false;
+
+    let allattrs = format!("{}", attrs);
+    for attr in allattrs[1..allattrs.len() - 1].split(",") {
+        let kv = attr.split("=").collect::<Vec<_>>();
+        match kv[0].trim().as_ref() {
+            "size" => {
+                if kv.len() != 2 {
+                    panic!(format!("{}: no argument for size", varname))
+                }
+
+                ma.size = kv[1].trim().parse::<usize>().unwrap();
+            }
+            "readonly" => {
+                if kv.len() != 1 {
+                    panic!(format!("{}: unexpected argument for readonly", varname))
+                }
+                ma.readonly = true;
+            }
+            "writeonly" => {
+                if kv.len() != 1 {
+                    panic!(format!("{}: unexpected argument for writeonly", varname))
+                }
+                ma.writeonly = true;
+            }
+            "bank" => {
+                if kv.len() != 2 {
+                    panic!(format!("{}: no argument for bank", varname))
+                }
+                ma.bank = kv[1].trim().parse::<usize>().unwrap();
+            }
+            "offset" => {
+                if kv.len() != 2 {
+                    panic!(format!("{}: no argument for offset", varname))
+                }
+                ma.offset = kv[1].trim().parse::<u32>().unwrap();
+                offsetfound = true;
+            }
+            "vsize" => {
+                if kv.len() != 2 {
+                    panic!(format!("{}: no argument for size", varname))
+                }
+
+                ma.vsize = kv[1].trim().parse::<u32>().unwrap();
+            }
+            _ => panic!(format!("{}: invalid attribute: {}", varname, kv[0].trim())),
+        }
+    }
+
+    if !offsetfound {
+        panic!(format!("{}: mandatory offset is missing", varname));
+    }
+    if ma.readonly && ma.writeonly {
+        panic!(format!(
+            "{}: cannot be both readonly and writeonly",
+            varname
+        ));
+    }
+    return ma;
+}
+
 fn expand_reg_devinit(
     fi: &synstructure::BindingInfo,
     varname: &str,
@@ -164,15 +238,47 @@ fn expand_reg_devinit(
     }
 }
 
+fn expand_mem_devinit(
+    fi: &synstructure::BindingInfo,
+    varname: &str,
+    ma: &MemAttributes,
+) -> proc_macro2::TokenStream {
+    let size = ma.size;
+    let read = !ma.readonly;
+    let write = !ma.writeonly;
+    quote!{
+        *#fi = Mem::new(#size, MemFlags::new(#read, #write));
+    }
+}
+
 fn expand_reg_devmap(
     fi: &synstructure::BindingInfo,
     varname: &str,
     ra: &RegAttributes,
 ) -> proc_macro2::TokenStream {
+    let bank = ra.bank;
     let off = ra.offset;
     let varname = Ident::new(varname, Span::call_site());
     quote!{
-        bus.map_reg32(base + #off, &self. #varname)?;
+        if bank == #bank {
+            bus.map_reg32(base + #off, &self. #varname)?;
+        }
+    }
+}
+
+fn expand_mem_devmap(
+    fi: &synstructure::BindingInfo,
+    varname: &str,
+    ma: &MemAttributes,
+) -> proc_macro2::TokenStream {
+    let bank = ma.bank;
+    let off = ma.offset;
+    let vsize = ma.vsize;
+    let varname = Ident::new(varname, Span::call_site());
+    quote!{
+        if bank == #bank {
+            bus.map_mem(base + #off, base + #off + #vsize - 1, &self. #varname)?;
+        }
     }
 }
 
@@ -183,8 +289,6 @@ fn derive_device(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
     let mut dev_map = quote!{};
     let dev_init = s.each(|fi| {
         let varname = fi.ast().ident.as_ref().unwrap().to_string();
-        let mut ra = RegAttributes::default();
-        let mut s = String::new();
 
         let attrs = &fi.ast().attrs;
         if attrs.len() != 1 {
@@ -202,7 +306,7 @@ fn derive_device(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
             .as_ref()
         {
             "reg" => {
-                ra = parse_reg_attributes(&varname, &attrs[0].tts);
+                let ra = parse_reg_attributes(&varname, &attrs[0].tts);
 
                 let dm = expand_reg_devmap(fi, &varname, &ra);
                 dev_map = quote!{
@@ -212,7 +316,16 @@ fn derive_device(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
                 expand_reg_devinit(fi, &varname, &ra)
             }
 
-            "mem" => unimplemented!(),
+            "mem" => {
+                let ma = parse_mem_attributes(&varname, &attrs[0].tts);
+
+                let dm = expand_mem_devmap(fi, &varname, &ma);
+                dev_map = quote!{
+                    #dev_map
+                    #dm;
+                };
+                expand_mem_devinit(fi, &varname, &ma)
+            }
             _ => unreachable!(),
         }
     });
