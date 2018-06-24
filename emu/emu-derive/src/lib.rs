@@ -10,7 +10,8 @@ extern crate proc_macro2;
 use proc_macro2::{Ident, Span};
 use synstructure::BindStyle;
 
-decl_derive!([Device, attributes(reg, mem)] => derive_device);
+decl_derive!([DeviceLE, attributes(reg, mem)] => derive_device_le);
+decl_derive!([DeviceBE, attributes(reg, mem)] => derive_device_be);
 
 #[derive(Default, Debug)]
 struct RegAttributes {
@@ -240,7 +241,7 @@ fn expand_reg_devinit(
 
 fn expand_mem_devinit(
     fi: &synstructure::BindingInfo,
-    varname: &str,
+    _varname: &str,
     ma: &MemAttributes,
 ) -> proc_macro2::TokenStream {
     let size = ma.size;
@@ -252,7 +253,7 @@ fn expand_mem_devinit(
 }
 
 fn expand_reg_devmap(
-    fi: &synstructure::BindingInfo,
+    _fi: &synstructure::BindingInfo,
     varname: &str,
     ra: &RegAttributes,
 ) -> proc_macro2::TokenStream {
@@ -267,7 +268,7 @@ fn expand_reg_devmap(
 }
 
 fn expand_mem_devmap(
-    fi: &synstructure::BindingInfo,
+    _fi: &synstructure::BindingInfo,
     varname: &str,
     ma: &MemAttributes,
 ) -> proc_macro2::TokenStream {
@@ -282,9 +283,9 @@ fn expand_mem_devmap(
     }
 }
 
-fn derive_device(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
+fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2::TokenStream {
     s.filter(|fi| fi.ast().attrs.len() != 0);
-    s.bind_with(|fi| BindStyle::RefMut);
+    s.bind_with(|_fi| BindStyle::RefMut);
 
     let mut dev_map = quote!{};
     let dev_init = s.each(|fi| {
@@ -330,6 +331,14 @@ fn derive_device(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
         }
     });
 
+    let endian = Ident::new(
+        if bigendian {
+            "BigEndian"
+        } else {
+            "LittleEndian"
+        },
+        Span::call_site(),
+    );
     s.gen_impl(quote! {
         extern crate emu;
         extern crate byteorder;
@@ -337,10 +346,10 @@ fn derive_device(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
         use ::std::rc::{Rc};
         use emu::bus::{Reg, RegFlags};
         use emu::bus::Bus;
-        use byteorder::{LittleEndian, BigEndian};
+        use byteorder:: #endian;
 
         gen impl Device for @Self {
-            type Order = LittleEndian;
+            type Order = #endian;
 
             fn dev_init(&mut self, wself: Rc<RefCell<Self>>) {
                 match *self {
@@ -354,6 +363,14 @@ fn derive_device(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
             }
         }
     })
+}
+
+fn derive_device_le(s: synstructure::Structure) -> proc_macro2::TokenStream {
+    derive_device(s, false)
+}
+
+fn derive_device_be(s: synstructure::Structure) -> proc_macro2::TokenStream {
+    derive_device(s, true)
 }
 
 #[cfg(test)]

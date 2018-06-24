@@ -2,7 +2,7 @@ extern crate byteorder;
 
 use self::byteorder::ByteOrder;
 use super::device::{DevPtr, Device};
-use super::mem::{Mem, MemFlags};
+use super::mem::Mem;
 use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use super::radix::RadixTree;
 use super::regs::Reg;
@@ -303,6 +303,7 @@ mod tests {
 
     extern crate byteorder;
     use self::byteorder::{BigEndian, LittleEndian};
+    use super::super::mem::MemFlags;
 
     #[test]
     fn basic_mem() {

@@ -1,7 +1,7 @@
 use super::bus::Bus;
-use super::memint::{ByteOrderCombiner, MemInt};
+use super::memint::ByteOrderCombiner;
 use std::cell::{Ref, RefCell, RefMut};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 
 pub trait Device {
     type Order: ByteOrderCombiner;
@@ -41,5 +41,3 @@ where
         self.dev.borrow_mut()
     }
 }
-
-// tests are in emu-derive
