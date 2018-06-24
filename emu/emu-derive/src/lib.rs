@@ -175,6 +175,9 @@ fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemA
     if !offsetfound {
         panic!(format!("{}: mandatory offset is missing", varname));
     }
+    if ma.vsize == 0 {
+        ma.vsize = ma.size as u32;
+    }
     if ma.readonly && ma.writeonly {
         panic!(format!(
             "{}: cannot be both readonly and writeonly",
@@ -247,8 +250,25 @@ fn expand_mem_devinit(
     let size = ma.size;
     let read = !ma.readonly;
     let write = !ma.writeonly;
-    quote!{
-        *#fi = Mem::new(#size, MemFlags::new(#read, #write));
+    if size == 0 {
+        if ma.readonly {
+            panic!("cannot set readonly for manully inited mem")
+        }
+        if ma.writeonly {
+            panic!("cannot set writeonly for manully inited mem")
+        }
+        quote!{
+            if #fi .len() == 0 {
+                panic!("size not specified, and mem wasn't manually inited");
+            }
+        }
+    } else {
+        quote!{
+            if #fi .len() != 0 {
+                panic!("don't specify size for already inited mem");
+            }
+            *#fi = Mem::new(#size, MemFlags::new(#read, #write));
+        }
     }
 }
 
@@ -342,9 +362,10 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
     s.gen_impl(quote! {
         extern crate emu;
         extern crate byteorder;
+        use ::std::result::Result;
         use ::std::cell::{RefCell};
         use ::std::rc::{Rc};
-        use emu::bus::{Bus, Reg, RegFlags};
+        use emu::bus::{Bus, Device, Reg, RegFlags, Mem, MemFlags};
         use byteorder:: #endian;
 
         gen impl Device for @Self {
@@ -356,7 +377,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
                 }
             }
 
-            fn dev_map(&mut self, bus: &mut Bus<Self::Order>, bank: usize, base: u32,) -> Result<(), &'static str> {
+            fn dev_map(&self, bus: &mut Bus<Self::Order>, bank: usize, base: u32,) -> Result<(), &'static str> {
                 #dev_map
                 Ok(())
             }
