@@ -4,7 +4,6 @@ use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
 use super::memint::{ByteOrderCombiner, MemInt};
 use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::mem;
 use std::rc::Rc;
 
 bitflags! {
@@ -102,7 +101,7 @@ where
         Self::refcell_set(&self.raw, val)
     }
 
-    pub fn hwio_r<S>(&self) -> HwIoR
+    pub(crate) fn hwio_r<S>(&self) -> HwIoR
     where
         S: MemInt + Into<U>, // S is a smaller MemInt type than U
     {
@@ -129,7 +128,7 @@ where
         }
     }
 
-    pub fn hwio_w<S>(&self) -> HwIoW
+    pub(crate) fn hwio_w<S>(&self) -> HwIoW
     where
         S: MemInt + Into<U>, // S is a smaller MemInt type than U
     {
@@ -159,111 +158,126 @@ where
             }))
         }
     }
-
-    pub fn read<S: MemInt + Into<U>>(&self, addr: u32) -> S {
-        self.hwio_r::<S>().at::<O, S>(addr).read()
-    }
-
-    pub fn write<S: MemInt + Into<U>>(&self, addr: u32, val: S) {
-        self.hwio_w::<S>().at::<O, S>(addr).write(val);
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::memint::{ByteOrderCombiner, MemInt};
     use super::super::{be, le};
-    use super::RegFlags;
+    use super::{Reg, RegFlags};
+    use std::marker::PhantomData;
     use std::rc::Rc;
+
+    #[derive(Default)]
+    struct FakeBus<O: ByteOrderCombiner, U: MemInt + 'static> {
+        phantom: PhantomData<(O, U)>,
+    }
+
+    impl<O: ByteOrderCombiner, U: MemInt + 'static> FakeBus<O, U> {
+        fn read<S: MemInt + Into<U>>(&self, reg: &Reg<O, U>, addr: u32) -> S {
+            reg.hwio_r::<S>().at::<O, S>(addr).read()
+        }
+
+        fn write<S: MemInt + Into<U>>(&self, reg: &Reg<O, U>, addr: u32, val: S) {
+            reg.hwio_w::<S>().at::<O, S>(addr).write(val);
+        }
+    }
 
     #[test]
     fn reg32le_bare() {
+        let bus = FakeBus::default();
         let r = le::Reg32::default();
         r.set(0xaaaaaaaa);
 
-        r.write::<u32>(0, 0x12345678);
-        assert_eq!(r.read::<u8>(0), 0x78);
-        assert_eq!(r.read::<u8>(1), 0x56);
-        assert_eq!(r.read::<u16>(2), 0x1234);
-        r.write::<u16>(0, 0x6789);
+        bus.write::<u32>(&r, 0, 0x12345678);
+        assert_eq!(bus.read::<u8>(&r, 0), 0x78);
+        assert_eq!(bus.read::<u8>(&r, 1), 0x56);
+        assert_eq!(bus.read::<u16>(&r, 2), 0x1234);
+        bus.write::<u16>(&r, 0, 0x6789);
         assert_eq!(r.get(), 0x12346789);
     }
 
     #[test]
     fn reg32be_bare() {
+        let bus = FakeBus::default();
         let r = be::Reg32::default();
         r.set(0xaaaaaaaa);
-        r.write::<u32>(0, 0x12345678);
-        assert_eq!(r.read::<u8>(0), 0x12);
-        assert_eq!(r.read::<u8>(1), 0x34);
-        assert_eq!(r.read::<u16>(2), 0x5678);
-        r.write::<u16>(0, 0x6789);
+        bus.write::<u32>(&r, 0, 0x12345678);
+        assert_eq!(bus.read::<u8>(&r, 0), 0x12);
+        assert_eq!(bus.read::<u8>(&r, 1), 0x34);
+        assert_eq!(bus.read::<u16>(&r, 2), 0x5678);
+        bus.write::<u16>(&r, 0, 0x6789);
         assert_eq!(r.get(), 0x67895678);
     }
 
     #[test]
     fn reg32le_mask() {
+        let bus = FakeBus::default();
         let r = le::Reg32 {
             romask: 0xff00ff00,
             ..Default::default()
         };
         r.set(0xddccbbaa);
-        r.write::<u32>(0, 0x12345678);
+        bus.write::<u32>(&r, 0, 0x12345678);
         assert_eq!(r.get(), 0xdd34bb78);
-        assert_eq!(r.read::<u8>(0), 0x78);
-        assert_eq!(r.read::<u8>(1), 0xbb);
-        assert_eq!(r.read::<u16>(2), 0xdd34);
-        r.write::<u16>(0, 0x6789);
+        assert_eq!(bus.read::<u8>(&r, 0), 0x78);
+        assert_eq!(bus.read::<u8>(&r, 1), 0xbb);
+        assert_eq!(bus.read::<u16>(&r, 2), 0xdd34);
+        bus.write::<u16>(&r, 0, 0x6789);
         assert_eq!(r.get(), 0xdd34bb89);
     }
 
     #[test]
     fn reg32be_mask() {
+        let bus = FakeBus::default();
         let r = be::Reg32 {
             romask: 0xff00ff00,
             ..Default::default()
         };
         r.set(0xddccbbaa);
-        r.write::<u32>(0, 0x12345678);
+        bus.write::<u32>(&r, 0, 0x12345678);
         assert_eq!(r.get(), 0xdd34bb78);
-        assert_eq!(r.read::<u8>(0), 0xdd);
-        assert_eq!(r.read::<u8>(1), 0x34);
-        assert_eq!(r.read::<u16>(2), 0xbb78);
-        r.write::<u16>(0, 0x6789);
+        assert_eq!(bus.read::<u8>(&r, 0), 0xdd);
+        assert_eq!(bus.read::<u8>(&r, 1), 0x34);
+        assert_eq!(bus.read::<u16>(&r, 2), 0xbb78);
+        bus.write::<u16>(&r, 0, 0x6789);
         assert_eq!(r.get(), 0xdd89bb78);
     }
 
     #[test]
     fn reg32le_cb() {
+        let bus = FakeBus::default();
         let r = le::Reg32 {
             rcb: Some(Rc::new(box move |val| val | 0x1)),
             ..Default::default()
         };
 
         r.set(0x12345678);
-        assert_eq!(r.read::<u32>(0), 0x12345679);
-        r.write::<u16>(0, 0x6788);
-        assert_eq!(r.read::<u32>(0), 0x12346789);
+        assert_eq!(bus.read::<u32>(&r, 0), 0x12345679);
+        bus.write::<u16>(&r, 0, 0x6788);
+        assert_eq!(bus.read::<u32>(&r, 0), 0x12346789);
         assert_eq!(r.get(), 0x12346788);
     }
 
     #[test]
     fn reg32le_rowo() {
+        let bus = FakeBus::default();
         let r = le::Reg32 {
             flags: RegFlags::READACCESS,
             ..Default::default()
         };
         r.set(0x12345678);
-        assert_eq!(r.read::<u32>(0), 0x12345678);
-        r.write::<u32>(0, 0xaabbccdd);
-        assert_eq!(r.read::<u32>(0), 0x12345678);
+        assert_eq!(bus.read::<u32>(&r, 0), 0x12345678);
+        bus.write::<u32>(&r, 0, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(&r, 0), 0x12345678);
 
         let r = le::Reg32 {
             flags: RegFlags::WRITEACCESS,
             ..Default::default()
         };
         r.set(0x12345678);
-        assert_eq!(r.read::<u32>(0), 0xffffffff);
-        r.write::<u32>(0, 0xaabbccdd);
-        assert_eq!(r.read::<u32>(0), 0xffffffff);
+        assert_eq!(bus.read::<u32>(&r, 0), 0xffffffff);
+        bus.write::<u32>(&r, 0, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(&r, 0), 0xffffffff);
     }
 }
