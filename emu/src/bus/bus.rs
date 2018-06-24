@@ -7,7 +7,8 @@ use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use super::radix::RadixTree;
 use super::regs::Reg;
 use enum_map::EnumMap;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
+use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use std::rc::Rc;
@@ -25,10 +26,15 @@ pub enum HwIoW {
 }
 
 impl HwIoR {
-    pub fn at<O: ByteOrder, U: MemInt>(&self, addr: u32) -> MemIoR<O, U> {
+    fn at<O: ByteOrder, U: MemInt>(&self, addr: u32) -> MemIoR<O, U> {
+        let end = match self {
+            HwIoR::Mem(ref buf, mask) => (addr & !mask) + mask,
+            HwIoR::Func(_) => addr + 1,
+        };
         MemIoR {
             hwio: self.clone(),
             addr,
+            end,
             phantom: PhantomData,
         }
     }
@@ -45,7 +51,7 @@ impl HwIoR {
 }
 
 impl HwIoW {
-    pub fn at<O: ByteOrder, U: MemInt>(&self, addr: u32) -> MemIoW<O, U> {
+    fn at<O: ByteOrder, U: MemInt>(&self, addr: u32) -> MemIoW<O, U> {
         MemIoW {
             hwio: self.clone(),
             addr,
@@ -67,6 +73,7 @@ impl HwIoW {
 pub struct MemIoR<O: ByteOrder, U: MemInt> {
     hwio: HwIoR,
     addr: u32,
+    end: u32,
     phantom: PhantomData<(O, U)>,
 }
 
@@ -76,15 +83,65 @@ pub struct MemIoW<O: ByteOrder, U: MemInt> {
     phantom: PhantomData<(O, U)>,
 }
 
-impl<'a, O: ByteOrder, U: MemInt> MemIoR<O, U> {
+impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
     pub fn read(&self) -> U {
         self.hwio.read::<O, U>(self.addr)
     }
+    pub fn iter<'a>(&'a self) -> Option<MemIoIterator<'a, O, U>> {
+        match self.hwio {
+            HwIoR::Mem(ref buf, mask) => Some(MemIoIterator {
+                mem: buf.borrow(),
+                addr: self.addr & mask,
+                end: mask,
+                phantom: PhantomData,
+            }),
+            HwIoR::Func(_) => None,
+        }
+    }
 }
 
-impl<'a, O: ByteOrder, U: MemInt> MemIoW<O, U> {
+impl<O: ByteOrder, U: MemInt> MemIoW<O, U> {
     pub fn write(&self, val: U) {
         self.hwio.write::<O, U>(self.addr, val);
+    }
+}
+
+pub struct MemIoIterator<'a, O: ByteOrder, U: MemInt> {
+    mem: Ref<'a, Box<[u8]>>,
+    addr: u32,
+    end: u32,
+    phantom: PhantomData<(O, U)>,
+}
+
+impl<'a, O: ByteOrder, U: MemInt> Iterator for MemIoIterator<'a, O, U> {
+    type Item = U;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.addr > self.end {
+            None
+        } else {
+            let u = U::endian_read_from::<O>(&self.mem[self.addr as usize..]);
+            self.addr += U::SIZE as u32;
+            Some(u)
+        }
+    }
+}
+
+impl<O: ByteOrder, U: MemInt> io::Read for MemIoR<O, U> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        match self.hwio.clone() {
+            HwIoR::Mem(ref buf, mask) => (&buf.borrow_mut()[(self.addr & mask) as usize..])
+                .read(out)
+                .and_then(|sz| {
+                    self.addr += sz as u32;
+                    Ok(sz)
+                }),
+            HwIoR::Func(_) => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "memory area is not a linearly mapped",
+            )),
+        }
     }
 }
 
@@ -107,21 +164,21 @@ pub fn unmapped_area_w() -> HwIoW {
     HwIoW::Func(FN.with(|c| c.clone()))
 }
 
-pub struct Bus<'a, Order: ByteOrderCombiner + 'a> {
+pub struct Bus<Order: ByteOrderCombiner> {
     reads: EnumMap<AccessSize, Box<RadixTree<HwIoR>>>,
     writes: EnumMap<AccessSize, Box<RadixTree<HwIoW>>>,
 
     unmap_r: HwIoR,
     unmap_w: HwIoW,
 
-    phantom: PhantomData<&'a Order>,
+    phantom: PhantomData<Order>,
 }
 
-impl<'a: 'b, 'b, 's: 'b, Order> Bus<'a, Order>
+impl<'a: 'b, 'b, 's: 'b, Order> Bus<Order>
 where
     Order: ByteOrderCombiner + 'static,
 {
-    pub fn new() -> Box<Bus<'a, Order>> {
+    pub fn new() -> Box<Bus<Order>> {
         assert_eq_size!(HwIoR, [u8; 24]);
         assert_eq_size!(HwIoW, [u8; 24]);
 
@@ -228,13 +285,13 @@ where
     pub fn map_device<T>(
         &'b mut self,
         base: u32,
-        device: &mut DevPtr<T>,
+        device: &DevPtr<T>,
         bank: usize,
     ) -> Result<(), &'s str>
     where
         T: Device<Order = Order>,
     {
-        device.borrow_mut().dev_map(self, bank, base)
+        device.borrow().dev_map(self, bank, base)
     }
 
     fn map_combine<U: MemInt + 'static>(&mut self, addr: u32) -> Result<(), &'static str> {

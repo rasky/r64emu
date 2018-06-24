@@ -8,7 +8,7 @@ pub trait Device {
 
     fn dev_init(&mut self, wself: Rc<RefCell<Self>>);
     fn dev_map(
-        &mut self,
+        &self,
         bus: &mut Bus<Self::Order>,
         bank: usize,
         base: u32,
@@ -33,7 +33,7 @@ where
         return d;
     }
 
-    pub fn borrow(&mut self) -> Ref<T> {
+    pub fn borrow(&self) -> Ref<T> {
         self.dev.borrow()
     }
 

@@ -15,7 +15,7 @@ pub use self::regs::{Reg, RegFlags};
 pub mod le {
     use super::byteorder::LittleEndian;
     pub use super::{DevPtr, Device, Mem, MemFlags, RegFlags};
-    pub type Bus<'a> = super::Bus<'a, LittleEndian>;
+    pub type Bus = super::Bus<LittleEndian>;
     pub type Reg8 = super::Reg<LittleEndian, u8>;
     pub type Reg16 = super::Reg<LittleEndian, u16>;
     pub type Reg32 = super::Reg<LittleEndian, u32>;
@@ -25,7 +25,7 @@ pub mod le {
 pub mod be {
     use super::byteorder::BigEndian;
     pub use super::{DevPtr, Device, Mem, MemFlags, RegFlags};
-    pub type Bus<'a> = super::Bus<'a, BigEndian>;
+    pub type Bus = super::Bus<BigEndian>;
     pub type Reg8 = super::Reg<BigEndian, u8>;
     pub type Reg16 = super::Reg<BigEndian, u16>;
     pub type Reg32 = super::Reg<BigEndian, u32>;
