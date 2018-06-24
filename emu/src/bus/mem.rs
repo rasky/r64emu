@@ -39,19 +39,30 @@ pub struct Mem {
 }
 
 impl Mem {
-    pub fn new(psize: usize, flags: MemFlags) -> Self {
-        if psize & (psize - 1) != 0 {
-            panic!("bus::mem: psize must be pow2")
+    pub fn from_buffer(v: Vec<u8>, flags: MemFlags) -> Self {
+        let psize = v.len();
+        if psize == 0 {
+            panic!("bus::mem: memory size cannot be zero")
         }
-
-        let mut v = Vec::<u8>::new();
-        v.resize(psize, 0);
+        if psize & (psize - 1) != 0 {
+            panic!("bus::mem: memory size must be pow2")
+        }
 
         Mem {
             buf: Rc::new(RefCell::new(v.into())),
             psize: psize,
             flags: flags,
         }
+    }
+
+    pub fn new(psize: usize, flags: MemFlags) -> Self {
+        let mut v = Vec::<u8>::new();
+        v.resize(psize, 0);
+        Self::from_buffer(v, flags)
+    }
+
+    pub fn len(&self) -> usize {
+        self.psize
     }
 
     pub fn buf<'a>(&'a self) -> RefMut<'a, Box<[u8]>> {
