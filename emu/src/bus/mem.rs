@@ -1,11 +1,8 @@
 extern crate byteorder;
 
-use self::byteorder::ByteOrder;
 use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
 use super::memint::MemInt;
-use std::borrow::{Borrow, BorrowMut};
-use std::cell::RefCell;
-use std::marker::PhantomData;
+use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
 bitflags! {
@@ -57,7 +54,11 @@ impl Mem {
         }
     }
 
-    pub fn hwio_r<S: MemInt>(&self) -> HwIoR {
+    pub fn buf<'a>(&'a self) -> RefMut<'a, Box<[u8]>> {
+        self.buf.borrow_mut()
+    }
+
+    pub(crate) fn hwio_r<S: MemInt>(&self) -> HwIoR {
         if !self.flags.contains(MemFlags::READACCESS) {
             return unmapped_area_r();
         }
@@ -65,7 +66,7 @@ impl Mem {
         HwIoR::Mem(self.buf.clone(), (self.psize - 1) as u32)
     }
 
-    pub fn hwio_w<S: MemInt>(&self) -> HwIoW {
+    pub(crate) fn hwio_w<S: MemInt>(&self) -> HwIoW {
         if !self.flags.contains(MemFlags::WRITEACCESS) {
             return unmapped_area_w();
         }
@@ -74,14 +75,18 @@ impl Mem {
     }
 }
 
-// impl<O: ByteOrder> Borrow<[u8]> for Mem<O> {
-//     fn borrow(&self) -> &[u8] {
-//         self.buf.borrow()
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-// impl<O: ByteOrder> BorrowMut<[u8]> for Mem<O> {
-//     fn borrow_mut(&mut self) -> &mut [u8] {
-//         self.buf.borrow_mut()
-//     }
-// }
+    #[test]
+    fn mem_basic() {
+        let ram = Mem::new(1024, MemFlags::default());
+
+        for x in &mut ram.buf()[128..130] {
+            *x = 5;
+        }
+
+        assert_eq!(ram.buf()[128], 5);
+    }
+}
