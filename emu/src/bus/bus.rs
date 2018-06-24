@@ -180,10 +180,10 @@ where
     }
 
     fn mapreg_partial<U: 'static, S>(
-        &'b mut self,
+        &mut self,
         addr: u32,
-        reg: &'b Reg<Order, U>,
-    ) -> Result<(), &'s str>
+        reg: &Reg<Order, U>,
+    ) -> Result<(), &'static str>
     where
         U: MemInt,
         S: MemInt + Into<U>,
@@ -203,36 +203,12 @@ where
         Ok(())
     }
 
-    pub fn map_reg8(&'b mut self, addr: u32, reg: &'a Reg<Order, u8>) -> Result<(), &'s str> {
-        self.mapreg_partial::<u8, u8>(addr, reg)?;
-        self.map_combine::<u16>(addr & !1)?;
-        self.map_combine::<u32>(addr & !3)?;
-        self.map_combine::<u64>(addr & !7)?;
-        Ok(())
-    }
-
-    pub fn map_reg16(&'b mut self, addr: u32, reg: &'b Reg<Order, u16>) -> Result<(), &'s str> {
-        self.mapreg_partial::<u16, u8>(addr, reg)?;
-        self.mapreg_partial::<u16, u16>(addr, reg)?;
-        self.map_combine::<u32>(addr & !3)?;
-        self.map_combine::<u64>(addr & !7)?;
-        Ok(())
-    }
-
-    pub fn map_reg32(&'b mut self, addr: u32, reg: &'b Reg<Order, u32>) -> Result<(), &'s str> {
-        self.mapreg_partial::<u32, u8>(addr, reg)?;
-        self.mapreg_partial::<u32, u16>(addr, reg)?;
-        self.mapreg_partial::<u32, u32>(addr, reg)?;
-        self.map_combine::<u64>(addr & !7)?;
-        Ok(())
-    }
-
-    pub fn map_reg64(&'b mut self, addr: u32, reg: &'b Reg<Order, u64>) -> Result<(), &'s str> {
-        self.mapreg_partial::<u64, u8>(addr, reg)?;
-        self.mapreg_partial::<u64, u16>(addr, reg)?;
-        self.mapreg_partial::<u64, u32>(addr, reg)?;
-        self.mapreg_partial::<u64, u64>(addr, reg)?;
-        Ok(())
+    pub fn map_reg<U>(&mut self, addr: u32, reg: &Reg<Order, U>) -> Result<(), &'static str>
+    where
+        U: MemInt,
+        Reg<Order, U>: MappedReg<Order = Order>,
+    {
+        reg.map_into(self, addr)
     }
 
     pub fn map_mem(&'b mut self, begin: u32, end: u32, mem: &'b Mem) -> Result<(), &'s str> {
@@ -261,7 +237,7 @@ where
         device.borrow_mut().dev_map(self, bank, base)
     }
 
-    fn map_combine<U: MemInt + 'static>(&'b mut self, addr: u32) -> Result<(), &'s str> {
+    fn map_combine<U: MemInt + 'static>(&mut self, addr: u32) -> Result<(), &'static str> {
         let before = self.fetch_read::<U::Half>(addr);
         let after = self.fetch_read::<U::Half>(addr + (mem::size_of::<U>() as u32) / 2);
 
@@ -292,6 +268,55 @@ where
             true, // a combiner might overwrite if already existing
         )?;
 
+        Ok(())
+    }
+}
+
+pub trait MappedReg {
+    type Order: ByteOrderCombiner;
+    fn map_into(&self, bus: &mut Bus<Self::Order>, addr: u32) -> Result<(), &'static str>;
+}
+
+impl<O: ByteOrderCombiner + 'static> MappedReg for Reg<O, u8> {
+    type Order = O;
+    fn map_into(&self, bus: &mut Bus<Self::Order>, addr: u32) -> Result<(), &'static str> {
+        bus.mapreg_partial::<u8, u8>(addr, self)?;
+        bus.map_combine::<u16>(addr & !1)?;
+        bus.map_combine::<u32>(addr & !3)?;
+        bus.map_combine::<u64>(addr & !7)?;
+        Ok(())
+    }
+}
+
+impl<O: ByteOrderCombiner + 'static> MappedReg for Reg<O, u16> {
+    type Order = O;
+    fn map_into(&self, bus: &mut Bus<Self::Order>, addr: u32) -> Result<(), &'static str> {
+        bus.mapreg_partial::<u16, u8>(addr, self)?;
+        bus.mapreg_partial::<u16, u16>(addr, self)?;
+        bus.map_combine::<u32>(addr & !3)?;
+        bus.map_combine::<u64>(addr & !7)?;
+        Ok(())
+    }
+}
+
+impl<O: ByteOrderCombiner + 'static> MappedReg for Reg<O, u32> {
+    type Order = O;
+    fn map_into(&self, bus: &mut Bus<Self::Order>, addr: u32) -> Result<(), &'static str> {
+        bus.mapreg_partial::<u32, u8>(addr, self)?;
+        bus.mapreg_partial::<u32, u16>(addr, self)?;
+        bus.mapreg_partial::<u32, u32>(addr, self)?;
+        bus.map_combine::<u64>(addr & !7)?;
+        Ok(())
+    }
+}
+
+impl<O: ByteOrderCombiner + 'static> MappedReg for Reg<O, u64> {
+    type Order = O;
+    fn map_into(&self, bus: &mut Bus<Self::Order>, addr: u32) -> Result<(), &'static str> {
+        bus.mapreg_partial::<u64, u8>(addr, self)?;
+        bus.mapreg_partial::<u64, u16>(addr, self)?;
+        bus.mapreg_partial::<u64, u32>(addr, self)?;
+        bus.mapreg_partial::<u64, u64>(addr, self)?;
         Ok(())
     }
 }
@@ -331,8 +356,8 @@ mod tests {
         );
 
         let mut bus = Bus::<LittleEndian>::new();
-        assert_eq!(bus.map_reg32(0x04000120, &reg1).is_ok(), true);
-        assert_eq!(bus.map_reg32(0x04000124, &reg2).is_ok(), true);
+        assert_eq!(bus.map_reg(0x04000120, &reg1).is_ok(), true);
+        assert_eq!(bus.map_reg(0x04000124, &reg2).is_ok(), true);
 
         assert_eq!(bus.read::<u32>(0x04000120), 0x12345678);
         assert_eq!(bus.read::<u16>(0x04000122), 0x1234);
@@ -358,10 +383,10 @@ mod tests {
         let reg4 = Reg8::default();
 
         let mut bus = Bus::<LittleEndian>::new();
-        assert_eq!(bus.map_reg32(0xFF000000, &reg1).is_ok(), true);
-        assert_eq!(bus.map_reg16(0xFF000004, &reg2).is_ok(), true);
-        assert_eq!(bus.map_reg8(0xFF000006, &reg3).is_ok(), true);
-        assert_eq!(bus.map_reg8(0xFF000007, &reg4).is_ok(), true);
+        assert_eq!(bus.map_reg(0xFF000000, &reg1).is_ok(), true);
+        assert_eq!(bus.map_reg(0xFF000004, &reg2).is_ok(), true);
+        assert_eq!(bus.map_reg(0xFF000006, &reg3).is_ok(), true);
+        assert_eq!(bus.map_reg(0xFF000007, &reg4).is_ok(), true);
 
         bus.write::<u64>(0xFF000000, 0xaabbccdd11223344);
         assert_eq!(reg1.get(), 0x11223344);
@@ -399,10 +424,10 @@ mod tests {
 
         let mut bus = Bus::<BigEndian>::new();
 
-        assert_eq!(bus.map_reg32(0xFF000000, &reg1).is_ok(), true);
-        assert_eq!(bus.map_reg16(0xFF000004, &reg2).is_ok(), true);
-        assert_eq!(bus.map_reg8(0xFF000006, &reg3).is_ok(), true);
-        assert_eq!(bus.map_reg8(0xFF000007, &reg4).is_ok(), true);
+        assert_eq!(bus.map_reg(0xFF000000, &reg1).is_ok(), true);
+        assert_eq!(bus.map_reg(0xFF000004, &reg2).is_ok(), true);
+        assert_eq!(bus.map_reg(0xFF000006, &reg3).is_ok(), true);
+        assert_eq!(bus.map_reg(0xFF000007, &reg4).is_ok(), true);
 
         bus.write::<u64>(0xFF000000, 0xaabbccdd11223344);
         assert_eq!(reg1.get(), 0xaabbccdd);

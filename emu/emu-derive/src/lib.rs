@@ -262,7 +262,7 @@ fn expand_reg_devmap(
     let varname = Ident::new(varname, Span::call_site());
     quote!{
         if bank == #bank {
-            bus.map_reg32(base + #off, &self. #varname)?;
+            bus.map_reg(base + #off, &self. #varname)?;
         }
     }
 }
@@ -344,8 +344,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
         extern crate byteorder;
         use ::std::cell::{RefCell};
         use ::std::rc::{Rc};
-        use emu::bus::{Reg, RegFlags};
-        use emu::bus::Bus;
+        use emu::bus::{Bus, Reg, RegFlags};
         use byteorder:: #endian;
 
         gen impl Device for @Self {
