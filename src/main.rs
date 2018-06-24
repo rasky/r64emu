@@ -1,55 +1,93 @@
+#![feature(attr_literals)]
+
 use std::env;
 
-extern crate emu;
-use emu::bus::be::{Bus, Mem, MemFlags};
-
+#[macro_use]
+extern crate emu_derive;
 extern crate byteorder;
+extern crate emu;
+extern crate pretty_hex;
+
 use self::byteorder::{BigEndian, ByteOrder, LittleEndian};
+use emu::bus::be::{Bus, DevPtr, Device, Mem};
+use pretty_hex::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+mod cartridge;
 mod mips64;
+mod pi;
 
-struct Hw<'a> {
+use cartridge::Cartridge;
+use mips64::Cpu;
+use pi::Pi;
+
+#[macro_use]
+extern crate error_chain;
+
+mod errors {
+    error_chain!{
+        foreign_links {
+            Io(::std::io::Error) #[cfg(unix)];
+        }
+    }
+}
+
+use errors::*;
+
+#[derive(Default, DeviceBE)]
+struct Memory {
+    #[mem(size = 4194304, offset = 0x0000_0000, vsize = 0x03F0_0000)]
     rdram: Mem,
-    bus: Box<Bus<'a>>,
 }
 
-// fn make_membuf(sz: usize) -> Rc<RefCell<[u8]>> {
-//  let mut v : Vec<u8> = Vec::new();
-//  v.resize(sz, 0);
-//  let mut v2 = v.as_slice();
-//  Rc::new(RefCell::new(*v2))
-// }
+struct N64 {
+    bus: Rc<RefCell<Box<Bus>>>,
+    cpu: Box<Cpu>,
+    cart: DevPtr<Cartridge>,
 
-impl<'a> Hw<'a> {
-    fn new() -> Box<Hw<'a>> {
-        Box::new(Hw {
-            rdram: Mem::new(4 * 1024 * 1024, MemFlags::default()),
-            bus: Bus::new(),
-        })
-    }
+    mem: DevPtr<Memory>,
+    pi: DevPtr<Pi>,
+}
 
-    fn domapping(&mut self) {
-        self.bus
-            .map_mem(0x00000000, 0x03EFFFFF, &self.rdram)
-            .unwrap();
+impl N64 {
+    fn new(romfn: &str) -> Result<N64> {
+        let bus = Rc::new(RefCell::new(Bus::new()));
+        let cpu = Box::new(Cpu::new(bus.clone()));
+        let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
+        let mem = DevPtr::new(Memory::default());
+        let pi = DevPtr::new(Pi::new("bios/pifdata.bin").chain_err(|| "cannot open BIOS file")?);
+
+        {
+            let mut bus = bus.borrow_mut();
+            bus.map_device(0x0000_0000, &mem, 0)?;
+            bus.map_device(0x0460_0000, &pi, 0)?;
+            bus.map_device(0x1FC0_0000, &pi, 1)?;
+            bus.map_device(0x1000_0000, &cart, 0)?;
+        }
+
+        return Ok(N64 {
+            cpu,
+            cart,
+            bus,
+            mem,
+            pi,
+        });
     }
 }
 
-fn main() {
+quick_main!(run);
+
+fn run() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
-    let mut hw = Hw::new();
-    hw.domapping();
+    if args.len() < 2 {
+        return bail!("Usage: r64emu [rom]");
+    }
 
-    let mut cpu = mips64::Cpu::new(/*bus.clone()*/);
+    let mut n64 = N64::new(&args[1])?;
 
-    hw.bus.write::<u32>(0x01000234, 4);
-    let val1 = hw.bus.read::<u16>(0x01000234);
-    let val2 = hw.bus.read::<u16>(0x01000234 + 2);
-    let val3 = hw.bus.fetch_read::<u16>(0x01000234 + 2).read();
-    println!("Hello, world! {:x} / {:x} : {:x}", val1, val2, val3);
+    n64.cpu.run(10000);
 
-    cpu.step(args[1].parse::<u32>().expect("invalid argument"));
+    Ok(())
 }

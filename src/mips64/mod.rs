@@ -1,8 +1,8 @@
 extern crate byteorder;
 extern crate num;
 
-use super::emu::bus::Bus;
 use self::byteorder::BigEndian;
+use super::emu::bus::be::Bus;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -115,20 +115,20 @@ pub struct Cpu {
     hi: u64,
     lo: u64,
 
-    // bus: Rc<RefCell<Box<&'a Bus<'a, Order = BigEndian>>>>,
+    bus: Rc<RefCell<Box<Bus>>>,
     pc: u32,
     clock: i64,
     until: i64,
 }
 
 impl Cpu {
-    pub fn new() -> Cpu {
+    pub fn new(bus: Rc<RefCell<Box<Bus>>>) -> Cpu {
         return Cpu {
-            // bus: bus,
+            bus: bus,
             regs: [0u64; 32],
             hi: 0,
             lo: 0,
-            pc: 0,
+            pc: 0x1FC0_0000, // FIXME
             clock: 0,
             until: 0,
         };
@@ -138,7 +138,7 @@ impl Cpu {
         unimplemented!();
     }
 
-    pub fn step(&mut self, opcode: u32) {
+    fn op(&mut self, opcode: u32) {
         let mut op = Mipsop { opcode, cpu: self };
 
         match op.op() {
@@ -200,6 +200,17 @@ impl Cpu {
     pub fn run(&mut self, until: i64) {
         self.until = until;
 
-        while self.clock < self.until {}
+        let mem = self.bus.borrow().fetch_read::<u32>(self.pc);
+        let mut iter = mem.iter().unwrap();
+        while self.clock < self.until {
+            let pc = self.pc;
+            self.pc += 4;
+            if let Some(op) = iter.next() {
+                self.op(op);
+            } else {
+                break;
+            }
+            self.clock += 1;
+        }
     }
 }
