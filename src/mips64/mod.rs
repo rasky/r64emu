@@ -1,10 +1,30 @@
-extern crate byteorder;
 extern crate num;
 
-use self::byteorder::BigEndian;
-use super::emu::bus::be::Bus;
+mod cop0;
+use self::cop0::Cop0;
+
+use super::emu::bus::be::{Bus, MemIoR};
+use super::emu::bus::MemInt;
+use slog;
 use std::cell::RefCell;
+use std::fmt;
 use std::rc::Rc;
+
+trait Hex {
+    fn hex(&self) -> String;
+}
+
+impl Hex for u32 {
+    fn hex(&self) -> String {
+        format!("0x{:x}", *self)
+    }
+}
+
+impl Hex for u64 {
+    fn hex(&self) -> String {
+        format!("0x{:x}", *self)
+    }
+}
 
 trait Numerics64 {
     fn hi_lo(self) -> (u64, u64);
@@ -57,6 +77,15 @@ impl<'a> Mipsop<'a> {
     fn special(&self) -> u32 {
         self.opcode & 0x3f
     }
+    fn sel(&self) -> u32 {
+        self.opcode & 7
+    }
+    fn ea(&self) -> u32 {
+        self.rs32() + self.sximm32() as u32
+    }
+    fn btgt(&self) -> u32 {
+        self.cpu.pc + self.sximm32() as u32 * 4
+    }
     fn rs(&self) -> usize {
         ((self.opcode >> 21) & 0x1f) as usize
     }
@@ -108,6 +137,9 @@ impl<'a> Mipsop<'a> {
     fn mrd64(&'a mut self) -> &'a mut u64 {
         &mut self.cpu.regs[self.rd()]
     }
+    fn hex(&self) -> String {
+        format!("{:x}", self.opcode)
+    }
 }
 
 pub struct Cpu {
@@ -115,22 +147,30 @@ pub struct Cpu {
     hi: u64,
     lo: u64,
 
+    cop0: Cop0,
+    logger: slog::Logger,
     bus: Rc<RefCell<Box<Bus>>>,
     pc: u32,
+    branch_pc: u32,
     clock: i64,
     until: i64,
+    tight_exit: bool,
 }
 
 impl Cpu {
-    pub fn new(bus: Rc<RefCell<Box<Bus>>>) -> Cpu {
+    pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>) -> Cpu {
         return Cpu {
             bus: bus,
+            logger: logger,
             regs: [0u64; 32],
+            cop0: Cop0::default(),
             hi: 0,
             lo: 0,
             pc: 0x1FC0_0000, // FIXME
+            branch_pc: 0,
             clock: 0,
             until: 0,
+            tight_exit: false,
         };
     }
 
@@ -138,9 +178,15 @@ impl Cpu {
         unimplemented!();
     }
 
-    fn op(&mut self, opcode: u32) {
+    fn cop(&mut self, idx: usize, opcode: u32) {
         let mut op = Mipsop { opcode, cpu: self };
+        error!(op.cpu.logger, "unimplemented COP opcode"; o!("cop" => idx, "op" => op.hex(), "func" => op.rs()));
+        unimplemented!();
+    }
 
+    fn op(&mut self, opcode: u32) {
+        self.clock += 1;
+        let mut op = Mipsop { opcode, cpu: self };
         match op.op() {
             // SPECIAL
             0x00 => match op.special() {
@@ -192,25 +238,63 @@ impl Cpu {
             0x0C => *op.mrd64() = op.rs64() & op.imm64(),             // ANDI
             0x0D => *op.mrd64() = op.rs64() | op.imm64(),             // ORI
             0x0E => *op.mrd64() = op.rs64() ^ op.imm64(),             // XORI
+            0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(),        // LUI
+            0x10 => Cop0::op(op.cpu, opcode),                         // COP0
+            0x11 => op.cpu.cop(1, opcode),                            // COP1
+            0x12 => op.cpu.cop(2, opcode),                            // COP2
+            0x13 => op.cpu.cop(3, opcode),                            // COP3
+            0x14 => {
+                // BEQL
+                let (cond, tgt) = (op.rt64() == op.rs64(), op.btgt());
+                op.cpu.branch_likely(cond, tgt);
+            }
+            0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea()).sx64(), // LW
 
-            _ => panic!("unimplemented opcode: func={:x?}", op.op()),
+            _ => panic!("unimplemented opcode: func={:x?}", op.op().hex()),
+        }
+    }
+
+    fn fetch(&self, addr: u32) -> MemIoR<u32> {
+        self.bus.borrow().fetch_read::<u32>(addr & 0x1FFF_FFFC)
+    }
+
+    fn read<U: MemInt>(&self, addr: u32) -> U {
+        info!(self.logger, "read memory"; o!("size"=>U::SIZE, "addr" => (addr & 0x1FFF_FFFC).hex()));
+        self.bus.borrow().read::<U>(addr & 0x1FFF_FFFC)
+    }
+
+    fn branch_likely(&mut self, cond: bool, tgt: u32) {
+        if cond {
+            self.branch_pc = tgt;
+            self.tight_exit = true;
+        } else {
+            // branch not taken, skip delay slot
+            self.pc += 4;
+            self.clock += 1;
+            self.tight_exit = true;
         }
     }
 
     pub fn run(&mut self, until: i64) {
         self.until = until;
-
-        let mem = self.bus.borrow().fetch_read::<u32>(self.pc);
-        let mut iter = mem.iter().unwrap();
         while self.clock < self.until {
-            let pc = self.pc;
-            self.pc += 4;
-            if let Some(op) = iter.next() {
+            let mut iter = self.fetch(self.pc).iter().unwrap();
+
+            // Tight loop: go through continuous memory, no branches, no IRQs
+            self.tight_exit = false;
+            while let Some(op) = iter.next() {
+                self.pc += 4;
                 self.op(op);
-            } else {
-                break;
+                if self.clock >= self.until || self.tight_exit {
+                    break;
+                }
             }
-            self.clock += 1;
+
+            if self.branch_pc != 0 {
+                let op = iter.next().unwrap_or_else(|| self.fetch(self.pc).read());
+                self.pc = self.branch_pc;
+                self.op(op);
+            }
         }
     }
 }

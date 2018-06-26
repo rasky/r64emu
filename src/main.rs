@@ -1,6 +1,8 @@
 #![feature(attr_literals)]
 
-use std::env;
+#[macro_use]
+extern crate slog;
+extern crate sloggers;
 
 #[macro_use]
 extern crate emu_derive;
@@ -8,10 +10,13 @@ extern crate byteorder;
 extern crate emu;
 extern crate pretty_hex;
 
-use self::byteorder::{BigEndian, ByteOrder, LittleEndian};
-use emu::bus::be::{Bus, DevPtr, Device, Mem};
+use emu::bus::be::{Bus, DevPtr, Mem};
 use pretty_hex::*;
+use sloggers::terminal::{Destination, TerminalLoggerBuilder};
+use sloggers::types::Severity;
+use sloggers::Build;
 use std::cell::RefCell;
+use std::env;
 use std::rc::Rc;
 
 mod cartridge;
@@ -51,9 +56,9 @@ struct N64 {
 }
 
 impl N64 {
-    fn new(romfn: &str) -> Result<N64> {
+    fn new(logger: &slog::Logger, romfn: &str) -> Result<N64> {
         let bus = Rc::new(RefCell::new(Bus::new()));
-        let cpu = Box::new(Cpu::new(bus.clone()));
+        let cpu = Box::new(Cpu::new(logger.new(o!()), bus.clone()));
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
         let mem = DevPtr::new(Memory::default());
         let pi = DevPtr::new(Pi::new("bios/pifdata.bin").chain_err(|| "cannot open BIOS file")?);
@@ -79,13 +84,20 @@ impl N64 {
 quick_main!(run);
 
 fn run() -> Result<()> {
+    let mut builder = TerminalLoggerBuilder::new();
+    builder.level(Severity::Debug);
+    builder.destination(Destination::Stderr);
+
+    let logger = builder.build().unwrap();
+    crit!(logger, "Hello World!");
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        return bail!("Usage: r64emu [rom]");
+        bail!("Usage: r64emu [rom]");
     }
 
-    let mut n64 = N64::new(&args[1])?;
+    let mut n64 = N64::new(&logger, &args[1])?;
 
     n64.cpu.run(10000);
 

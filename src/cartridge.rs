@@ -1,6 +1,6 @@
 extern crate emu;
 
-use emu::bus::be::{Bus, Device, Mem, MemFlags};
+use emu::bus::be::{Mem, MemFlags};
 use errors::*;
 use std::fs::File;
 use std::io::Read;
