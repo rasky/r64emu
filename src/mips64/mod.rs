@@ -233,11 +233,12 @@ impl Cpu {
                 _ => panic!("unimplemented special opcode: func={:x?}", op.special()),
             },
 
-            0x0A => *op.mrd64() = (op.irs32() < op.sximm32()) as u64, // SLTI
-            0x0B => *op.mrd64() = (op.rs32() < op.sximm32() as u32) as u64, // SLTIU
-            0x0C => *op.mrd64() = op.rs64() & op.imm64(),             // ANDI
-            0x0D => *op.mrd64() = op.rs64() | op.imm64(),             // ORI
-            0x0E => *op.mrd64() = op.rs64() ^ op.imm64(),             // XORI
+            0x09 => *op.mrt64() = (op.irs32() + op.sximm32()).sx64(), // ADDIU
+            0x0A => *op.mrt64() = (op.irs32() < op.sximm32()) as u64, // SLTI
+            0x0B => *op.mrt64() = (op.rs32() < op.sximm32() as u32) as u64, // SLTIU
+            0x0C => *op.mrt64() = op.rs64() & op.imm64(),             // ANDI
+            0x0D => *op.mrt64() = op.rs64() | op.imm64(),             // ORI
+            0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),             // XORI
             0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(),        // LUI
             0x10 => Cop0::op(op.cpu, opcode),                         // COP0
             0x11 => op.cpu.cop(1, opcode),                            // COP1
@@ -248,7 +249,13 @@ impl Cpu {
                 let (cond, tgt) = (op.rt64() == op.rs64(), op.btgt());
                 op.cpu.branch_likely(cond, tgt);
             }
+            0x15 => {
+                // BNEL
+                let (cond, tgt) = (op.rt64() != op.rs64(), op.btgt());
+                op.cpu.branch_likely(cond, tgt);
+            }
             0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea()).sx64(), // LW
+            0x2B => op.cpu.write::<u32>(op.ea(), op.rt32()),          // SW
 
             _ => panic!("unimplemented opcode: func={:x?}", op.op().hex()),
         }
@@ -261,6 +268,12 @@ impl Cpu {
     fn read<U: MemInt>(&self, addr: u32) -> U {
         info!(self.logger, "read memory"; o!("size"=>U::SIZE, "addr" => (addr & 0x1FFF_FFFC).hex()));
         self.bus.borrow().read::<U>(addr & 0x1FFF_FFFC)
+    }
+
+    fn write<U: MemInt>(&self, addr: u32, val: U) {
+        let val64: u64 = val.into();
+        info!(self.logger, "write memory"; o!("size"=>U::SIZE, "addr" => (addr & 0x1FFF_FFFC).hex(), "val" => val64.hex()));
+        self.bus.borrow().write::<U>(addr & 0x1FFF_FFFC, val);
     }
 
     fn branch_likely(&mut self, cond: bool, tgt: u32) {
