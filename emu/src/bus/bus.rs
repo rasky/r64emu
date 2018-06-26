@@ -190,7 +190,7 @@ where
         self.internal_fetch_read::<U>(addr).read::<Order, U>(addr)
     }
 
-    pub fn write<U: MemInt + 'a>(&'b mut self, addr: u32, val: U) {
+    pub fn write<U: MemInt + 'a>(&'b self, addr: u32, val: U) {
         self.internal_fetch_write::<U>(addr)
             .write::<Order, U>(addr, val);
     }
