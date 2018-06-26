@@ -1,4 +1,5 @@
 #![feature(box_syntax)]
+#![feature(exact_chunks)]
 
 #[macro_use]
 extern crate enum_map;

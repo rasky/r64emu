@@ -7,11 +7,12 @@ use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use super::radix::RadixTree;
 use super::regs::Reg;
 use enum_map::EnumMap;
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use std::rc::Rc;
+use std::slice;
 
 #[derive(Clone)]
 pub enum HwIoR {
@@ -27,14 +28,9 @@ pub enum HwIoW {
 
 impl HwIoR {
     fn at<O: ByteOrder, U: MemInt>(&self, addr: u32) -> MemIoR<O, U> {
-        let end = match self {
-            HwIoR::Mem(ref buf, mask) => (addr & !mask) + mask,
-            HwIoR::Func(_) => addr + 1,
-        };
         MemIoR {
             hwio: self.clone(),
             addr,
-            end,
             phantom: PhantomData,
         }
     }
@@ -73,8 +69,36 @@ impl HwIoW {
 pub struct MemIoR<O: ByteOrder, U: MemInt> {
     hwio: HwIoR,
     addr: u32,
-    end: u32,
     phantom: PhantomData<(O, U)>,
+}
+
+impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
+    pub fn read(&self) -> U {
+        self.hwio.read::<O, U>(self.addr)
+    }
+
+    // If MemIoR points to a memory area, returns an iterator over it
+    // that yields consecutive elements of type U.
+    // Otherwise, returns None.
+    pub fn iter(&self) -> Option<impl Iterator<Item = U>> {
+        match self.hwio {
+            HwIoR::Mem(ref buf, mask) => {
+                // Use unsafe here for performance: we don't want
+                // to borrow the memory area for each access.
+                let slice = {
+                    let raw: *const u8 = &buf.borrow()[0];
+                    let len = buf.borrow().len();
+                    unsafe { slice::from_raw_parts(raw, len) }
+                };
+                Some(
+                    slice[(self.addr & mask) as usize..]
+                        .exact_chunks(U::SIZE)
+                        .map(U::endian_read_from::<O>),
+                )
+            }
+            HwIoR::Func(_) => None,
+        }
+    }
 }
 
 pub struct MemIoW<O: ByteOrder, U: MemInt> {
@@ -83,48 +107,9 @@ pub struct MemIoW<O: ByteOrder, U: MemInt> {
     phantom: PhantomData<(O, U)>,
 }
 
-impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
-    pub fn read(&self) -> U {
-        self.hwio.read::<O, U>(self.addr)
-    }
-    pub fn iter<'a>(&'a self) -> Option<MemIoIterator<'a, O, U>> {
-        match self.hwio {
-            HwIoR::Mem(ref buf, mask) => Some(MemIoIterator {
-                mem: buf.borrow(),
-                addr: self.addr & mask,
-                end: mask,
-                phantom: PhantomData,
-            }),
-            HwIoR::Func(_) => None,
-        }
-    }
-}
-
 impl<O: ByteOrder, U: MemInt> MemIoW<O, U> {
     pub fn write(&self, val: U) {
         self.hwio.write::<O, U>(self.addr, val);
-    }
-}
-
-pub struct MemIoIterator<'a, O: ByteOrder, U: MemInt> {
-    mem: Ref<'a, Box<[u8]>>,
-    addr: u32,
-    end: u32,
-    phantom: PhantomData<(O, U)>,
-}
-
-impl<'a, O: ByteOrder, U: MemInt> Iterator for MemIoIterator<'a, O, U> {
-    type Item = U;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.addr > self.end {
-            None
-        } else {
-            let u = U::endian_read_from::<O>(&self.mem[self.addr as usize..]);
-            self.addr += U::SIZE as u32;
-            Some(u)
-        }
     }
 }
 
