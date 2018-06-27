@@ -8,7 +8,7 @@ extern crate emu_derive;
 #[cfg(test)]
 mod tests {
     use super::byteorder::LittleEndian;
-    use super::emu::bus::{Bus, DevPtr, Device, Mem, MemFlags, Reg};
+    use super::emu::bus::{Bus, DevPtr, Mem, Reg};
 
     #[derive(Default, DeviceLE)]
     struct Gpu {
