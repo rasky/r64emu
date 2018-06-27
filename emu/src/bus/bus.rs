@@ -1,4 +1,5 @@
 extern crate byteorder;
+extern crate slog;
 
 use self::byteorder::ByteOrder;
 use super::device::{DevPtr, Device};
@@ -27,7 +28,7 @@ pub enum HwIoW {
 }
 
 impl HwIoR {
-    fn at<O: ByteOrder, U: MemInt>(&self, addr: u32) -> MemIoR<O, U> {
+    pub(crate) fn at<O: ByteOrder, U: MemInt>(&self, addr: u32) -> MemIoR<O, U> {
         MemIoR {
             hwio: self.clone(),
             addr,
@@ -47,7 +48,7 @@ impl HwIoR {
 }
 
 impl HwIoW {
-    fn at<O: ByteOrder, U: MemInt>(&self, addr: u32) -> MemIoW<O, U> {
+    pub(crate) fn at<O: ByteOrder, U: MemInt>(&self, addr: u32) -> MemIoW<O, U> {
         MemIoW {
             hwio: self.clone(),
             addr,
@@ -156,6 +157,8 @@ pub struct Bus<Order: ByteOrderCombiner> {
     unmap_r: HwIoR,
     unmap_w: HwIoW,
 
+    logger: slog::Logger,
+
     phantom: PhantomData<Order>,
 }
 
@@ -163,7 +166,7 @@ impl<'a: 'b, 'b, 's: 'b, Order> Bus<Order>
 where
     Order: ByteOrderCombiner + 'static,
 {
-    pub fn new() -> Box<Bus<Order>> {
+    pub fn new(logger: slog::Logger) -> Box<Bus<Order>> {
         assert_eq_size!(HwIoR, [u8; 24]);
         assert_eq_size!(HwIoW, [u8; 24]);
 
@@ -182,6 +185,7 @@ where
             },
             unmap_r: unmapped_area_r(),
             unmap_w: unmapped_area_w(),
+            logger: logger,
             phantom: PhantomData,
         })
     }
@@ -209,7 +213,10 @@ where
     fn internal_fetch_read<U: MemInt + 'a>(&'b self, addr: u32) -> &'b HwIoR {
         self.reads[U::ACCESS_SIZE]
             .lookup(addr)
-            .or(Some(&self.unmap_r))
+            .or_else(|| {
+                error!(self.logger, "unmapped bus read"; o!("addr" => format!("0x{:x}", addr), "size" => U::SIZE));
+                Some(&self.unmap_r)
+            })
             .unwrap()
     }
 
@@ -217,7 +224,10 @@ where
     fn internal_fetch_write<U: MemInt + 'a>(&'b self, addr: u32) -> &'b HwIoW {
         self.writes[U::ACCESS_SIZE]
             .lookup(addr)
-            .or(Some(&self.unmap_w))
+            .or_else(|| {
+                error!(self.logger, "unmapped bus write"; o!("addr" => format!("0x{:x}", addr), "size" => U::SIZE));
+                Some(&self.unmap_w)
+            })
             .unwrap()
     }
 
@@ -390,6 +400,7 @@ mod tests {
         reg1.set(0x12345678);
 
         let reg2 = Reg32::new(
+            "",
             0x12345678,
             0xffff0000,
             RegFlags::default(),

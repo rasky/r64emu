@@ -13,4 +13,7 @@ extern crate static_assertions;
 #[macro_use]
 extern crate array_macro;
 
+#[macro_use]
+extern crate slog;
+
 pub mod bus;
