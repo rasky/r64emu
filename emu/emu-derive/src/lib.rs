@@ -228,8 +228,8 @@ fn expand_reg_devinit(
 
     let init = ra.init.parse::<u32>().unwrap();
     let rwmask = ra.rwmask.parse::<u32>().unwrap();
-    let read = !ra.readonly;
-    let write = !ra.writeonly;
+    let read = !ra.writeonly;
+    let write = !ra.readonly;
     quote! {
         #initbody
         *#fi = Reg::new(
