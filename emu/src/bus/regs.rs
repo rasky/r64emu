@@ -3,6 +3,7 @@ extern crate byteorder;
 use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
 use super::memint::{ByteOrderCombiner, MemInt};
 use std::cell::RefCell;
+use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
@@ -40,6 +41,7 @@ where
     O: ByteOrderCombiner,
     U: MemInt,
 {
+    name: String,
     raw: Rc<RefCell<Box<[u8]>>>,
     romask: U,
     flags: RegFlags,
@@ -55,6 +57,7 @@ where
 {
     fn default() -> Self {
         Reg {
+            name: String::new(),
             raw: Rc::new(RefCell::new(box [0u8; 8])),
             romask: U::zero(),
             flags: RegFlags::default(),
@@ -78,8 +81,9 @@ where
         U::endian_write_to::<O>(&mut raw.borrow_mut()[..], val)
     }
 
-    pub fn new(init: U, rwmask: U, flags: RegFlags, wcb: Wcb<U>, rcb: Rcb<U>) -> Self {
+    pub fn new(name: &str, init: U, rwmask: U, flags: RegFlags, wcb: Wcb<U>, rcb: Rcb<U>) -> Self {
         let reg = Reg {
+            name: name.into(),
             romask: !rwmask,
             flags,
             wcb,
@@ -157,6 +161,25 @@ where
                 }
             }))
         }
+    }
+}
+
+impl<O: ByteOrderCombiner, U: MemInt + 'static> fmt::Debug for Reg<O, U> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let name = if self.name.is_empty() {
+            "Reg"
+        } else {
+            &self.name
+        };
+        let val: u64 = self.get().into();
+        let rwmask: u64 = (!self.romask).into();
+        fmt.debug_struct(name)
+            .field("val", &format!("0x{:x}", val))
+            .field("rwmask", &format!("0x{:x}", &rwmask))
+            .field("flags", &self.flags)
+            .field("rcb", &self.rcb.is_some())
+            .field("wcb", &self.wcb.is_some())
+            .finish()
     }
 }
 
