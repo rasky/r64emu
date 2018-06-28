@@ -1,5 +1,7 @@
+extern crate crc;
 extern crate emu;
 
+use self::crc::crc32;
 use emu::bus::be::{Mem, MemFlags};
 use errors::*;
 use std::fs::File;
@@ -9,6 +11,14 @@ use std::io::Read;
 pub struct Cartridge {
     #[mem(offset = 0, vsize = 0x0FC0_0000)]
     rom: Mem,
+}
+
+pub enum CicModel {
+    Cic6101 = 6101,
+    Cic6102 = 6102,
+    Cic6103 = 6103,
+    Cic6105 = 6105,
+    Cic6106 = 6106,
 }
 
 pub fn romswap(rom: Vec<u8>) -> Vec<u8> {
@@ -33,8 +43,26 @@ impl Cartridge {
         let mut contents = vec![];
         file.read_to_end(&mut contents)?;
 
+        if !contents.len().is_power_of_two() {
+            let newsize = contents.len().next_power_of_two();
+            contents.resize(newsize, 0xff);
+        }
+
         Ok(Cartridge {
             rom: Mem::from_buffer(romswap(contents), MemFlags::READACCESS),
         })
+    }
+
+    // Detect the CIC model by checksumming the header of the ROM.
+    pub fn detect_cic_model(&self) -> Result<CicModel> {
+        let rom = self.rom.buf();
+        match crc32::checksum_ieee(&rom[0x40..0x1000]) {
+            0x6170A4A1 => Ok(CicModel::Cic6101),
+            0x90BB6CB5 => Ok(CicModel::Cic6102),
+            0x0B050EE0 => Ok(CicModel::Cic6103),
+            0x98BC2C86 => Ok(CicModel::Cic6105),
+            0xACC8580A => Ok(CicModel::Cic6106),
+            chk => bail!("cannot detect CIC model in ROM (chk = {:08x})", chk),
+        }
     }
 }
