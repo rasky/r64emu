@@ -289,6 +289,15 @@ where
         device.borrow().dev_map(self, bank, base)
     }
 
+    // Add a memory map for a "combiner": that is, an internal function that combines two
+    // half-sized memory accesses into a larger word. For instance, if two reg16 are mapped
+    // at addresses 0x8 and 0xA, we want a 32-bit read at 0x8 to combine both registers
+    // into a single 32-bit word.
+    // NOTE: the order of memory access *matters*, especially if the access size is
+    // larger than the physical bus size. For instance, calling a 64-bit read in a bus
+    // connected to a 32-bit CPU actually simulates two physical 32-bit accesses.
+    // This function guarantees that accesses happens in address order irrespective
+    // of the endianess (that is, in the above example, 0x8 is read before 0xA).
     fn map_combine<U: MemInt + 'static>(&mut self, addr: u32) -> Result<(), &'static str> {
         let before = self.fetch_read::<U::Half>(addr);
         let after = self.fetch_read::<U::Half>(addr + (mem::size_of::<U>() as u32) / 2);
@@ -297,7 +306,9 @@ where
             addr,
             addr + U::SIZE as u32 - 1,
             HwIoR::Func(Rc::new(move |_| {
-                U::from_halves::<Order>(before.read(), after.read()).into()
+                let val_before = before.read();
+                let val_after = after.read();
+                U::from_halves::<Order>(val_before, val_after).into()
             })),
             true, // a combiner might overwrite if already existing
         )?;
