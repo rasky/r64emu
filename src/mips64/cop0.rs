@@ -1,4 +1,5 @@
-use super::{Cpu, Mipsop};
+use super::cpu::Cpu;
+use super::Mipsop;
 
 #[derive(Default)]
 pub(crate) struct Cop0 {
