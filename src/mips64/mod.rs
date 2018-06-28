@@ -56,6 +56,9 @@ impl<'a> Mipsop<'a> {
     fn rd64(&self) -> u64 {
         self.cpu.regs[self.rd()]
     }
+    fn irs64(&self) -> i64 {
+        self.rs64() as i64
+    }
     fn rs32(&self) -> u32 {
         self.rs64() as u32
     }

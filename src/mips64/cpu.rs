@@ -25,19 +25,22 @@ pub struct Cpu {
     pub(crate) tight_exit: bool,
 }
 
-// Macros to workaround the fact that we can't express branches opcodes as one-liners
-// because of the lexical borrow-checker.
 macro_rules! branch {
     ($op:ident, $cond:expr, $tgt:expr) => {{
-        let (cond, tgt) = ($cond, $tgt);
-        $op.cpu.branch(cond, tgt);
+        branch!($op, $cond, $tgt, link(false), likely(false));
     }};
-}
-
-macro_rules! branch_likely {
-    ($op:ident, $cond:expr, $tgt:expr) => {{
+    ($op:ident, $cond:expr, $tgt:expr,link($link:expr)) => {{
+        branch!($op, $cond, $tgt, link($link), likely(true));
+    }};
+    ($op:ident, $cond:expr, $tgt:expr,likely($lkl:expr)) => {{
+        branch!($op, $cond, $tgt, link(false), likely($lkl));
+    }};
+    ($op:ident, $cond:expr, $tgt:expr,link($link:expr),likely($lkl:expr)) => {{
+        if $link {
+            $op.cpu.regs[31] = ($op.cpu.pc + 4) as u64;
+        }
         let (cond, tgt) = ($cond, $tgt);
-        $op.cpu.branch_likely(cond, tgt);
+        $op.cpu.branch(cond, tgt, $lkl);
     }};
 }
 
@@ -81,12 +84,11 @@ impl Cpu {
                 0x00 => *op.mrd64() = (op.rt32() << op.sa()).sx64(), // SLL
                 0x02 => *op.mrd64() = (op.rt32() >> op.sa()).sx64(), // SRL
                 0x03 => *op.mrd64() = (op.irt32() >> op.sa()).sx64(), // SRA
-                0x08 => branch!(op, true, op.rs32()),                // JR
-                0x09 => {
-                    // JALR
-                    op.cpu.regs[31] = (op.cpu.pc + 4) as u64;
-                    branch!(op, true, op.rs32());
-                }
+                0x04 => *op.mrd64() = (op.rt32() << (op.rs32() & 0x1F)).sx64(), // SLLV
+                0x06 => *op.mrd64() = (op.rt32() >> (op.rs32() & 0x1F)).sx64(), // SRLV
+                0x07 => *op.mrd64() = (op.irt32() >> (op.rs32() & 0x1F)).sx64(), // SRAV
+                0x08 => branch!(op, true, op.rs32(), link(false)),   // JR
+                0x09 => branch!(op, true, op.rs32(), link(true)),    // JALR
 
                 0x10 => *op.mrd64() = op.cpu.hi, // MFHI
                 0x11 => op.cpu.hi = op.rs64(),   // MTHI
@@ -132,6 +134,14 @@ impl Cpu {
 
             // REGIMM
             0x01 => match op.rt() {
+                0x00 => branch!(op, op.irs64() < 0, op.btgt(), link(false), likely(false)), // BLTZ
+                0x01 => branch!(op, op.irs64() >= 0, op.btgt(), link(false), likely(false)), // BGEZ
+                0x02 => branch!(op, op.irs64() < 0, op.btgt(), link(false), likely(true)),  // BLTZL
+                0x03 => branch!(op, op.irs64() >= 0, op.btgt(), link(false), likely(true)), // BGEZL
+                0x10 => branch!(op, op.irs64() < 0, op.btgt(), link(true), likely(false)), // BLTZAL
+                0x11 => branch!(op, op.irs64() >= 0, op.btgt(), link(true), likely(false)), // BGEZAL
+                0x12 => branch!(op, op.irs64() < 0, op.btgt(), link(true), likely(true)), // BLTZALL
+                0x13 => branch!(op, op.irs64() >= 0, op.btgt(), link(true), likely(true)), // BGEZALL
                 _ => panic!("unimplemented regimm opcode: func=0x{:x?}", op.rt()),
             },
 
@@ -156,10 +166,10 @@ impl Cpu {
             0x11 => op.cpu.cop(1, opcode),    // COP1
             0x12 => op.cpu.cop(2, opcode),    // COP2
             0x13 => op.cpu.cop(3, opcode),    // COP3
-            0x14 => branch_likely!(op, op.rs64() == op.rt64(), op.btgt()), // BEQL
-            0x15 => branch_likely!(op, op.rs64() != op.rt64(), op.btgt()), // BNEL
-            0x16 => branch_likely!(op, op.rs64() as i64 <= 0, op.btgt()), // BLEZL
-            0x17 => branch_likely!(op, op.rs64() as i64 > 0, op.btgt()), // BGTZL
+            0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)), // BEQL
+            0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)), // BNEL
+            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)), // BLEZL
+            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)), // BGTZL
 
             0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea()).sx64(), // LW
             0x2B => op.cpu.write::<u32>(op.ea(), op.rt32()),          // SW
@@ -180,19 +190,13 @@ impl Cpu {
         self.bus.borrow().write::<U>(addr & 0x1FFF_FFFC, val);
     }
 
-    fn branch(&mut self, cond: bool, tgt: u32) {
+    #[inline]
+    fn branch(&mut self, cond: bool, tgt: u32, likely: bool) {
         if cond {
             self.branch_pc = tgt;
             self.tight_exit = true;
-        }
-    }
-
-    fn branch_likely(&mut self, cond: bool, tgt: u32) {
-        if cond {
-            self.branch_pc = tgt;
-            self.tight_exit = true;
-        } else {
-            // branch not taken, skip delay slot
+        } else if likely {
+            // branch not taken; if likely, skip delay slot
             self.pc += 4;
             self.clock += 1;
             self.tight_exit = true;
