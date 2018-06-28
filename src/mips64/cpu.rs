@@ -145,8 +145,12 @@ impl Cpu {
                 _ => panic!("unimplemented regimm opcode: func=0x{:x?}", op.rt()),
             },
 
+            0x02 => branch!(op, true, op.jtgt(), link(false)), // J
+            0x03 => branch!(op, true, op.jtgt(), link(true)),  // JAL
             0x04 => branch!(op, op.rs64() == op.rt64(), op.btgt()), // BEQ
             0x05 => branch!(op, op.rs64() != op.rt64(), op.btgt()), // BNE
+            0x06 => branch!(op, op.irs64() <= 0, op.btgt()),   // BLEZ
+            0x07 => branch!(op, op.irs64() > 0, op.btgt()),    // BGTZ
             0x08 => {
                 // ADDI
                 match (op.rs32() as i32).checked_add(op.sximm32()) {
@@ -171,10 +175,21 @@ impl Cpu {
             0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)), // BLEZL
             0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)), // BGTZL
 
+            0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea()).sx64(), // LB
+            0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea()).sx64(), // LH
             0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea()).sx64(), // LW
-            0x2B => op.cpu.write::<u32>(op.ea(), op.rt32()),          // SW
+            0x24 => *op.mrt64() = op.cpu.read::<u8>(op.ea()) as u64, // LBU
+            0x25 => *op.mrt64() = op.cpu.read::<u16>(op.ea()) as u64, // LBU
+            0x28 => op.cpu.write::<u8>(op.ea(), op.rt32() as u8),    // SB
+            0x29 => op.cpu.write::<u16>(op.ea(), op.rt32() as u16),  // SH
+            0x2B => op.cpu.write::<u32>(op.ea(), op.rt32()),         // SW
+            0x2F => {}                                               // CACHE
 
-            _ => panic!("unimplemented opcode: func=0x{:x?}", op.op().hex()),
+            _ => panic!(
+                "unimplemented opcode: func=0x{:x?}, pc={}",
+                op.op(),
+                op.cpu.pc.hex()
+            ),
         }
     }
 
