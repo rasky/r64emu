@@ -5,10 +5,24 @@ extern crate emu;
 #[macro_use]
 extern crate emu_derive;
 
+#[macro_use]
+extern crate slog;
+
 #[cfg(test)]
 mod tests {
     use super::byteorder::LittleEndian;
     use super::emu::bus::{Bus, DevPtr, Mem, Reg};
+
+    use super::slog;
+    use super::slog::Drain;
+    extern crate slog_term;
+    use std;
+
+    fn logger() -> slog::Logger {
+        let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        slog::Logger::root(drain, o!())
+    }
 
     #[derive(Default, DeviceLE)]
     struct Gpu {
@@ -75,7 +89,7 @@ mod tests {
     fn basic_device() {
         let mut gpu = DevPtr::new(Gpu::default());
 
-        let mut bus = Bus::<LittleEndian>::new();
+        let mut bus = Bus::<LittleEndian>::new(logger());
         bus.map_device(0x04000000, &mut gpu, 0).expect("map error");
         bus.map_device(0x08000000, &mut gpu, 1).expect("map error");
 

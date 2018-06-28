@@ -379,13 +379,22 @@ mod tests {
     use bus::le::{Reg16, Reg32, Reg8, RegFlags};
 
     extern crate byteorder;
+    extern crate slog_term;
     use self::byteorder::{BigEndian, LittleEndian};
     use super::super::mem::MemFlags;
+    use super::slog::Drain;
+    use std;
+
+    fn logger() -> slog::Logger {
+        let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        slog::Logger::root(drain, o!())
+    }
 
     #[test]
     fn basic_mem() {
         let ram1 = Mem::new(1024, MemFlags::default());
-        let mut bus = Bus::<LittleEndian>::new();
+        let mut bus = Bus::<LittleEndian>::new(logger());
 
         assert_eq!(bus.map_mem(0x04000000, 0x06000000, &ram1).is_ok(), true);
         bus.write::<u32>(0x04000123, 0xaabbccdd);
@@ -408,7 +417,7 @@ mod tests {
             Some(Rc::new(box |x| x | 0xf0)),
         );
 
-        let mut bus = Bus::<LittleEndian>::new();
+        let mut bus = Bus::<LittleEndian>::new(logger());
         assert_eq!(bus.map_reg(0x04000120, &reg1).is_ok(), true);
         assert_eq!(bus.map_reg(0x04000124, &reg2).is_ok(), true);
 
@@ -435,7 +444,7 @@ mod tests {
         let reg3 = Reg8::default();
         let reg4 = Reg8::default();
 
-        let mut bus = Bus::<LittleEndian>::new();
+        let mut bus = Bus::<LittleEndian>::new(logger());
         assert_eq!(bus.map_reg(0xFF000000, &reg1).is_ok(), true);
         assert_eq!(bus.map_reg(0xFF000004, &reg2).is_ok(), true);
         assert_eq!(bus.map_reg(0xFF000006, &reg3).is_ok(), true);
@@ -475,7 +484,7 @@ mod tests {
         let reg3 = Reg8::default();
         let reg4 = Reg8::default();
 
-        let mut bus = Bus::<BigEndian>::new();
+        let mut bus = Bus::<BigEndian>::new(logger());
 
         assert_eq!(bus.map_reg(0xFF000000, &reg1).is_ok(), true);
         assert_eq!(bus.map_reg(0xFF000004, &reg2).is_ok(), true);
