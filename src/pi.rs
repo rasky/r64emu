@@ -1,9 +1,12 @@
 extern crate emu;
 extern crate slog;
-use emu::bus::be::{Mem, MemFlags, Reg32};
+use emu::bus::be::{Bus, Mem, MemFlags, Reg32};
+use emu::int::Numerics;
 use errors::*;
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::Read;
+use std::rc::Rc;
 
 #[derive(DeviceBE)]
 pub struct Pi {
@@ -19,7 +22,7 @@ pub struct Pi {
     #[reg(bank = 0, offset = 0x00, rwmask = 0x00FF_FFFF)]
     dma_ram_addr: Reg32,
 
-    #[reg(bank = 0, offset = 0x04, rwmask = 0x00FF_FFFF)]
+    #[reg(bank = 0, offset = 0x04)]
     dma_rom_addr: Reg32,
 
     #[reg(bank = 0, offset = 0x08, rwmask = 0x00FF_FFFF, wcb)]
@@ -32,15 +35,17 @@ pub struct Pi {
     dma_status: Reg32,
 
     logger: slog::Logger,
+    bus: Rc<RefCell<Box<Bus>>>,
 }
 
 impl Pi {
-    pub fn new(logger: slog::Logger, pifrom: &str) -> Result<Pi> {
+    pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>, pifrom: &str) -> Result<Pi> {
         let mut contents = vec![];
         File::open(pifrom)?.read_to_end(&mut contents)?;
 
         Ok(Pi {
             logger,
+            bus,
             rom: Mem::from_buffer(contents, MemFlags::READACCESS),
             ram: Mem::default(),
             magic: Reg32::default(),
@@ -59,9 +64,8 @@ impl Pi {
 
     fn cb_write_magic(&mut self, old: u32, new: u32) {
         if new & 0x20 != 0 {
-            crit!(self.logger, "magic: unlock boot");
+            info!(self.logger, "magic: unlock boot");
             self.magic.set(self.magic.get() | 0x80);
-            panic!("ciaos");
         }
     }
 
@@ -69,8 +73,24 @@ impl Pi {
         info!(self.logger, "write dma status"; o!("val" => format!("{:x}", new)));
     }
 
-    fn cb_write_dma_wr_len(&mut self, old: u32, new: u32) {
-        unimplemented!()
+    fn cb_write_dma_wr_len(&mut self, _old: u32, val: u32) {
+        let mut raddr = self.dma_rom_addr.get();
+        let mut waddr = self.dma_ram_addr.get();
+        info!(self.logger, "DMA xfer"; o!(
+            "src" => raddr.hex(),
+            "dst" => waddr.hex(),
+            "len" => val+1));
+
+        let bus = self.bus.borrow();
+        let mut i = 0;
+        while i < val + 1 {
+            bus.write::<u32>(waddr, bus.read::<u32>(raddr));
+            raddr = raddr + 4;
+            waddr = waddr + 4;
+            i += 4;
+        }
+        self.dma_rom_addr.set(raddr);
+        self.dma_ram_addr.set(waddr);
     }
 
     fn cb_write_dma_rd_len(&mut self, old: u32, new: u32) {

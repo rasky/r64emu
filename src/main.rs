@@ -25,13 +25,15 @@ mod mips64;
 mod pi;
 mod si;
 mod sp;
+mod vi;
 
-use cartridge::Cartridge;
+use cartridge::{Cartridge, CicModel};
 use dp::Dp;
 use mips64::Cpu;
 use pi::Pi;
 use si::Si;
 use sp::Sp;
+use vi::Vi;
 
 #[macro_use]
 extern crate error_chain;
@@ -62,6 +64,7 @@ struct N64 {
     si: DevPtr<Si>,
     sp: DevPtr<Sp>,
     dp: DevPtr<Dp>,
+    vi: DevPtr<Vi>,
 }
 
 impl N64 {
@@ -71,11 +74,13 @@ impl N64 {
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
         let mem = DevPtr::new(Memory::default());
         let pi = DevPtr::new(
-            Pi::new(logger.new(o!()), "bios/pifdata.bin").chain_err(|| "cannot open BIOS file")?,
+            Pi::new(logger.new(o!()), bus.clone(), "bios/pifdata.bin")
+                .chain_err(|| "cannot open BIOS file")?,
         );
         let sp = DevPtr::new(Sp::new(logger.new(o!())));
         let si = DevPtr::new(Si::new(logger.new(o!())));
         let dp = DevPtr::new(Dp::new(logger.new(o!())));
+        let vi = DevPtr::new(Vi::new(logger.new(o!())));
 
         {
             let mut bus = bus.borrow_mut();
@@ -83,6 +88,7 @@ impl N64 {
             bus.map_device(0x0400_0000, &sp, 1)?;
             bus.map_device(0x0410_0000, &dp, 0)?;
             bus.map_device(0x0404_0000, &sp, 0)?;
+            bus.map_device(0x0440_0000, &vi, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
             bus.map_device(0x0480_0000, &si, 0)?;
             bus.map_device(0x1FC0_0000, &pi, 1)?;
@@ -98,7 +104,23 @@ impl N64 {
             si,
             sp,
             dp,
+            vi,
         });
+    }
+
+    // Setup the CIC (copy protection) emulation.
+    fn setup_cic(&self) -> Result<()> {
+        // Setup the encryption seed, given the CIC model that we detect
+        // by checksumming the ROM header.
+        let seed: u32 = match self.cart.borrow().detect_cic_model()? {
+            CicModel::Cic6101 => 0x3F, // starfox
+            CicModel::Cic6102 => 0x3F, // mario
+            CicModel::Cic6103 => 0x78, // banjo
+            CicModel::Cic6105 => 0x91, // zelda
+            CicModel::Cic6106 => 0x85, // f-zero x
+        };
+        self.bus.borrow().write::<u32>(0x1FC0_07E4, seed << 8);
+        Ok(())
     }
 }
 
@@ -118,7 +140,7 @@ fn log_build_async() -> slog::Logger {
 }
 
 fn run() -> Result<()> {
-    let logger = log_build_sync();
+    let logger = log_build_async();
     crit!(logger, "Hello World!");
 
     let args: Vec<String> = env::args().collect();
@@ -128,8 +150,9 @@ fn run() -> Result<()> {
     }
 
     let mut n64 = N64::new(&logger, &args[1])?;
+    n64.setup_cic()?;
 
-    n64.cpu.run(200000);
+    n64.cpu.run(187488000 / 2 * 5);
 
     info!(
         logger,

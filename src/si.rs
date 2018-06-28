@@ -1,6 +1,7 @@
 extern crate emu;
 extern crate slog;
 use emu::bus::be::Reg32;
+use emu::int::Numerics;
 
 #[derive(DeviceBE)]
 pub struct Si {
@@ -18,7 +19,7 @@ impl Si {
         }
     }
 
-    fn cb_write_status(&self, old: u32, new: u32) {
-        unimplemented!();
+    fn cb_write_status(&self, _old: u32, new: u32) {
+        error!(self.logger, "write SI status reg"; o!("val" => new.hex()));
     }
 }
