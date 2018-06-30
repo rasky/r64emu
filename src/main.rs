@@ -15,6 +15,7 @@ extern crate emu;
 extern crate pretty_hex;
 
 use emu::bus::be::{Bus, DevPtr, Mem};
+use emu::hw;
 use emu::sync;
 use pretty_hex::*;
 use slog::Drain;
@@ -93,13 +94,13 @@ impl N64 {
             let mut bus = bus.borrow_mut();
             bus.map_device(0x0000_0000, &mem, 0)?;
             bus.map_device(0x0400_0000, &sp, 1)?;
-            bus.map_device(0x0410_0000, &dp, 0)?;
             bus.map_device(0x0404_0000, &sp, 0)?;
+            bus.map_device(0x0410_0000, &dp, 0)?;
             bus.map_device(0x0440_0000, &vi, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
             bus.map_device(0x0480_0000, &si, 0)?;
-            bus.map_device(0x1FC0_0000, &pi, 1)?;
             bus.map_device(0x1000_0000, &cart, 0)?;
+            bus.map_device(0x1FC0_0000, &pi, 1)?;
         }
 
         const MAIN_CLOCK: i64 = 187488000; // TODO: guessed
@@ -179,11 +180,24 @@ fn run() -> Result<()> {
         bail!("Usage: r64emu [rom]");
     }
 
+    let mut out = hw::Output::new(hw::OutputConfig {
+        title: "Rust - Nintendo 64 Emulator".into(),
+        width: 640,
+        height: 480,
+        fps: 60,
+        enforce_speed: false,
+    })?;
+    out.enable_video()?;
+
     let mut n64 = N64::new(&logger, &args[1])?;
     n64.setup_cic()?;
 
     for _ in 0..300 {
+        if !out.poll() {
+            break;
+        }
         n64.run_frame();
+        out.present();
     }
 
     info!(
