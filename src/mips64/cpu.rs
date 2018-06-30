@@ -23,6 +23,9 @@ pub struct Cpu {
     clock: i64,
     until: i64,
     pub(crate) tight_exit: bool,
+
+    last_fetch_addr: u32,
+    last_fetch_mem: MemIoR<u32>,
 }
 
 macro_rules! branch {
@@ -58,6 +61,8 @@ impl Cpu {
             clock: 0,
             until: 0,
             tight_exit: false,
+            last_fetch_addr: 0,
+            last_fetch_mem: MemIoR::default(),
         };
     }
 
@@ -193,8 +198,13 @@ impl Cpu {
         }
     }
 
-    fn fetch(&self, addr: u32) -> MemIoR<u32> {
-        self.bus.borrow().fetch_read::<u32>(addr & 0x1FFF_FFFC)
+    fn fetch(&mut self, addr: u32) -> &MemIoR<u32> {
+        // Save last fetched memio, to speed up hot loops
+        if self.last_fetch_addr != addr {
+            self.last_fetch_addr = addr;
+            self.last_fetch_mem = self.bus.borrow().fetch_read::<u32>(addr & 0x1FFF_FFFC);
+        }
+        &self.last_fetch_mem
     }
 
     fn read<U: MemInt>(&self, addr: u32) -> U {
@@ -221,7 +231,8 @@ impl Cpu {
     pub fn run(&mut self, until: i64) {
         self.until = until;
         while self.clock < self.until {
-            let mut iter = self.fetch(self.pc).iter().unwrap();
+            let pc = self.pc;
+            let mut iter = self.fetch(pc).iter().unwrap();
 
             // Tight loop: go through continuous memory, no branches, no IRQs
             self.tight_exit = false;
@@ -234,7 +245,8 @@ impl Cpu {
             }
 
             if self.branch_pc != 0 {
-                let op = iter.next().unwrap_or_else(|| self.fetch(self.pc).read());
+                let pc = self.pc;
+                let op = iter.next().unwrap_or_else(|| self.fetch(pc).read());
                 self.pc = self.branch_pc;
                 self.branch_pc = 0;
                 self.op(op);
