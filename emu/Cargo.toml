@@ -13,3 +13,4 @@ array-macro = "1.0"
 emu_derive = { path="emu-derive" }
 slog = "2.2.3"
 slog-term = "2.4.0"
+sdl2 = "0.31.0"
