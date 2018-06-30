@@ -18,3 +18,4 @@ extern crate slog;
 
 pub mod bus;
 pub mod int;
+pub mod sync;
