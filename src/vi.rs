@@ -19,6 +19,10 @@ impl Vi {
         }
     }
 
+    pub fn set_line(&self, y: usize) {
+        self.current_line.set(y as u32);
+    }
+
     fn cb_write_current_line(&self, _old: u32, new: u32) {
         error!(self.logger, "write VI current line"; o!("val" => new.hex()));
     }

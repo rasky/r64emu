@@ -3,6 +3,7 @@ extern crate emu;
 use self::emu::bus::be::{Bus, MemIoR};
 use self::emu::bus::MemInt;
 use self::emu::int::Numerics;
+use self::emu::sync;
 use super::cop0::Cop0;
 use super::Mipsop;
 use slog;
@@ -252,5 +253,15 @@ impl Cpu {
                 self.op(op);
             }
         }
+    }
+}
+
+impl sync::Subsystem for Box<Cpu> {
+    fn run(&mut self, until: i64) {
+        Cpu::run(self, until)
+    }
+
+    fn cycles(&self) -> i64 {
+        self.clock
     }
 }

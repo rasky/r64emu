@@ -1,10 +1,12 @@
 #![feature(attr_literals)]
 
 #[macro_use]
+extern crate lazy_static;
+
+#[macro_use]
 extern crate slog;
 extern crate slog_async;
 extern crate slog_term;
-extern crate sloggers;
 
 #[macro_use]
 extern crate emu_derive;
@@ -13,6 +15,7 @@ extern crate emu;
 extern crate pretty_hex;
 
 use emu::bus::be::{Bus, DevPtr, Mem};
+use emu::sync;
 use pretty_hex::*;
 use slog::Drain;
 use std::cell::RefCell;
@@ -55,8 +58,9 @@ struct Memory {
 }
 
 struct N64 {
+    sync: sync::Sync,
     bus: Rc<RefCell<Box<Bus>>>,
-    cpu: Box<Cpu>,
+    cpu: Rc<RefCell<Box<Cpu>>>,
     cart: DevPtr<Cartridge>,
 
     mem: DevPtr<Memory>,
@@ -70,7 +74,10 @@ struct N64 {
 impl N64 {
     fn new(logger: &slog::Logger, romfn: &str) -> Result<N64> {
         let bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
-        let cpu = Box::new(Cpu::new(logger.new(o!()), bus.clone()));
+        let cpu = Rc::new(RefCell::new(Box::new(Cpu::new(
+            logger.new(o!()),
+            bus.clone(),
+        ))));
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
         let mem = DevPtr::new(Memory::default());
         let pi = DevPtr::new(
@@ -95,7 +102,20 @@ impl N64 {
             bus.map_device(0x1000_0000, &cart, 0)?;
         }
 
+        const MAIN_CLOCK: i64 = 187488000; // TODO: guessed
+
+        let mut sync = sync::Sync::new(sync::Config {
+            main_clock: MAIN_CLOCK,
+            dot_clock_divider: 8,
+            hdots: 744,
+            vdots: 525,
+            hsyncs: vec![0], // sync at the beginning of each line
+            vsyncs: vec![],
+        });
+        sync.register(cpu.clone(), MAIN_CLOCK / 2);
+
         return Ok(N64 {
+            sync,
             cpu,
             cart,
             bus,
@@ -121,6 +141,16 @@ impl N64 {
         };
         self.bus.borrow().write::<u32>(0x1FC0_07E4, seed << 8);
         Ok(())
+    }
+
+    fn run_frame(&mut self) {
+        let vi = self.vi.clone();
+        self.sync.run_frame(move |evt| match evt {
+            sync::Event::HSync(x, y) if x == 0 => {
+                vi.borrow_mut().set_line(y);
+            }
+            _ => panic!("unexpected sync event: {:?}", evt),
+        });
     }
 }
 
@@ -152,12 +182,14 @@ fn run() -> Result<()> {
     let mut n64 = N64::new(&logger, &args[1])?;
     n64.setup_cic()?;
 
-    n64.cpu.run(187488000 / 2 * 5);
+    for _ in 0..300 {
+        n64.run_frame();
+    }
 
     info!(
         logger,
         "finish";
-        o!("pc" => format!("{:x}", n64.cpu.get_pc()))
+        o!("pc" => format!("{:x}", n64.cpu.borrow().get_pc()))
     );
 
     Ok(())
