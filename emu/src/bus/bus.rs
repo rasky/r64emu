@@ -74,6 +74,14 @@ pub struct MemIoR<O: ByteOrder, U: MemInt> {
 }
 
 impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
+    pub fn default() -> Self {
+        MemIoR {
+            hwio: HwIoR::Func(Rc::new(|_| 0)),
+            addr: 0,
+            phantom: PhantomData,
+        }
+    }
+
     pub fn read(&self) -> U {
         self.hwio.read::<O, U>(self.addr)
     }
