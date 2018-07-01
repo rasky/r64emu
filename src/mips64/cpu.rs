@@ -48,6 +48,24 @@ macro_rules! branch {
     }};
 }
 
+macro_rules! check_overflow_add {
+    ($op:ident, $dest:expr, $reg1:expr, $reg2:expr) => {{
+        match $reg1.checked_add($reg2) {
+            Some(res) => $dest = res.sx64(),
+            None => $op.cpu.trap_overflow(),
+        }
+    }};
+}
+
+macro_rules! check_overflow_sub {
+    ($op:ident, $dest:expr, $reg1:expr, $reg2:expr) => {{
+        match $reg1.checked_sub($reg2) {
+            Some(res) => $dest = res.sx64(),
+            None => $op.cpu.trap_overflow(),
+        }
+    }};
+}
+
 impl Cpu {
     pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>) -> Cpu {
         return Cpu {
@@ -123,28 +141,20 @@ impl Cpu {
                     op.cpu.lo = op.rs32().wrapping_div(op.rt32()).sx64();
                     op.cpu.hi = op.rs32().wrapping_rem(op.rt32()).sx64();
                 }
-                0x20 => {
-                    // ADD
-                    match (op.rs32() as i32).checked_add(op.rt32() as i32) {
-                        Some(res) => *op.mrd64() = res.sx64(),
-                        None => op.cpu.trap_overflow(),
-                    }
-                }
-                0x21 => *op.mrd64() = (op.rs32() + op.rt32()).sx64(), // ADDU
-                0x22 => {
-                    // SUB
-                    match (op.rs32() as i32).checked_sub(op.rt32() as i32) {
-                        Some(res) => *op.mrd64() = res.sx64(),
-                        None => op.cpu.trap_overflow(),
-                    }
-                }
-                0x23 => *op.mrd64() = (op.rs32() - op.rt32()).sx64(), // SUBU
-                0x24 => *op.mrd64() = op.rs64() & op.rt64(),          // AND
-                0x25 => *op.mrd64() = op.rs64() | op.rt64(),          // OR
-                0x26 => *op.mrd64() = op.rs64() ^ op.rt64(),          // XOR
-                0x27 => *op.mrd64() = !(op.rs64() | op.rt64()),       // NOR
-                0x2A => *op.mrd64() = (op.irs32() < op.irt32()) as u64, // SLT
-                0x2B => *op.mrd64() = (op.rs32() < op.rt32()) as u64, // SLTU
+                0x20 => check_overflow_add!(op, *op.mrd64(), op.irs32(), op.irt32()), // ADD
+                0x21 => *op.mrd64() = (op.rs32() + op.rt32()).sx64(),                 // ADDU
+                0x22 => check_overflow_sub!(op, *op.mrd64(), op.irs32(), op.irt32()), // SUB
+                0x23 => *op.mrd64() = (op.rs32() - op.rt32()).sx64(),                 // SUBU
+                0x24 => *op.mrd64() = op.rs64() & op.rt64(),                          // AND
+                0x25 => *op.mrd64() = op.rs64() | op.rt64(),                          // OR
+                0x26 => *op.mrd64() = op.rs64() ^ op.rt64(),                          // XOR
+                0x27 => *op.mrd64() = !(op.rs64() | op.rt64()),                       // NOR
+                0x2A => *op.mrd64() = (op.irs32() < op.irt32()) as u64,               // SLT
+                0x2B => *op.mrd64() = (op.rs32() < op.rt32()) as u64,                 // SLTU
+                0x2C => check_overflow_add!(op, *op.mrd64(), op.irs64(), op.irt64()), // DADD
+                0x2D => *op.mrd64() = op.rs64() + op.rt64(),                          // DADDU
+                0x2E => check_overflow_sub!(op, *op.mrd64(), op.irs64(), op.irt64()), // DSUB
+                0x2F => *op.mrd64() = op.rs64() - op.rt64(),                          // DSUBU
                 _ => panic!("unimplemented special opcode: func=0x{:x?}", op.special()),
             },
 
@@ -167,20 +177,14 @@ impl Cpu {
             0x05 => branch!(op, op.rs64() != op.rt64(), op.btgt()), // BNE
             0x06 => branch!(op, op.irs64() <= 0, op.btgt()),   // BLEZ
             0x07 => branch!(op, op.irs64() > 0, op.btgt()),    // BGTZ
-            0x08 => {
-                // ADDI
-                match (op.rs32() as i32).checked_add(op.sximm32()) {
-                    Some(res) => *op.mrt64() = res.sx64(),
-                    None => op.cpu.trap_overflow(),
-                }
-            }
+            0x08 => check_overflow_add!(op, *op.mrt64(), op.irs32(), op.sximm32()), // ADDI
             0x09 => *op.mrt64() = (op.irs32() + op.sximm32()).sx64(), // ADDIU
             0x0A => *op.mrt64() = (op.irs32() < op.sximm32()) as u64, // SLTI
             0x0B => *op.mrt64() = (op.rs32() < op.sximm32() as u32) as u64, // SLTIU
-            0x0C => *op.mrt64() = op.rs64() & op.imm64(),             // ANDI
-            0x0D => *op.mrt64() = op.rs64() | op.imm64(),             // ORI
-            0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),             // XORI
-            0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(),        // LUI
+            0x0C => *op.mrt64() = op.rs64() & op.imm64(),      // ANDI
+            0x0D => *op.mrt64() = op.rs64() | op.imm64(),      // ORI
+            0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),      // XORI
+            0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(), // LUI
 
             0x10 => Cop0::op(op.cpu, opcode), // COP0
             0x11 => op.cpu.cop(1, opcode),    // COP1
@@ -190,6 +194,8 @@ impl Cpu {
             0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)), // BNEL
             0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)), // BLEZL
             0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)), // BGTZL
+            0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()), // DADDI
+            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64, // DADDIU
 
             0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea()).sx64(), // LB
             0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea()).sx64(), // LH

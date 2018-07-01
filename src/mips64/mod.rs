@@ -44,6 +44,9 @@ impl<'a> Mipsop<'a> {
     fn sximm32(&self) -> i32 {
         (self.opcode & 0xffff) as i16 as i32
     }
+    fn sximm64(&self) -> i64 {
+        (self.opcode & 0xffff) as i16 as i64
+    }
     fn imm64(&self) -> u64 {
         (self.opcode & 0xffff) as u64
     }
@@ -58,6 +61,9 @@ impl<'a> Mipsop<'a> {
     }
     fn irs64(&self) -> i64 {
         self.rs64() as i64
+    }
+    fn irt64(&self) -> i64 {
+        self.rt64() as i64
     }
     fn rs32(&self) -> u32 {
         self.rs64() as u32
