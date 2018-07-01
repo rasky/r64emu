@@ -59,6 +59,7 @@ struct Memory {
 }
 
 struct N64 {
+    logger: slog::Logger,
     sync: sync::Sync,
     bus: Rc<RefCell<Box<Bus>>>,
     cpu: Rc<RefCell<Box<Cpu>>>,
@@ -73,7 +74,7 @@ struct N64 {
 }
 
 impl N64 {
-    fn new(logger: &slog::Logger, romfn: &str) -> Result<N64> {
+    fn new(logger: slog::Logger, romfn: &str) -> Result<N64> {
         let bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
         let cpu = Rc::new(RefCell::new(Box::new(Cpu::new(
             logger.new(o!()),
@@ -88,7 +89,7 @@ impl N64 {
         let sp = DevPtr::new(Sp::new(logger.new(o!())));
         let si = DevPtr::new(Si::new(logger.new(o!())));
         let dp = DevPtr::new(Dp::new(logger.new(o!())));
-        let vi = DevPtr::new(Vi::new(logger.new(o!())));
+        let vi = DevPtr::new(Vi::new(logger.new(o!()), bus.clone()));
 
         {
             let mut bus = bus.borrow_mut();
@@ -116,6 +117,7 @@ impl N64 {
         sync.register(cpu.clone(), MAIN_CLOCK / 2);
 
         return Ok(N64 {
+            logger,
             sync,
             cpu,
             cart,
@@ -143,8 +145,10 @@ impl N64 {
         self.bus.borrow().write::<u32>(0x1FC0_07E4, seed << 8);
         Ok(())
     }
+}
 
-    fn run_frame(&mut self) {
+impl hw::OutputProducer for N64 {
+    fn render_frame(&mut self, screen: &mut [u8], pitch: usize) {
         let vi = self.vi.clone();
         self.sync.run_frame(move |evt| match evt {
             sync::Event::HSync(x, y) if x == 0 => {
@@ -152,6 +156,12 @@ impl N64 {
             }
             _ => panic!("unexpected sync event: {:?}", evt),
         });
+
+        self.vi.borrow().draw_frame(screen, pitch);
+    }
+
+    fn finish(&mut self) {
+        info!(self.logger, "finish"; o!("pc" => format!("{:x}", self.cpu.borrow().get_pc())));
     }
 }
 
@@ -181,7 +191,7 @@ fn run() -> Result<()> {
     }
 
     let mut out = hw::Output::new(hw::OutputConfig {
-        title: "Rust - Nintendo 64 Emulator".into(),
+        window_title: "Rust - Nintendo 64 Emulator".into(),
         width: 640,
         height: 480,
         fps: 60,
@@ -189,22 +199,13 @@ fn run() -> Result<()> {
     })?;
     out.enable_video()?;
 
-    let mut n64 = N64::new(&logger, &args[1])?;
-    n64.setup_cic()?;
-
-    for _ in 0..300 {
-        if !out.poll() {
-            break;
-        }
-        n64.run_frame();
-        out.present();
-    }
-
-    info!(
-        logger,
-        "finish";
-        o!("pc" => format!("{:x}", n64.cpu.borrow().get_pc()))
-    );
+    let logger1 = logger.clone();
+    let romfn = args[1].clone();
+    out.run(move || {
+        let mut n64 = Box::new(N64::new(logger1, &romfn).unwrap());
+        n64.setup_cic().unwrap();
+        Ok((n64))
+    });
 
     Ok(())
 }
