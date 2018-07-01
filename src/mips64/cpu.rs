@@ -185,7 +185,7 @@ impl Cpu {
             0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea()).sx64(), // LH
             0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea()).sx64(), // LW
             0x24 => *op.mrt64() = op.cpu.read::<u8>(op.ea()) as u64, // LBU
-            0x25 => *op.mrt64() = op.cpu.read::<u16>(op.ea()) as u64, // LBU
+            0x25 => *op.mrt64() = op.cpu.read::<u16>(op.ea()) as u64, // LHU
             0x28 => op.cpu.write::<u8>(op.ea(), op.rt32() as u8),    // SB
             0x29 => op.cpu.write::<u16>(op.ea(), op.rt32() as u16),  // SH
             0x2B => op.cpu.write::<u32>(op.ea(), op.rt32()),         // SW
@@ -209,11 +209,15 @@ impl Cpu {
     }
 
     fn read<U: MemInt>(&self, addr: u32) -> U {
-        self.bus.borrow().read::<U>(addr & 0x1FFF_FFFC)
+        self.bus
+            .borrow()
+            .read::<U>(addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1))
     }
 
     fn write<U: MemInt>(&self, addr: u32, val: U) {
-        self.bus.borrow().write::<U>(addr & 0x1FFF_FFFC, val);
+        self.bus
+            .borrow()
+            .write::<U>(addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1), val);
     }
 
     #[inline]
