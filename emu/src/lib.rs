@@ -17,6 +17,7 @@ extern crate array_macro;
 extern crate slog;
 
 pub mod bus;
+pub mod gfx;
 pub mod hw;
 pub mod int;
 pub mod sync;
