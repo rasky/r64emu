@@ -141,6 +141,30 @@ impl Cpu {
                     op.cpu.lo = op.rs32().wrapping_div(op.rt32()).sx64();
                     op.cpu.hi = op.rs32().wrapping_rem(op.rt32()).sx64();
                 }
+                0x1C => {
+                    // DMULT
+                    let (hi, lo) =
+                        i128::wrapping_mul(op.irt64() as i128, op.irs64() as i128).hi_lo();
+                    op.cpu.lo = lo as u64;
+                    op.cpu.hi = hi as u64;
+                }
+                0x1D => {
+                    // DMULTU
+                    let (hi, lo) = u128::wrapping_mul(op.rt64() as u128, op.rs64() as u128).hi_lo();
+                    op.cpu.lo = lo as u64;
+                    op.cpu.hi = hi as u64;
+                }
+                0x1E => {
+                    // DDIV
+                    op.cpu.lo = op.irs64().wrapping_div(op.irt64()) as u64;
+                    op.cpu.hi = op.irs64().wrapping_rem(op.irt64()) as u64;
+                }
+                0x1F => {
+                    // DDIVU
+                    op.cpu.lo = op.rs64().wrapping_div(op.rt64());
+                    op.cpu.hi = op.rs64().wrapping_rem(op.rt64());
+                }
+
                 0x20 => check_overflow_add!(op, *op.mrd64(), op.irs32(), op.irt32()), // ADD
                 0x21 => *op.mrd64() = (op.rs32() + op.rt32()).sx64(),                 // ADDU
                 0x22 => check_overflow_sub!(op, *op.mrd64(), op.irs32(), op.irt32()), // SUB
