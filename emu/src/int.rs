@@ -77,6 +77,23 @@ impl Numerics for u32 {
     }
 }
 
+impl Numerics for i64 {
+    type Unsigned = u64;
+
+    #[inline(always)]
+    fn isx64(self) -> i64 {
+        self
+    }
+    #[inline(always)]
+    fn hi_lo(self) -> (u64, u64) {
+        (self as u64).hi_lo()
+    }
+    #[inline(always)]
+    fn hex(self) -> String {
+        format!("0x{:016x}", self)
+    }
+}
+
 impl Numerics for u64 {
     type Unsigned = u64;
 
