@@ -86,6 +86,22 @@ impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
         self.hwio.read::<O, U>(self.addr)
     }
 
+    pub fn mem(&self) -> Option<&[u8]> {
+        match self.hwio {
+            HwIoR::Mem(ref buf, mask) => {
+                // Use unsafe here for performance: we don't want
+                // to borrow the memory area for each access.
+                let slice = {
+                    let raw: *const u8 = &buf.borrow()[0];
+                    let len = buf.borrow().len();
+                    unsafe { slice::from_raw_parts(raw, len) }
+                };
+                Some(&slice[(self.addr & mask) as usize..])
+            }
+            HwIoR::Func(_) => None,
+        }
+    }
+
     // If MemIoR points to a memory area, returns an iterator over it
     // that yields consecutive elements of type U.
     // Otherwise, returns None.
