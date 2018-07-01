@@ -113,6 +113,16 @@ impl Cpu {
                     op.cpu.lo = lo;
                     op.cpu.hi = hi;
                 }
+                0x1A => {
+                    // DIV
+                    op.cpu.lo = op.irs32().wrapping_div(op.irt32()).sx64();
+                    op.cpu.hi = op.irs32().wrapping_rem(op.irt32()).sx64();
+                }
+                0x1B => {
+                    // DIVU
+                    op.cpu.lo = op.rs32().wrapping_div(op.rt32()).sx64();
+                    op.cpu.hi = op.rs32().wrapping_rem(op.rt32()).sx64();
+                }
                 0x20 => {
                     // ADD
                     match (op.rs32() as i32).checked_add(op.rt32() as i32) {
@@ -183,13 +193,21 @@ impl Cpu {
 
             0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea()).sx64(), // LB
             0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea()).sx64(), // LH
+            0x22 => *op.mrt64() = op.cpu.lwl(op.ea(), op.rt32()).sx64(), // LWL
             0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea()).sx64(), // LW
             0x24 => *op.mrt64() = op.cpu.read::<u8>(op.ea()) as u64, // LBU
             0x25 => *op.mrt64() = op.cpu.read::<u16>(op.ea()) as u64, // LHU
+            0x26 => *op.mrt64() = op.cpu.lwr(op.ea(), op.rt32()).sx64(), // LWR
+            0x27 => *op.mrt64() = op.cpu.read::<u32>(op.ea()) as u64, // LWU
             0x28 => op.cpu.write::<u8>(op.ea(), op.rt32() as u8),    // SB
             0x29 => op.cpu.write::<u16>(op.ea(), op.rt32() as u16),  // SH
+            0x2A => op.cpu.write::<u32>(op.ea(), op.cpu.swl(op.ea(), op.rt32())), // SWL
             0x2B => op.cpu.write::<u32>(op.ea(), op.rt32()),         // SW
+            0x2E => op.cpu.write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32())), // SWR
             0x2F => {}                                               // CACHE
+
+            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()), // LD
+            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),   // SD
 
             _ => panic!(
                 "unimplemented opcode: func=0x{:x?}, pc={}",
@@ -197,6 +215,34 @@ impl Cpu {
                 op.cpu.pc.hex()
             ),
         }
+    }
+
+    fn lwl(&self, addr: u32, reg: u32) -> u32 {
+        let mem = self.read::<u32>(addr);
+        let shift = (addr & 3) * 8;
+        let mask = (1 << shift) - 1;
+        (reg & mask) | ((mem << shift) & !mask)
+    }
+
+    fn lwr(&self, addr: u32, reg: u32) -> u32 {
+        let mem = self.read::<u32>(addr);
+        let shift = (!addr & 3) * 8;
+        let mask = ((1u64 << (32 - shift)) - 1) as u32;
+        (reg & !mask) | ((mem >> shift) & mask)
+    }
+
+    fn swl(&self, addr: u32, reg: u32) -> u32 {
+        let mem = self.read::<u32>(addr);
+        let shift = (addr & 3) * 8;
+        let mask = ((1u64 << (32 - shift)) - 1) as u32;
+        (mem & !mask) | ((reg >> shift) & mask)
+    }
+
+    fn swr(&self, addr: u32, reg: u32) -> u32 {
+        let mem = self.read::<u32>(addr);
+        let shift = (!addr & 3) * 8;
+        let mask = (1 << shift) - 1;
+        (mem & mask) | ((reg << shift) & !mask)
     }
 
     fn fetch(&mut self, addr: u32) -> &MemIoR<u32> {
