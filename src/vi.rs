@@ -3,6 +3,7 @@ extern crate emu;
 extern crate slog;
 use byteorder::{ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, Reg32};
+use emu::gfx::{GfxBuffer, GfxBufferMut, Rgb555, Rgb888};
 use emu::int::Numerics;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -46,17 +47,16 @@ impl Vi {
     }
 
     pub fn draw_frame(&self, screen: &mut [u8], pitch: usize) {
+        let mut screen = GfxBufferMut::new(screen, 640, 480, 640 * 4).unwrap();
         let bpp = self.status.get() & 3;
 
         // display disable -> clear screen
         if bpp == 0 || bpp == 1 {
+            let black = Rgb888::new_clamped(0, 0, 0);
             for y in 0..480 {
-                let line = &mut screen[y * pitch..];
+                let mut line = screen.line(y);
                 for x in 0..640 {
-                    line[x * 4 + 0] = 0;
-                    line[x * 4 + 1] = 0;
-                    line[x * 4 + 2] = 0;
-                    line[x * 4 + 3] = 0;
+                    line.set(x, black);
                 }
             }
             return;
@@ -68,33 +68,34 @@ impl Vi {
 
         match self.width.get() {
             640 => {
+                let src = GfxBuffer::new(src, 640, 480, 640 * 4).unwrap();
                 for y in 0..480 {
-                    let line = &mut screen[y * pitch..(y + 1) * pitch];
-                    line.copy_from_slice(&src[..640 * 4]);
-                    src = &src[640 * 4..];
+                    let mut dst = screen.line(y);
+                    let src = src.line(y);
+                    for x in 0..640 {
+                        dst.set(x, src.get(x));
+                    }
                 }
             }
 
             320 => {
-                for y in 0..240 {
-                    let (line1, line2) =
-                        &mut screen[y * 2 * pitch..(y + 1) * 2 * pitch].split_at_mut(pitch);
-
-                    match bpp {
-                        3 => {
-                            // 32-bit
+                match bpp {
+                    // 32-bit
+                    3 => {
+                        let mut src = GfxBuffer::new(src, 640, 480, 640 * 4).unwrap();
+                        for y in 0..240 {
+                            let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
+                            let src = src.line(y);
                             for x in 0..320 {
-                                let mut px = LittleEndian::read_u32(&src[x * 4..x * 4 + 4]);
-                                px |= 0xffff_ffff;
-                                LittleEndian::write_u32(&mut line1[x * 8..x * 8 + 4], px);
-                                LittleEndian::write_u32(&mut line2[x * 8..x * 8 + 4], px);
-                                LittleEndian::write_u32(&mut line1[x * 8 + 4..x * 8 + 8], px);
-                                LittleEndian::write_u32(&mut line2[x * 8 + 4..x * 8 + 8], px);
+                                let px = src.get(x);
+                                dst1.set(x * 2, px);
+                                dst1.set(x * 2 + 1, px);
+                                dst2.set(x * 2, px);
+                                dst2.set(x * 2 + 1, px);
                             }
-                            src = &src[320 * 4..];
                         }
-                        _ => unimplemented!(),
-                    };
+                    }
+                    _ => unimplemented!(),
                 }
             }
 
