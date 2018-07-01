@@ -113,11 +113,15 @@ impl Cpu {
                 0x07 => *op.mrd64() = (op.irt32() >> (op.rs32() & 0x1F)).sx64(), // SRAV
                 0x08 => branch!(op, true, op.rs32(), link(false)),   // JR
                 0x09 => branch!(op, true, op.rs32(), link(true)),    // JALR
+                0x0F => {}                                           // SYNC
 
                 0x10 => *op.mrd64() = op.cpu.hi, // MFHI
                 0x11 => op.cpu.hi = op.rs64(),   // MTHI
                 0x12 => *op.mrd64() = op.cpu.lo, // MFLO
                 0x13 => op.cpu.lo = op.rs64(),   // MTLO
+                0x14 => *op.mrd64() = op.rt64() << (op.rs32() & 0x3F), // DSLLV
+                0x16 => *op.mrd64() = op.rt64() >> (op.rs32() & 0x3F), // DSRLV
+                0x17 => *op.mrd64() = (op.irt64() >> (op.rs32() & 0x3F)) as u64, // DSRAV
                 0x18 => {
                     // MULT
                     let (hi, lo) =
@@ -179,6 +183,14 @@ impl Cpu {
                 0x2D => *op.mrd64() = op.rs64() + op.rt64(),                          // DADDU
                 0x2E => check_overflow_sub!(op, *op.mrd64(), op.irs64(), op.irt64()), // DSUB
                 0x2F => *op.mrd64() = op.rs64() - op.rt64(),                          // DSUBU
+
+                0x38 => *op.mrd64() = op.rt64() << op.sa(), // DSLL
+                0x3A => *op.mrd64() = op.rt64() >> op.sa(), // DSRL
+                0x3B => *op.mrd64() = (op.irt64() >> op.sa()) as u64, // DSRA
+                0x3C => *op.mrd64() = op.rt64() << (op.sa() + 32), // DSLL32
+                0x3E => *op.mrd64() = op.rt64() >> (op.sa() + 32), // DSRL32
+                0x3F => *op.mrd64() = (op.irt64() >> (op.sa() + 32)) as u64, // DSRA32
+
                 _ => panic!("unimplemented special opcode: func=0x{:x?}", op.special()),
             },
 
