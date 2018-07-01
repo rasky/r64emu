@@ -110,3 +110,37 @@ impl Numerics for u64 {
         format!("0x{:016x}", self)
     }
 }
+
+impl Numerics for i128 {
+    type Unsigned = u128;
+
+    #[inline(always)]
+    fn isx64(self) -> i64 {
+        panic!("i128 isx64")
+    }
+    #[inline(always)]
+    fn hi_lo(self) -> (u128, u128) {
+        (self as u128).hi_lo()
+    }
+    #[inline(always)]
+    fn hex(self) -> String {
+        format!("0x{:016x}", self)
+    }
+}
+
+impl Numerics for u128 {
+    type Unsigned = u128;
+
+    #[inline(always)]
+    fn isx64(self) -> i64 {
+        panic!("u128 isx64")
+    }
+    #[inline(always)]
+    fn hi_lo(self) -> (u128, u128) {
+        (self >> 64, self & 0xffffffff_ffffffff)
+    }
+    #[inline(always)]
+    fn hex(self) -> String {
+        format!("0x{:016x}", self)
+    }
+}
