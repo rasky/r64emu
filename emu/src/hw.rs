@@ -6,6 +6,7 @@ use self::sdl2::pixels::PixelFormatEnum;
 use self::sdl2::render::{Texture, TextureCreator, WindowCanvas};
 use self::sdl2::video::WindowContext;
 use self::sdl2::{Sdl, VideoSubsystem};
+use super::gfx::{GfxBuffer, GfxBufferMut, OwnedGfxBuffer, Rgb888};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
@@ -60,12 +61,12 @@ impl Video {
         })
     }
 
-    fn render_frame(&mut self, frame: (&[u8], usize)) {
+    fn render_frame(&mut self, frame: &GfxBuffer<Rgb888>) {
         self.draw(frame);
         self.update_fps();
     }
 
-    fn draw(&mut self, frame: (&[u8], usize)) {
+    fn draw(&mut self, frame: &GfxBuffer<Rgb888>) {
         let mut tex = self
             .creator
             .create_texture_target(
@@ -74,7 +75,8 @@ impl Video {
                 self.cfg.height as u32,
             )
             .unwrap();
-        tex.update(None, frame.0, frame.1);
+        let (mem, pitch) = frame.raw();
+        tex.update(None, mem, pitch);
         self.canvas.copy(&tex, None, None);
         self.canvas.present();
     }
@@ -97,7 +99,7 @@ impl Video {
 }
 
 pub trait OutputProducer {
-    fn render_frame(&mut self, screen: &mut [u8], pitch: usize);
+    fn render_frame(&mut self, screen: &mut GfxBufferMut<Rgb888>);
     fn finish(&mut self);
 }
 
@@ -132,10 +134,8 @@ impl Output {
         thread::spawn(move || {
             let mut producer = create().unwrap();
             loop {
-                let mut screen = Vec::<u8>::new();
-
-                screen.resize(width * height * 4, 0x00);
-                producer.render_frame(&mut screen, width * 4);
+                let mut screen = OwnedGfxBuffer::<Rgb888>::new(width, height);
+                producer.render_frame(&mut screen.buf_mut());
 
                 tx.send(screen).unwrap();
             }
@@ -154,11 +154,11 @@ impl Output {
             }
 
             let screen = rx.recv().unwrap();
-            self.render_frame((&screen, width * 4));
+            self.render_frame(&screen.buf());
         }
     }
 
-    pub fn render_frame(&mut self, video: (&[u8], usize)) {
+    pub fn render_frame(&mut self, video: &GfxBuffer<Rgb888>) {
         self.video.as_mut().map(|v| v.render_frame(video));
     }
 }

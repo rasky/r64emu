@@ -1,9 +1,6 @@
 #![feature(attr_literals)]
 
 #[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
 extern crate slog;
 extern crate slog_async;
 extern crate slog_term;
@@ -12,12 +9,11 @@ extern crate slog_term;
 extern crate emu_derive;
 extern crate byteorder;
 extern crate emu;
-extern crate pretty_hex;
 
 use emu::bus::be::{Bus, DevPtr, Mem};
+use emu::gfx::{GfxBufferMut, Rgb888};
 use emu::hw;
 use emu::sync;
-use pretty_hex::*;
 use slog::Drain;
 use std::cell::RefCell;
 use std::env;
@@ -148,7 +144,7 @@ impl N64 {
 }
 
 impl hw::OutputProducer for N64 {
-    fn render_frame(&mut self, screen: &mut [u8], pitch: usize) {
+    fn render_frame(&mut self, screen: &mut GfxBufferMut<Rgb888>) {
         let vi = self.vi.clone();
         self.sync.run_frame(move |evt| match evt {
             sync::Event::HSync(x, y) if x == 0 => {
@@ -157,7 +153,7 @@ impl hw::OutputProducer for N64 {
             _ => panic!("unexpected sync event: {:?}", evt),
         });
 
-        self.vi.borrow().draw_frame(screen, pitch);
+        self.vi.borrow().draw_frame(screen);
     }
 
     fn finish(&mut self) {
@@ -202,9 +198,9 @@ fn run() -> Result<()> {
     let logger1 = logger.clone();
     let romfn = args[1].clone();
     out.run(move || {
-        let mut n64 = Box::new(N64::new(logger1, &romfn).unwrap());
+        let n64 = Box::new(N64::new(logger1, &romfn).unwrap());
         n64.setup_cic().unwrap();
-        Ok((n64))
+        Ok(n64)
     });
 
     Ok(())

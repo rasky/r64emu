@@ -1,9 +1,8 @@
 extern crate byteorder;
 extern crate emu;
 extern crate slog;
-use byteorder::{ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, Reg32};
-use emu::gfx::{GfxBuffer, GfxBufferMut, Rgb555, Rgb888};
+use emu::gfx::{GfxBuffer, GfxBufferMut, Rgb888};
 use emu::int::Numerics;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -46,8 +45,7 @@ impl Vi {
         error!(self.logger, "write VI current line"; o!("val" => new.hex()));
     }
 
-    pub fn draw_frame(&self, screen: &mut [u8], pitch: usize) {
-        let mut screen = GfxBufferMut::new(screen, 640, 480, 640 * 4).unwrap();
+    pub fn draw_frame(&self, screen: &mut GfxBufferMut<Rgb888>) {
         let bpp = self.status.get() & 3;
 
         // display disable -> clear screen
@@ -64,7 +62,7 @@ impl Vi {
 
         info!(self.logger, "draw frame"; o!("origin" => self.origin.get().hex()));
         let memio = self.bus.borrow().fetch_read::<u8>(self.origin.get());
-        let mut src = memio.mem().unwrap();
+        let src = memio.mem().unwrap();
 
         match self.width.get() {
             640 => {
@@ -82,7 +80,7 @@ impl Vi {
                 match bpp {
                     // 32-bit
                     3 => {
-                        let mut src = GfxBuffer::new(src, 640, 480, 640 * 4).unwrap();
+                        let src = GfxBuffer::new(src, 640, 480, 640 * 4).unwrap();
                         for y in 0..240 {
                             let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
                             let src = src.line(y);
