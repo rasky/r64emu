@@ -264,6 +264,13 @@ pub struct GfxLineMut<'a, C: Color + Sized> {
     phantom: PhantomData<C>,
 }
 
+pub struct OwnedGfxBuffer<C: Color + Sized> {
+    mem: Vec<u8>,
+    width: usize,
+    height: usize,
+    phantom: PhantomData<C>,
+}
+
 impl<'a: 's, 's, C: Color + Sized> GfxBuffer<'a, C> {
     pub fn new(
         mem: &'a [u8],
@@ -283,6 +290,10 @@ impl<'a: 's, 's, C: Color + Sized> GfxBuffer<'a, C> {
             pitch,
             phantom: PhantomData,
         })
+    }
+
+    pub fn raw(&'s self) -> (&'s [u8], usize) {
+        (self.mem, self.pitch)
     }
 
     pub fn line(&'s self, y: usize) -> GfxLine<'s, C> {
@@ -313,6 +324,10 @@ impl<'a: 's, 's, C: Color + Sized> GfxBufferMut<'a, C> {
             pitch,
             phantom: PhantomData,
         })
+    }
+
+    pub fn raw(&'s mut self) -> (&'s mut [u8], usize) {
+        (self.mem, self.pitch)
     }
 
     pub fn line(&'s mut self, y: usize) -> GfxLineMut<'s, C> {
@@ -357,6 +372,32 @@ impl<'a, C: Color + Sized> GfxLineMut<'a, C> {
     }
     pub fn set(&mut self, x: usize, c: C) {
         C::U::endian_write_to::<LittleEndian>(&mut self.mem[x * C::U::SIZE..], c.to_bits());
+    }
+}
+
+impl<C: Color + Sized> OwnedGfxBuffer<C> {
+    pub fn new(width: usize, height: usize) -> OwnedGfxBuffer<C> {
+        let mut v = Vec::new();
+        v.resize(width * height * C::U::SIZE, 0);
+        OwnedGfxBuffer {
+            mem: v,
+            width,
+            height,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn buf<'a>(&'a self) -> GfxBuffer<'a, C> {
+        GfxBuffer::new(&self.mem, self.width, self.height, self.width * C::U::SIZE).unwrap()
+    }
+
+    pub fn buf_mut<'a>(&'a mut self) -> GfxBufferMut<'a, C> {
+        GfxBufferMut::new(
+            &mut self.mem,
+            self.width,
+            self.height,
+            self.width * C::U::SIZE,
+        ).unwrap()
     }
 }
 
