@@ -1,6 +1,6 @@
 extern crate emu;
 extern crate slog;
-use emu::bus::be::{Mem, MemFlags, Reg32};
+use emu::bus::be::Reg32;
 
 #[derive(DeviceBE)]
 pub struct Dp {

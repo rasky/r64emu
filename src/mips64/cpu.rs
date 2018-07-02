@@ -8,7 +8,6 @@ use super::cop0::Cop0;
 use super::Mipsop;
 use slog;
 use std::cell::RefCell;
-use std::fmt;
 use std::rc::Rc;
 
 pub struct Cpu {
