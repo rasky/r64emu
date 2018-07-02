@@ -5,6 +5,7 @@ use self::emu::bus::MemInt;
 use self::emu::int::Numerics;
 use self::emu::sync;
 use super::cop0::Cop0;
+use super::cop1::Cop1;
 use super::Mipsop;
 use slog;
 use std::cell::RefCell;
@@ -16,6 +17,7 @@ pub struct Cpu {
     lo: u64,
 
     pub(crate) cop0: Cop0,
+    pub(crate) cop1: Cop1,
     pub(crate) logger: slog::Logger,
     bus: Rc<RefCell<Box<Bus>>>,
     pub(crate) pc: u32,
@@ -72,6 +74,7 @@ impl Cpu {
             logger: logger,
             regs: [0u64; 32],
             cop0: Cop0::default(),
+            cop1: Cop1::default(),
             hi: 0,
             lo: 0,
             pc: 0x1FC0_0000, // FIXME
@@ -222,7 +225,7 @@ impl Cpu {
             0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(), // LUI
 
             0x10 => Cop0::op(op.cpu, opcode), // COP0
-            0x11 => op.cpu.cop(1, opcode),    // COP1
+            0x11 => Cop1::op(op.cpu, opcode), // COP1
             0x12 => op.cpu.cop(2, opcode),    // COP2
             0x13 => op.cpu.cop(3, opcode),    // COP3
             0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)), // BEQL
@@ -247,8 +250,12 @@ impl Cpu {
             0x2E => op.cpu.write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32())), // SWR
             0x2F => {}                                               // CACHE
 
-            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()), // LD
-            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),   // SD
+            0x31 => *op.mft64() = op.cpu.read::<u32>(op.ea()) as u64, // LWC1
+            0x35 => *op.mft64() = op.cpu.read::<u64>(op.ea()),        // LDC1
+            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()),        // LD
+            0x39 => op.cpu.write::<u32>(op.ea(), op.ft64() as u32),   // SWC1
+            0x3D => op.cpu.write::<u64>(op.ea(), op.ft64()),          // SDC1
+            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),          // SD
 
             _ => panic!(
                 "unimplemented opcode: func=0x{:x?}, pc={}",

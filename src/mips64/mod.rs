@@ -1,6 +1,7 @@
 extern crate num;
 
 mod cop0;
+mod cop1;
 mod cpu;
 
 pub use self::cpu::Cpu;
@@ -56,6 +57,9 @@ impl<'a> Mipsop<'a> {
     fn rt64(&self) -> u64 {
         self.cpu.regs[self.rt()]
     }
+    fn ft64(&self) -> u64 {
+        self.cpu.cop1.regs[self.rt()]
+    }
     fn irs64(&self) -> i64 {
         self.rs64() as i64
     }
@@ -79,6 +83,9 @@ impl<'a> Mipsop<'a> {
     }
     fn mrd64(&'a mut self) -> &'a mut u64 {
         &mut self.cpu.regs[self.rd()]
+    }
+    fn mft64(&'a mut self) -> &'a mut u64 {
+        &mut self.cpu.cop1.regs[self.rt()]
     }
     fn hex(&self) -> String {
         format!("{:x}", self.opcode)
