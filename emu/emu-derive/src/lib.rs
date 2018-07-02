@@ -199,7 +199,7 @@ fn expand_reg_devinit(
     if ra.wcb {
         initbody = quote!{
             #initbody
-            let wdevw = Rc::downgrade(&wself);
+            let wdevw = Rc::downgrade(&_wself);
         };
         let cbname = Ident::new(&format!("cb_write_{}", varname), Span::call_site());
         qwcb = quote!{
@@ -213,7 +213,7 @@ fn expand_reg_devinit(
     if ra.rcb {
         initbody = quote!{
             #initbody
-            let wdevr = Rc::downgrade(&wself);
+            let wdevr = Rc::downgrade(&_wself);
         };
         let cbname = Ident::new(&format!("cb_read_{}", varname), Span::call_site());
         qrcb = quote!{
@@ -372,7 +372,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
         gen impl Device for @Self {
             type Order = #endian;
 
-            fn dev_init(&mut self, wself: Rc<RefCell<Self>>) {
+            fn dev_init(&mut self, _wself: Rc<RefCell<Self>>) {
                 match *self {
                     #dev_init
                 }
