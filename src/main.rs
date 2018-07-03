@@ -168,17 +168,23 @@ impl hw::OutputProducer for N64 {
 
 quick_main!(run);
 
+fn module_and_line(record: &slog::Record) -> String {
+    format!("{}:{}", record.module(), record.line())
+}
+
+#[allow(dead_code)]
 fn log_build_sync() -> slog::Logger {
     let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
     let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    slog::Logger::root(drain, o!())
+    slog::Logger::root(drain, o!("module" => slog::FnValue(module_and_line)))
 }
 
+#[allow(dead_code)]
 fn log_build_async() -> slog::Logger {
     let decorator = slog_term::TermDecorator::new().build();
     let drain = slog_term::FullFormat::new(decorator).build().fuse();
     let drain = slog_async::Async::new(drain).build().fuse();
-    slog::Logger::root(drain, o!())
+    slog::Logger::root(drain, o!("module" => slog::FnValue(module_and_line)))
 }
 
 fn run() -> Result<()> {
