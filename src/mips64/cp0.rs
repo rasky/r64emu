@@ -23,7 +23,7 @@ impl Cop0 for Cp0 {
         false
     }
 
-    fn exception(&mut self, exc: Exception, pc: u32) -> u32 {
+    fn exception(&mut self, _exc: Exception, pc: u32) -> u32 {
         pc
     }
 }

@@ -18,7 +18,7 @@ impl Dp {
         }
     }
 
-    fn cb_write_status(&self, old: u32, new: u32) {
+    fn cb_write_status(&self, _old: u32, _new: u32) {
         unimplemented!();
     }
 }

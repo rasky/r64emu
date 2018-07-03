@@ -62,7 +62,7 @@ impl Pi {
         val
     }
 
-    fn cb_write_magic(&mut self, old: u32, new: u32) {
+    fn cb_write_magic(&mut self, _old: u32, new: u32) {
         if new & 0x20 != 0 {
             info!(self.logger, "magic: unlock boot");
             self.magic.set(self.magic.get() | 0x80);
@@ -93,7 +93,7 @@ impl Pi {
         self.dma_ram_addr.set(waddr);
     }
 
-    fn cb_write_dma_rd_len(&mut self, old: u32, new: u32) {
+    fn cb_write_dma_rd_len(&mut self, _old: u32, _new: u32) {
         unimplemented!()
     }
 }

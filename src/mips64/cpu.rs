@@ -4,8 +4,6 @@ use self::emu::bus::be::{Bus, MemIoR};
 use self::emu::bus::MemInt;
 use self::emu::int::Numerics;
 use self::emu::sync;
-use super::cp0::Cp0;
-use super::fpu::Fpu;
 use slog;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -36,7 +34,7 @@ pub trait Cop0: Cop {
     fn pending_int(&self) -> bool;
 
     /// Trigger the specified excepion.
-    fn exception(&mut self, exc: Exception, cu_pc: u32) -> u32;
+    fn exception(&mut self, exc: Exception, cur_pc: u32) -> u32;
 }
 
 pub struct CpuContext {
@@ -250,6 +248,14 @@ impl Cpu {
     }
     pub fn set_cop3(&mut self, cop3: Box<dyn Cop>) {
         self.cop3 = Some(cop3);
+    }
+
+    /// Change the CPU Program Counter. This is a low-level method that
+    /// should only be invoked if you know what you're doing; usually,
+    /// the CPU should be halted.
+    pub fn set_pc(&mut self, pc: u32) {
+        self.ctx.pc = pc;
+        self.ctx.branch_pc = 0;
     }
 
     pub fn get_pc(&self) -> u32 {

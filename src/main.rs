@@ -10,6 +10,9 @@ extern crate emu_derive;
 extern crate byteorder;
 extern crate emu;
 
+#[macro_use]
+extern crate bitflags;
+
 use emu::bus::be::{Bus, DevPtr, Mem};
 use emu::gfx::{GfxBufferMut, Rgb888};
 use emu::hw;
@@ -81,22 +84,27 @@ impl N64 {
             Pi::new(logger.new(o!()), bus.clone(), "bios/pifdata.bin")
                 .chain_err(|| "cannot open BIOS file")?,
         );
-        let sp = DevPtr::new(Sp::new(logger.new(o!())));
+        let sp = Sp::new(logger.new(o!()), bus.clone())?;
         let si = DevPtr::new(Si::new(logger.new(o!())));
         let dp = DevPtr::new(Dp::new(logger.new(o!())));
         let vi = DevPtr::new(Vi::new(logger.new(o!()), bus.clone()));
 
         {
+            // Install CPU coprocessors
+            //   COP0 -> standard MIPS64 CP0
+            //   COP1 -> standard MIPS64 FPU
             let mut cpu = cpu.borrow_mut();
             cpu.set_cop0(mips64::Cp0::new(logger.new(o!())));
             cpu.set_cop1(mips64::Fpu::new(logger.new(o!())));
         }
 
         {
+            // Configure main bus
             let mut bus = bus.borrow_mut();
             bus.map_device(0x0000_0000, &mem, 0)?;
-            bus.map_device(0x0400_0000, &sp, 1)?;
-            bus.map_device(0x0404_0000, &sp, 0)?;
+            bus.map_device(0x0400_0000, &sp, 0)?;
+            bus.map_device(0x0404_0000, &sp, 1)?;
+            bus.map_device(0x0408_0000, &sp, 2)?;
             bus.map_device(0x0410_0000, &dp, 0)?;
             bus.map_device(0x0440_0000, &vi, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
@@ -150,7 +158,7 @@ impl N64 {
 
 impl hw::OutputProducer for N64 {
     fn render_frame(&mut self, screen: &mut GfxBufferMut<Rgb888>) {
-        let vi = self.vi.clone();
+        let mut vi = self.vi.clone();
         self.sync.run_frame(move |evt| match evt {
             sync::Event::HSync(x, y) if x == 0 => {
                 vi.borrow_mut().set_line(y);

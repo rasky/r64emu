@@ -33,8 +33,10 @@ where
         return d;
     }
 
-    pub fn clone(&self) -> Rc<RefCell<T>> {
-        self.dev.clone()
+    pub fn clone(&self) -> DevPtr<T> {
+        DevPtr {
+            dev: self.dev.clone(),
+        }
     }
 
     pub fn borrow(&self) -> Ref<T> {
