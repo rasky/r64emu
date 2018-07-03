@@ -111,8 +111,9 @@ impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
                 // Use unsafe here for performance: we don't want
                 // to borrow the memory area for each access.
                 let slice = {
-                    let raw: *const u8 = &buf.borrow()[0];
-                    let len = buf.borrow().len();
+                    let buf = buf.borrow();
+                    let raw: *const u8 = &buf[0];
+                    let len = buf.len();
                     unsafe { slice::from_raw_parts(raw, len) }
                 };
                 Some(
@@ -135,6 +136,23 @@ pub struct MemIoW<O: ByteOrder, U: MemInt> {
 impl<O: ByteOrder, U: MemInt> MemIoW<O, U> {
     pub fn write(&self, val: U) {
         self.hwio.write::<O, U>(self.addr, val);
+    }
+
+    pub fn mem(&self) -> Option<&mut [u8]> {
+        match self.hwio {
+            HwIoW::Mem(ref buf, mask) => {
+                // Use unsafe here for performance: we don't want
+                // to borrow the memory area for each access.
+                let slice = {
+                    let mut buf = buf.borrow_mut();
+                    let raw: *mut u8 = &mut buf[0];
+                    let len = buf.len();
+                    unsafe { slice::from_raw_parts_mut(raw, len) }
+                };
+                Some(&mut slice[(self.addr & mask) as usize..])
+            }
+            HwIoW::Func(_) => None,
+        }
     }
 }
 
@@ -214,22 +232,22 @@ where
         })
     }
 
-    pub fn read<U: MemInt + 'a>(&'b self, addr: u32) -> U {
+    pub fn read<U: MemInt + 'a>(&self, addr: u32) -> U {
         self.internal_fetch_read::<U>(addr).read::<Order, U>(addr)
     }
 
-    pub fn write<U: MemInt + 'a>(&'b self, addr: u32, val: U) {
+    pub fn write<U: MemInt + 'a>(&self, addr: u32, val: U) {
         self.internal_fetch_write::<U>(addr)
             .write::<Order, U>(addr, val);
     }
 
     #[inline(never)]
-    pub fn fetch_read<U: MemInt + 'a>(&'b self, addr: u32) -> MemIoR<Order, U> {
+    pub fn fetch_read<U: MemInt + 'a>(&self, addr: u32) -> MemIoR<Order, U> {
         self.internal_fetch_read::<U>(addr).at(addr)
     }
 
     #[inline(never)]
-    pub fn fetch_write<U: MemInt + 'a>(&'b self, addr: u32) -> MemIoW<Order, U> {
+    pub fn fetch_write<U: MemInt + 'a>(&self, addr: u32) -> MemIoW<Order, U> {
         self.internal_fetch_write::<U>(addr).at(addr)
     }
 
