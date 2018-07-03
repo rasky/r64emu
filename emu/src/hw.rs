@@ -3,9 +3,8 @@ extern crate sdl2;
 use self::sdl2::event::Event;
 use self::sdl2::keyboard::Keycode;
 use self::sdl2::pixels::PixelFormatEnum;
-use self::sdl2::render::{Texture, TextureCreator, WindowCanvas};
+use self::sdl2::render::{TextureCreator, WindowCanvas};
 use self::sdl2::video::WindowContext;
-use self::sdl2::{Sdl, VideoSubsystem};
 use super::gfx::{GfxBuffer, GfxBufferMut, OwnedGfxBuffer, Rgb888};
 use std::rc::Rc;
 use std::sync::mpsc;
@@ -21,7 +20,6 @@ pub struct OutputConfig {
 }
 
 struct Video {
-    sub: VideoSubsystem,
     canvas: WindowCanvas,
     creator: TextureCreator<WindowContext>,
 
@@ -53,7 +51,6 @@ impl Video {
 
         Ok(Video {
             cfg,
-            sub,
             canvas,
             creator,
             fps_clock: SystemTime::now(),
