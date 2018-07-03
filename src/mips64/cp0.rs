@@ -9,12 +9,12 @@ pub struct Cp0 {
 }
 
 impl Cp0 {
-    pub fn new(logger: slog::Logger) -> Cp0 {
-        Cp0 {
+    pub fn new(logger: slog::Logger) -> Box<Cp0> {
+        Box::new(Cp0 {
             reg_status: 0,
             reg_cause: 0,
             logger: logger,
-        }
+        })
     }
 }
 

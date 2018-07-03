@@ -2,9 +2,9 @@ extern crate num;
 
 use self::num::Float;
 use super::cpu::{Cop, CpuContext};
+use slog;
 use std::marker::PhantomData;
 
-#[derive(Default)]
 pub struct Fpu {
     regs: [u64; 32],
     fir: u64,
@@ -12,6 +12,8 @@ pub struct Fpu {
     fexr: u64,
     fenr: u64,
     fcsr: u64,
+
+    logger: slog::Logger,
 }
 
 trait FloatRawConvert {
@@ -109,6 +111,18 @@ macro_rules! cond {
 }
 
 impl Fpu {
+    pub fn new(logger: slog::Logger) -> Box<Fpu> {
+        Box::new(Fpu {
+            regs: [0u64; 32],
+            fir: 0,
+            fccr: 0,
+            fexr: 0,
+            fenr: 0,
+            fcsr: 0,
+            logger,
+        })
+    }
+
     fn set_cc(&mut self, cc: usize, val: bool) {
         if cc > 8 {
             panic!("invalid cc code");

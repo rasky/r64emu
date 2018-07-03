@@ -228,8 +228,8 @@ impl Cpu {
                 tight_exit: false,
             },
             bus: bus,
-            cop0: Some(Box::new(Cp0::new(logger.new(o!())))),
-            cop1: Some(Box::new(Fpu::default())),
+            cop0: None,
+            cop1: None,
             cop2: None,
             cop3: None,
             logger: logger,
@@ -237,6 +237,19 @@ impl Cpu {
             last_fetch_addr: 0,
             last_fetch_mem: MemIoR::default(),
         };
+    }
+
+    pub fn set_cop0(&mut self, cop0: Box<dyn Cop0>) {
+        self.cop0 = Some(cop0);
+    }
+    pub fn set_cop1(&mut self, cop1: Box<dyn Cop>) {
+        self.cop1 = Some(cop1);
+    }
+    pub fn set_cop2(&mut self, cop2: Box<dyn Cop>) {
+        self.cop2 = Some(cop2);
+    }
+    pub fn set_cop3(&mut self, cop3: Box<dyn Cop>) {
+        self.cop3 = Some(cop3);
     }
 
     pub fn get_pc(&self) -> u32 {

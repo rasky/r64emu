@@ -29,7 +29,6 @@ mod vi;
 
 use cartridge::{Cartridge, CicModel};
 use dp::Dp;
-use mips64::Cpu;
 use pi::Pi;
 use si::Si;
 use sp::Sp;
@@ -58,7 +57,7 @@ struct N64 {
     logger: slog::Logger,
     sync: sync::Sync,
     bus: Rc<RefCell<Box<Bus>>>,
-    cpu: Rc<RefCell<Box<Cpu>>>,
+    cpu: Rc<RefCell<Box<mips64::Cpu>>>,
     cart: DevPtr<Cartridge>,
 
     mem: DevPtr<Memory>,
@@ -72,7 +71,7 @@ struct N64 {
 impl N64 {
     fn new(logger: slog::Logger, romfn: &str) -> Result<N64> {
         let bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
-        let cpu = Rc::new(RefCell::new(Box::new(Cpu::new(
+        let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
             logger.new(o!()),
             bus.clone(),
         ))));
@@ -86,6 +85,12 @@ impl N64 {
         let si = DevPtr::new(Si::new(logger.new(o!())));
         let dp = DevPtr::new(Dp::new(logger.new(o!())));
         let vi = DevPtr::new(Vi::new(logger.new(o!()), bus.clone()));
+
+        {
+            let mut cpu = cpu.borrow_mut();
+            cpu.set_cop0(mips64::Cp0::new(logger.new(o!())));
+            cpu.set_cop1(mips64::Fpu::new(logger.new(o!())));
+        }
 
         {
             let mut bus = bus.borrow_mut();
