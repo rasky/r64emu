@@ -2,7 +2,7 @@ extern crate byteorder;
 extern crate emu;
 extern crate slog;
 use emu::bus::be::{Bus, Reg32};
-use emu::gfx::{GfxBuffer, GfxBufferMut, Rgb888};
+use emu::gfx::{GfxBuffer, GfxBufferMut, Rgb565, Rgb888};
 use emu::int::Numerics;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -80,12 +80,27 @@ impl Vi {
                 match bpp {
                     // 32-bit
                     3 => {
-                        let src = GfxBuffer::new(src, 640, 480, 640 * 4).unwrap();
+                        let src = GfxBuffer::new(src, 320, 240, 320 * 4).unwrap();
                         for y in 0..240 {
                             let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
                             let src = src.line(y);
                             for x in 0..320 {
                                 let px = src.get(x);
+                                dst1.set(x * 2, px);
+                                dst1.set(x * 2 + 1, px);
+                                dst2.set(x * 2, px);
+                                dst2.set(x * 2 + 1, px);
+                            }
+                        }
+                    }
+                    // 16-bit
+                    2 => {
+                        let src = GfxBuffer::<Rgb565>::new(src, 320, 240, 320 * 2).unwrap();
+                        for y in 0..240 {
+                            let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
+                            let src = src.line(y);
+                            for x in 0..320 {
+                                let px = src.get(x).into();
                                 dst1.set(x * 2, px);
                                 dst1.set(x * 2 + 1, px);
                                 dst2.set(x * 2, px);
