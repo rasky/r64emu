@@ -1,7 +1,7 @@
 extern crate byteorder;
 extern crate typenum;
 
-use self::byteorder::{ByteOrder, LittleEndian};
+use self::byteorder::LittleEndian;
 #[allow(unused_imports)]
 use self::typenum::{
     U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2, U20, U21, U22, U23, U24, U25,
@@ -254,13 +254,11 @@ pub struct GfxBufferMut<'a, C: Color + Sized> {
 
 pub struct GfxLine<'a, C: Color + Sized> {
     mem: &'a [u8],
-    width: usize,
     phantom: PhantomData<C>,
 }
 
 pub struct GfxLineMut<'a, C: Color + Sized> {
     mem: &'a mut [u8],
-    width: usize,
     phantom: PhantomData<C>,
 }
 
@@ -299,7 +297,6 @@ impl<'a: 's, 's, C: Color + Sized> GfxBuffer<'a, C> {
     pub fn line(&'s self, y: usize) -> GfxLine<'s, C> {
         GfxLine {
             mem: &self.mem[y * self.pitch..][..self.width * C::U::SIZE],
-            width: self.width,
             phantom: PhantomData,
         }
     }
@@ -333,7 +330,6 @@ impl<'a: 's, 's, C: Color + Sized> GfxBufferMut<'a, C> {
     pub fn line(&'s mut self, y: usize) -> GfxLineMut<'s, C> {
         GfxLineMut {
             mem: &mut self.mem[y * self.pitch..][..self.width * C::U::SIZE],
-            width: self.width,
             phantom: PhantomData,
         }
     }
@@ -344,12 +340,10 @@ impl<'a: 's, 's, C: Color + Sized> GfxBufferMut<'a, C> {
         (
             GfxLineMut {
                 mem: &mut mem1[y1 * self.pitch..][..self.width * C::U::SIZE],
-                width: self.width,
                 phantom: PhantomData,
             },
             GfxLineMut {
                 mem: &mut mem2[..self.width * C::U::SIZE],
-                width: self.width,
                 phantom: PhantomData,
             },
         )
