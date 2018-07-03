@@ -366,8 +366,11 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
         use ::std::result::Result;
         use ::std::cell::{RefCell};
         use ::std::rc::{Rc};
-        use emu::bus::{Bus, Device, Reg, RegFlags, Mem, MemFlags};
+        use emu::bus::{Bus, Device};
         use byteorder:: #endian;
+
+        #[allow(unused_imports)]
+        use emu::bus::{Reg, RegFlags, Mem, MemFlags};
 
         gen impl Device for @Self {
             type Order = #endian;
