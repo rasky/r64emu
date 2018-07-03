@@ -315,7 +315,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn branch(&mut self, cond: bool, tgt: u32, likely: bool) {
+    pub(crate) fn branch(&mut self, cond: bool, tgt: u32, likely: bool) {
         if cond {
             self.branch_pc = tgt;
             self.tight_exit = true;

@@ -65,6 +65,9 @@ impl<'a, F: Float + FloatRawConvert> Fop<'a, F> {
     fn func(&self) -> u32 {
         self.opcode & 0x3f
     }
+    fn cc(&self) -> usize {
+        ((self.opcode >> 8) & 7) as usize
+    }
     fn rs(&self) -> usize {
         ((self.opcode >> 11) & 0x1f) as usize
     }
@@ -97,7 +100,34 @@ macro_rules! approx {
     }};
 }
 
+macro_rules! cond {
+    ($op:ident, $cond:expr) => {{
+        let cond = $cond;
+        let cc = $op.cc();
+        $op.cpu.cop1.set_cc(cc, cond);
+    }};
+}
+
 impl Cop1 {
+    fn set_cc(&mut self, cc: usize, val: bool) {
+        if cc > 8 {
+            panic!("invalid cc code");
+        }
+        self.fccr = (self.fccr & !(1 << cc)) | ((val as u64) << cc);
+        let mut cc2 = cc + 23;
+        if cc > 0 {
+            cc2 += 1;
+        }
+        self.fcsr = (self.fcsr & !(1 << cc2)) | ((val as u64) << cc2);
+    }
+
+    fn get_cc(&mut self, cc: usize) -> bool {
+        if cc > 8 {
+            panic!("invalid cc code");
+        }
+        (self.fccr & (1 << cc)) != 0
+    }
+
     fn fop<M: Float + FloatRawConvert>(cpu: &mut Cpu, opcode: u32) {
         let mut op = Fop::<M> {
             opcode,
@@ -148,6 +178,12 @@ impl Cop1 {
             0x0D => approx!(op, trunc, to_i32),         // TRUNC.W.fmt
             0x0E => approx!(op, ceil, to_i32),          // CEIL.W.fmt
             0x0F => approx!(op, floor, to_i32),         // FLOOR.W.fmt
+
+            0x30 => cond!(op, false),              // C.F.fmt
+            0x32 => cond!(op, op.fs() == op.ft()), // C.EQ.fmt
+            0x34 => cond!(op, op.fs() < op.ft()),  // C.OLT.fmt
+            0x36 => cond!(op, op.fs() <= op.ft()), // C.OLE.fmt
+
             _ => panic!("unimplemented COP1 opcode: func={:x?}", op.func()),
         }
     }
@@ -156,6 +192,15 @@ impl Cop1 {
     pub(crate) fn op(cpu: &mut Cpu, opcode: u32) {
         let fmt = (opcode >> 21) & 0x1F;
         match fmt {
+            8 => {
+                let op = Mipsop { cpu, opcode };
+                let cc = ((opcode >> 18) & 3) as usize;
+                let nd = opcode & (1 << 17) != 0;
+                let tf = opcode & (1 << 16) != 0;
+                let cond = op.cpu.cop1.get_cc(cc) == tf;
+                let tgt = op.btgt();
+                op.cpu.branch(cond, tgt, nd);
+            }
             16 => Cop1::fop::<f32>(cpu, opcode),
             17 => Cop1::fop::<f64>(cpu, opcode),
             _ => panic!("unimplemented COP1 fmt: fmt={:x?}", fmt),
