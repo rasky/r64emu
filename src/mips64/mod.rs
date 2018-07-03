@@ -1,7 +1,9 @@
 extern crate num;
 
-mod cop0;
-mod cop1;
+mod cp0;
 mod cpu;
+mod fpu;
 
-pub use self::cpu::Cpu;
+pub use self::cp0::Cp0;
+pub use self::cpu::{Cop, Cop0, Cpu};
+pub use self::fpu::Fpu;

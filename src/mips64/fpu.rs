@@ -5,7 +5,7 @@ use super::cpu::{Cop, CpuContext};
 use std::marker::PhantomData;
 
 #[derive(Default)]
-pub(crate) struct Fpu {
+pub struct Fpu {
     regs: [u64; 32],
     fir: u64,
     fccr: u64,

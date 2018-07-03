@@ -1,7 +1,7 @@
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
 use slog;
 
-pub(crate) struct Cp0 {
+pub struct Cp0 {
     reg_status: u64,
     reg_cause: u64,
 
