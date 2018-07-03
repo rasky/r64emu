@@ -1,13 +1,12 @@
 extern crate num;
 
 use self::num::Float;
-use super::cpu::Cpu;
-use super::Mipsop;
+use super::cpu::{Cop, CpuContext};
 use std::marker::PhantomData;
 
 #[derive(Default)]
-pub(crate) struct Cop1 {
-    pub(crate) regs: [u64; 32],
+pub(crate) struct Fpu {
+    regs: [u64; 32],
     fir: u64,
     fccr: u64,
     fexr: u64,
@@ -57,7 +56,8 @@ impl FloatRawConvert for f64 {
 
 struct Fop<'a, F: Float + FloatRawConvert> {
     opcode: u32,
-    cpu: &'a mut Cpu,
+    fpu: &'a mut Fpu,
+    cpu: &'a mut CpuContext,
     phantom: PhantomData<F>,
 }
 
@@ -78,16 +78,16 @@ impl<'a, F: Float + FloatRawConvert> Fop<'a, F> {
         ((self.opcode >> 6) & 0x1f) as usize
     }
     fn fs(&self) -> F {
-        F::from_u64bits(self.cpu.cop1.regs[self.rs()])
+        F::from_u64bits(self.fpu.regs[self.rs()])
     }
     fn ft(&self) -> F {
-        F::from_u64bits(self.cpu.cop1.regs[self.rt()])
+        F::from_u64bits(self.fpu.regs[self.rt()])
     }
     fn set_fd(&mut self, v: F) {
-        self.cpu.cop1.regs[self.rd()] = v.to_u64bits();
+        self.fpu.regs[self.rd()] = v.to_u64bits();
     }
     fn mfd64(&'a mut self) -> &'a mut u64 {
-        &mut self.cpu.cop1.regs[self.rd()]
+        &mut self.fpu.regs[self.rd()]
     }
 }
 
@@ -104,11 +104,11 @@ macro_rules! cond {
     ($op:ident, $cond:expr) => {{
         let cond = $cond;
         let cc = $op.cc();
-        $op.cpu.cop1.set_cc(cc, cond);
+        $op.fpu.set_cc(cc, cond);
     }};
 }
 
-impl Cop1 {
+impl Fpu {
     fn set_cc(&mut self, cc: usize, val: bool) {
         if cc > 8 {
             panic!("invalid cc code");
@@ -128,9 +128,10 @@ impl Cop1 {
         (self.fccr & (1 << cc)) != 0
     }
 
-    fn fop<M: Float + FloatRawConvert>(cpu: &mut Cpu, opcode: u32) {
+    fn fop<M: Float + FloatRawConvert>(&mut self, cpu: &mut CpuContext, opcode: u32) {
         let mut op = Fop::<M> {
             opcode,
+            fpu: self,
             cpu,
             phantom: PhantomData,
         };
@@ -187,22 +188,26 @@ impl Cop1 {
             _ => panic!("unimplemented COP1 opcode: func={:x?}", op.func()),
         }
     }
+}
 
-    #[inline(always)]
-    pub(crate) fn op(cpu: &mut Cpu, opcode: u32) {
+impl Cop for Fpu {
+    fn reg(&mut self, idx: usize) -> &mut u64 {
+        &mut self.regs[idx]
+    }
+
+    fn op(&mut self, cpu: &mut CpuContext, opcode: u32) {
         let fmt = (opcode >> 21) & 0x1F;
         match fmt {
             8 => {
-                let op = Mipsop { cpu, opcode };
+                let tgt = cpu.pc + ((opcode & 0xffff) as i16 as i32 as u32) * 4;
                 let cc = ((opcode >> 18) & 3) as usize;
                 let nd = opcode & (1 << 17) != 0;
                 let tf = opcode & (1 << 16) != 0;
-                let cond = op.cpu.cop1.get_cc(cc) == tf;
-                let tgt = op.btgt();
-                op.cpu.branch(cond, tgt, nd);
+                let cond = self.get_cc(cc) == tf;
+                cpu.branch(cond, tgt, nd);
             }
-            16 => Cop1::fop::<f32>(cpu, opcode),
-            17 => Cop1::fop::<f64>(cpu, opcode),
+            16 => self.fop::<f32>(cpu, opcode),
+            17 => self.fop::<f64>(cpu, opcode),
             _ => panic!("unimplemented COP1 fmt: fmt={:x?}", fmt),
         }
     }

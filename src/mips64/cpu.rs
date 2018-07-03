@@ -4,30 +4,165 @@ use self::emu::bus::be::{Bus, MemIoR};
 use self::emu::bus::MemInt;
 use self::emu::int::Numerics;
 use self::emu::sync;
-use super::cop0::Cop0;
-use super::cop1::Cop1;
-use super::Mipsop;
+use super::cop0::Cp0;
+use super::cop1::Fpu;
 use slog;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub struct Cpu {
-    pub(crate) regs: [u64; 32],
-    hi: u64,
-    lo: u64,
+/// Cop is a MIPS64 coprocessor that can be installed within the core.
+pub trait Cop {
+    fn reg(&mut self, idx: usize) -> &mut u64;
+    fn op(&mut self, cpu: &mut CpuContext, opcode: u32);
+}
 
-    pub(crate) cop0: Cop0,
-    pub(crate) cop1: Cop1,
-    pub(crate) logger: slog::Logger,
+pub enum Exception {
+    Int = 0x00,  // Interrupt
+    Mod = 0x01,  // TLB modification exception
+    TLBL = 0x02, // TLB load/fetch
+    TLBS = 0x03, // TLB store
+    AdEL = 0x04, // Address error (load/fetch)
+    AdES = 0x05, // Address error (store)
+    Sys = 0x06,  // Syscall
+    RI = 0x07,   // Reserved instruction
+}
+
+/// Cop0 is a MIPS64 coprocessor #0, which (in addition to being a normal coprocessor)
+/// it is able to control execution of the core by triggering exceptions.
+pub trait Cop0: Cop {
+    /// Check if there's a pending interrupt. It is expected that if this
+    /// function returns true, Cop0::exception() is immediately called with
+    /// exc == Exception::Int.
+    fn pending_int(&self) -> bool;
+
+    /// Trigger the specified excepion.
+    fn exception(&mut self, exc: Exception, cu_pc: u32) -> u32;
+}
+
+pub struct CpuContext {
+    pub regs: [u64; 32],
+    pub hi: u64,
+    pub lo: u64,
+    pub pc: u32,
+    pub branch_pc: u32,
+    pub clock: i64,
+    pub tight_exit: bool,
+}
+
+pub struct Cpu {
+    ctx: CpuContext,
+
+    cop0: Option<Box<Cop0>>,
+    cop1: Option<Box<Cop>>,
+    cop2: Option<Box<Cop>>,
+    cop3: Option<Box<Cop>>,
+
+    logger: slog::Logger,
     bus: Rc<RefCell<Box<Bus>>>,
-    pub(crate) pc: u32,
-    branch_pc: u32,
-    clock: i64,
     until: i64,
-    pub(crate) tight_exit: bool,
 
     last_fetch_addr: u32,
     last_fetch_mem: MemIoR<u32>,
+}
+
+struct Mipsop<'a> {
+    opcode: u32,
+    cpu: &'a mut Cpu,
+}
+
+impl<'a> Mipsop<'a> {
+    fn op(&self) -> u32 {
+        self.opcode >> 26
+    }
+    fn special(&self) -> u32 {
+        self.opcode & 0x3f
+    }
+    fn ea(&self) -> u32 {
+        self.rs32() + self.sximm32() as u32
+    }
+    fn sa(&self) -> usize {
+        ((self.opcode >> 6) & 0x1f) as usize
+    }
+    fn btgt(&self) -> u32 {
+        self.cpu.ctx.pc + self.sximm32() as u32 * 4
+    }
+    fn jtgt(&self) -> u32 {
+        (self.cpu.ctx.pc & 0xF000_0000) + ((self.opcode & 0x03FF_FFFF) * 4)
+    }
+    fn rs(&self) -> usize {
+        ((self.opcode >> 21) & 0x1f) as usize
+    }
+    fn rt(&self) -> usize {
+        ((self.opcode >> 16) & 0x1f) as usize
+    }
+    fn rd(&self) -> usize {
+        ((self.opcode >> 11) & 0x1f) as usize
+    }
+    fn sximm32(&self) -> i32 {
+        (self.opcode & 0xffff) as i16 as i32
+    }
+    fn sximm64(&self) -> i64 {
+        (self.opcode & 0xffff) as i16 as i64
+    }
+    fn imm64(&self) -> u64 {
+        (self.opcode & 0xffff) as u64
+    }
+    fn rs64(&self) -> u64 {
+        self.cpu.ctx.regs[self.rs()]
+    }
+    fn rt64(&self) -> u64 {
+        self.cpu.ctx.regs[self.rt()]
+    }
+    fn ft64(&mut self) -> u64 {
+        let rt = self.rt();
+        *self.cpu.cop1.as_mut().unwrap().reg(rt)
+    }
+    fn irs64(&self) -> i64 {
+        self.rs64() as i64
+    }
+    fn irt64(&self) -> i64 {
+        self.rt64() as i64
+    }
+    fn rs32(&self) -> u32 {
+        self.rs64() as u32
+    }
+    fn rt32(&self) -> u32 {
+        self.rt64() as u32
+    }
+    fn irs32(&self) -> i32 {
+        self.rs64() as i32
+    }
+    fn irt32(&self) -> i32 {
+        self.rt64() as i32
+    }
+    fn mrt64(&'a mut self) -> &'a mut u64 {
+        &mut self.cpu.ctx.regs[self.rt()]
+    }
+    fn mrd64(&'a mut self) -> &'a mut u64 {
+        &mut self.cpu.ctx.regs[self.rd()]
+    }
+    fn mft64(&'a mut self) -> &'a mut u64 {
+        let rt = self.rt();
+        self.cpu.cop1.as_mut().unwrap().reg(rt)
+    }
+    fn hex(&self) -> String {
+        format!("{:x}", self.opcode)
+    }
+}
+
+impl CpuContext {
+    #[inline]
+    pub fn branch(&mut self, cond: bool, tgt: u32, likely: bool) {
+        if cond {
+            self.branch_pc = tgt;
+            self.tight_exit = true;
+        } else if likely {
+            // branch not taken; if likely, skip delay slot
+            self.pc += 4;
+            self.clock += 1;
+            self.tight_exit = true;
+        }
+    }
 }
 
 macro_rules! branch {
@@ -42,10 +177,10 @@ macro_rules! branch {
     }};
     ($op:ident, $cond:expr, $tgt:expr,link($link:expr),likely($lkl:expr)) => {{
         if $link {
-            $op.cpu.regs[31] = ($op.cpu.pc + 4) as u64;
+            $op.cpu.ctx.regs[31] = ($op.cpu.ctx.pc + 4) as u64;
         }
         let (cond, tgt) = ($cond, $tgt);
-        $op.cpu.branch(cond, tgt, $lkl);
+        $op.cpu.ctx.branch(cond, tgt, $lkl);
     }};
 }
 
@@ -67,42 +202,53 @@ macro_rules! check_overflow_sub {
     }};
 }
 
+macro_rules! if_cop {
+    ($op:ident, $cop:ident, $do:expr) => {{
+        match $op.cpu.$cop {
+            Some(ref mut $cop) => $do,
+            None => {
+                let pc = $op.cpu.ctx.pc;
+                let opcode = $op.opcode;
+                warn!($op.cpu.logger, "COP opcode without COP"; o!("pc" => pc.hex(), "op" => opcode.hex()));
+            }
+        }
+    }};
+}
+
 impl Cpu {
     pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>) -> Cpu {
         return Cpu {
+            ctx: CpuContext {
+                regs: [0u64; 32],
+                hi: 0,
+                lo: 0,
+                pc: 0x1FC0_0000, // FIXME
+                branch_pc: 0,
+                clock: 0,
+                tight_exit: false,
+            },
             bus: bus,
+            cop0: Some(Box::new(Cp0::new(logger.new(o!())))),
+            cop1: Some(Box::new(Fpu::default())),
+            cop2: None,
+            cop3: None,
             logger: logger,
-            regs: [0u64; 32],
-            cop0: Cop0::default(),
-            cop1: Cop1::default(),
-            hi: 0,
-            lo: 0,
-            pc: 0x1FC0_0000, // FIXME
-            branch_pc: 0,
-            clock: 0,
             until: 0,
-            tight_exit: false,
             last_fetch_addr: 0,
             last_fetch_mem: MemIoR::default(),
         };
     }
 
     pub fn get_pc(&self) -> u32 {
-        self.pc
+        self.ctx.pc
     }
 
     fn trap_overflow(&mut self) {
         unimplemented!();
     }
 
-    fn cop(&mut self, idx: usize, opcode: u32) {
-        let mut op = Mipsop { opcode, cpu: self };
-        error!(op.cpu.logger, "unimplemented COP opcode"; o!("cop" => idx, "op" => op.hex(), "func" => op.rs()));
-        unimplemented!();
-    }
-
     fn op(&mut self, opcode: u32) {
-        self.clock += 1;
+        self.ctx.clock += 1;
         let mut op = Mipsop { opcode, cpu: self };
         match op.op() {
             // SPECIAL
@@ -117,10 +263,10 @@ impl Cpu {
                 0x09 => branch!(op, true, op.rs32(), link(true)),    // JALR
                 0x0F => {}                                           // SYNC
 
-                0x10 => *op.mrd64() = op.cpu.hi, // MFHI
-                0x11 => op.cpu.hi = op.rs64(),   // MTHI
-                0x12 => *op.mrd64() = op.cpu.lo, // MFLO
-                0x13 => op.cpu.lo = op.rs64(),   // MTLO
+                0x10 => *op.mrd64() = op.cpu.ctx.hi, // MFHI
+                0x11 => op.cpu.ctx.hi = op.rs64(),   // MTHI
+                0x12 => *op.mrd64() = op.cpu.ctx.lo, // MFLO
+                0x13 => op.cpu.ctx.lo = op.rs64(),   // MTLO
                 0x14 => *op.mrd64() = op.rt64() << (op.rs32() & 0x3F), // DSLLV
                 0x16 => *op.mrd64() = op.rt64() >> (op.rs32() & 0x3F), // DSRLV
                 0x17 => *op.mrd64() = (op.irt64() >> (op.rs32() & 0x3F)) as u64, // DSRAV
@@ -128,47 +274,47 @@ impl Cpu {
                     // MULT
                     let (hi, lo) =
                         (i64::wrapping_mul(op.rt32().isx64(), op.rs32().isx64()) as u64).hi_lo();
-                    op.cpu.lo = lo;
-                    op.cpu.hi = hi;
+                    op.cpu.ctx.lo = lo;
+                    op.cpu.ctx.hi = hi;
                 }
                 0x19 => {
                     // MULTU
                     let (hi, lo) = u64::wrapping_mul(op.rt32() as u64, op.rs32() as u64).hi_lo();
-                    op.cpu.lo = lo;
-                    op.cpu.hi = hi;
+                    op.cpu.ctx.lo = lo;
+                    op.cpu.ctx.hi = hi;
                 }
                 0x1A => {
                     // DIV
-                    op.cpu.lo = op.irs32().wrapping_div(op.irt32()).sx64();
-                    op.cpu.hi = op.irs32().wrapping_rem(op.irt32()).sx64();
+                    op.cpu.ctx.lo = op.irs32().wrapping_div(op.irt32()).sx64();
+                    op.cpu.ctx.hi = op.irs32().wrapping_rem(op.irt32()).sx64();
                 }
                 0x1B => {
                     // DIVU
-                    op.cpu.lo = op.rs32().wrapping_div(op.rt32()).sx64();
-                    op.cpu.hi = op.rs32().wrapping_rem(op.rt32()).sx64();
+                    op.cpu.ctx.lo = op.rs32().wrapping_div(op.rt32()).sx64();
+                    op.cpu.ctx.hi = op.rs32().wrapping_rem(op.rt32()).sx64();
                 }
                 0x1C => {
                     // DMULT
                     let (hi, lo) =
                         i128::wrapping_mul(op.irt64() as i128, op.irs64() as i128).hi_lo();
-                    op.cpu.lo = lo as u64;
-                    op.cpu.hi = hi as u64;
+                    op.cpu.ctx.lo = lo as u64;
+                    op.cpu.ctx.hi = hi as u64;
                 }
                 0x1D => {
                     // DMULTU
                     let (hi, lo) = u128::wrapping_mul(op.rt64() as u128, op.rs64() as u128).hi_lo();
-                    op.cpu.lo = lo as u64;
-                    op.cpu.hi = hi as u64;
+                    op.cpu.ctx.lo = lo as u64;
+                    op.cpu.ctx.hi = hi as u64;
                 }
                 0x1E => {
                     // DDIV
-                    op.cpu.lo = op.irs64().wrapping_div(op.irt64()) as u64;
-                    op.cpu.hi = op.irs64().wrapping_rem(op.irt64()) as u64;
+                    op.cpu.ctx.lo = op.irs64().wrapping_div(op.irt64()) as u64;
+                    op.cpu.ctx.hi = op.irs64().wrapping_rem(op.irt64()) as u64;
                 }
                 0x1F => {
                     // DDIVU
-                    op.cpu.lo = op.rs64().wrapping_div(op.rt64());
-                    op.cpu.hi = op.rs64().wrapping_rem(op.rt64());
+                    op.cpu.ctx.lo = op.rs64().wrapping_div(op.rt64());
+                    op.cpu.ctx.hi = op.rs64().wrapping_rem(op.rt64());
                 }
 
                 0x20 => check_overflow_add!(op, *op.mrd64(), op.irs32(), op.irt32()), // ADD
@@ -224,16 +370,16 @@ impl Cpu {
             0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),      // XORI
             0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(), // LUI
 
-            0x10 => Cop0::op(op.cpu, opcode), // COP0
-            0x11 => Cop1::op(op.cpu, opcode), // COP1
-            0x12 => op.cpu.cop(2, opcode),    // COP2
-            0x13 => op.cpu.cop(3, opcode),    // COP3
+            0x10 => if_cop!(op, cop0, { cop0.op(&mut op.cpu.ctx, opcode) }), // COP0
+            0x11 => if_cop!(op, cop1, { cop1.op(&mut op.cpu.ctx, opcode) }), // COP1
+            0x12 => if_cop!(op, cop2, { cop2.op(&mut op.cpu.ctx, opcode) }), // COP2
+            0x13 => if_cop!(op, cop3, { cop3.op(&mut op.cpu.ctx, opcode) }), // COP3
             0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)), // BEQL
             0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)), // BNEL
-            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)), // BLEZL
-            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)), // BGTZL
+            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)),   // BLEZL
+            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),    // BGTZL
             0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()), // DADDI
-            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64, // DADDIU
+            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,        // DADDIU
 
             0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea()).sx64(), // LB
             0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea()).sx64(), // LH
@@ -250,17 +396,39 @@ impl Cpu {
             0x2E => op.cpu.write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32())), // SWR
             0x2F => {}                                               // CACHE
 
-            0x31 => *op.mft64() = op.cpu.read::<u32>(op.ea()) as u64, // LWC1
-            0x35 => *op.mft64() = op.cpu.read::<u64>(op.ea()),        // LDC1
-            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()),        // LD
-            0x39 => op.cpu.write::<u32>(op.ea(), op.ft64() as u32),   // SWC1
-            0x3D => op.cpu.write::<u64>(op.ea(), op.ft64()),          // SDC1
-            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),          // SD
+            0x31 => {
+                // LWC1
+                let val = op.cpu.read::<u32>(op.ea()) as u64;
+                let rt = op.rt();
+                if_cop!(op, cop1, { *cop1.reg(rt) = val });
+            }
+            0x35 => {
+                // LDC1
+                let val = op.cpu.read::<u64>(op.ea());
+                let rt = op.rt();
+                if_cop!(op, cop1, { *cop1.reg(rt) = val });
+            }
+            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()), // LD
+            0x39 => {
+                // SWC1
+                let mut val: u64 = 0xffff_ffff_ffff_ffff;
+                let rt = op.rt();
+                if_cop!(op, cop1, { val = *cop1.reg(rt) });
+                op.cpu.write::<u32>(op.ea(), val as u32);
+            }
+            0x3D => {
+                // SDC1
+                let mut val: u64 = 0xffff_ffff_ffff_ffff;
+                let rt = op.rt();
+                if_cop!(op, cop1, { val = *cop1.reg(rt) });
+                op.cpu.write::<u64>(op.ea(), val);
+            }
+            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()), // SD
 
             _ => panic!(
                 "unimplemented opcode: func=0x{:x?}, pc={}",
                 op.op(),
-                op.cpu.pc.hex()
+                op.cpu.ctx.pc.hex()
             ),
         }
     }
@@ -314,40 +482,33 @@ impl Cpu {
             .write::<U>(addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1), val);
     }
 
-    #[inline]
-    pub(crate) fn branch(&mut self, cond: bool, tgt: u32, likely: bool) {
-        if cond {
-            self.branch_pc = tgt;
-            self.tight_exit = true;
-        } else if likely {
-            // branch not taken; if likely, skip delay slot
-            self.pc += 4;
-            self.clock += 1;
-            self.tight_exit = true;
-        }
-    }
-
     pub fn run(&mut self, until: i64) {
         self.until = until;
-        while self.clock < self.until {
-            let pc = self.pc;
+        while self.ctx.clock < self.until {
+            let mut pc = self.ctx.pc;
+            if let Some(ref mut cop0) = self.cop0 {
+                if cop0.pending_int() {
+                    pc = cop0.exception(Exception::Int, pc);
+                }
+            }
+
             let mut iter = self.fetch(pc).iter().unwrap();
 
             // Tight loop: go through continuous memory, no branches, no IRQs
-            self.tight_exit = false;
+            self.ctx.tight_exit = false;
             while let Some(op) = iter.next() {
-                self.pc += 4;
+                self.ctx.pc += 4;
                 self.op(op);
-                if self.clock >= self.until || self.tight_exit {
+                if self.ctx.clock >= self.until || self.ctx.tight_exit {
                     break;
                 }
             }
 
-            if self.branch_pc != 0 {
-                let pc = self.pc;
+            if self.ctx.branch_pc != 0 {
+                let pc = self.ctx.pc;
                 let op = iter.next().unwrap_or_else(|| self.fetch(pc).read());
-                self.pc = self.branch_pc;
-                self.branch_pc = 0;
+                self.ctx.pc = self.ctx.branch_pc;
+                self.ctx.branch_pc = 0;
                 self.op(op);
             }
         }
@@ -360,6 +521,6 @@ impl sync::Subsystem for Box<Cpu> {
     }
 
     fn cycles(&self) -> i64 {
-        self.clock
+        self.ctx.clock
     }
 }
