@@ -36,13 +36,13 @@ pub struct Sp {
     #[mem(bank = 0, offset = 0x1000, size = 4096)]
     imem: Mem,
 
-    #[reg(bank = 2, offset = 0x0, wcb, rcb)]
+    #[reg(bank = 2, offset = 0x0, rwmask = 0xFFF, wcb, rcb)]
     reg_rsp_pc: Reg32,
 
-    #[reg(bank = 1, offset = 0x00, rwmask = 0x1FFF)]
+    #[reg(bank = 1, offset = 0x00, rwmask = 0x1FF8)]
     reg_dma_rsp_addr: Reg32,
 
-    #[reg(bank = 1, offset = 0x04, rwmask = 0xFFFFFF)]
+    #[reg(bank = 1, offset = 0x04, rwmask = 0xFFFFF8)]
     reg_dma_rdram_addr: Reg32,
 
     #[reg(bank = 1, offset = 0x08, wcb)]
@@ -97,22 +97,29 @@ impl Sp {
             //   COP2: vector unit
             let spb = sp.borrow();
             let mut cpu = spb.core_cpu.borrow_mut();
-            cpu.set_pc(0);
             cpu.set_cop0(SpCop0::new(&sp));
+            cpu.set_lines(mips64::Lines::HALT);
+            cpu.set_pc(0);
         }
 
         {
             // Configure RSP internal core bus
             let spb = sp.borrow();
             let mut bus = spb.core_bus.borrow_mut();
-            bus.map_device(0x0000_0000, &sp, 1)?;
+            bus.map_device(0x0000_0000, &sp, 0)?;
         }
 
         Ok(sp)
     }
 
-    fn cb_write_reg_status(&self, old: u32, new: u32) {
-        let mut status = StatusFlags::from_bits(old).unwrap();
+    fn get_status(&self) -> StatusFlags {
+        StatusFlags::from_bits(self.reg_status.get()).unwrap()
+    }
+
+    fn cb_write_reg_status(&mut self, old: u32, new: u32) {
+        self.reg_status.set(old); // restore previous value, as write bits are completely different
+
+        let mut status = self.get_status();
         if new & (1 << 0) != 0 {
             status.remove(StatusFlags::HALT);
         }
@@ -190,7 +197,27 @@ impl Sp {
         }
 
         info!(self.logger, "write status reg"; o!("status" => format!("{:?}", status)));
+        self.set_status(status);
+    }
+
+    fn set_status(&mut self, status: StatusFlags) {
+        let changed = self.get_status() ^ status;
         self.reg_status.set(status.bits());
+
+        // HALT status changed, propagate effects to CPU
+        if changed.contains(StatusFlags::HALT) {
+            let mut cpu = self.core_cpu.borrow_mut();
+            if status.contains(StatusFlags::HALT) {
+                cpu.set_lines(mips64::Lines::HALT);
+                if status.contains(StatusFlags::INTBREAK) {
+                    // FIXME: generate interrupt on break
+                }
+            } else {
+                // Releasing HALT causes a reset.
+                cpu.reset();
+                cpu.clear_lines(mips64::Lines::HALT);
+            }
+        }
     }
 
     fn dma_xfer(
@@ -262,11 +289,12 @@ impl Sp {
     }
 
     fn cb_write_reg_rsp_pc(&self, _old: u32, val: u32) {
-        self.core_cpu.borrow_mut().set_pc(val);
+        info!(self.logger, "RSP set PC"; o!("pc" => val.hex()));
+        self.core_cpu.borrow_mut().set_pc(val + 0x1000);
     }
 
     fn cb_read_reg_rsp_pc(&self, _old: u32) -> u32 {
-        self.core_cpu.borrow().get_pc()
+        self.core_cpu.borrow().get_pc() & 0xFFF
     }
 }
 
@@ -285,9 +313,22 @@ impl mips64::Cop0 for SpCop0 {
         false // RSP generate has no interrupts
     }
 
-    fn exception(&mut self, _exc: mips64::Exception, _cur_pc: u32) -> u32 {
-        // TODO: BREAK exception halts the CPU
-        unimplemented!()
+    fn exception(&mut self, ctx: &mut mips64::CpuContext, exc: mips64::Exception) {
+        match exc {
+            mips64::Exception::RESET => {
+                ctx.pc = 0x1000;
+                ctx.branch_pc = 0;
+            }
+
+            // Breakpoint exception is used by RSP to halt itself
+            mips64::Exception::BP => {
+                let mut sp = self.sp.borrow_mut();
+                let mut status = sp.get_status();
+                status.insert(StatusFlags::HALT | StatusFlags::BROKE);
+                sp.set_status(status);
+            }
+            _ => unimplemented!(),
+        }
     }
 }
 

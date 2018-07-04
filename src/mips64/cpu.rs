@@ -15,14 +15,26 @@ pub trait Cop {
 }
 
 pub enum Exception {
-    Int = 0x00,  // Interrupt
-    Mod = 0x01,  // TLB modification exception
+    INT = 0x00,  // Interrupt
+    MOD = 0x01,  // TLB modification exception
     TLBL = 0x02, // TLB load/fetch
     TLBS = 0x03, // TLB store
-    AdEL = 0x04, // Address error (load/fetch)
-    AdES = 0x05, // Address error (store)
-    Sys = 0x06,  // Syscall
-    RI = 0x07,   // Reserved instruction
+    ADEL = 0x04, // Address error (load/fetch)
+    ADES = 0x05, // Address error (store)
+    SYS = 0x08,  // Syscall
+    BP = 0x09,   // Breakpoint
+    RI = 0x0A,   // Reserved instruction
+
+    // Special exceptions that are not specified in the Cause register
+    RESET = 0x100,
+    SOFTRESET = 0x101,
+    NMI = 0x102,
+}
+
+bitflags! {
+    pub struct Lines: u8 {
+        const HALT = 0b0000_0001;
+    }
 }
 
 /// Cop0 is a MIPS64 coprocessor #0, which (in addition to being a normal coprocessor)
@@ -34,7 +46,7 @@ pub trait Cop0: Cop {
     fn pending_int(&self) -> bool;
 
     /// Trigger the specified excepion.
-    fn exception(&mut self, exc: Exception, cur_pc: u32) -> u32;
+    fn exception(&mut self, ctx: &mut CpuContext, exc: Exception);
 }
 
 pub struct CpuContext {
@@ -45,6 +57,7 @@ pub struct CpuContext {
     pub branch_pc: u32,
     pub clock: i64,
     pub tight_exit: bool,
+    lines: Lines,
 }
 
 pub struct Cpu {
@@ -161,6 +174,22 @@ impl CpuContext {
             self.tight_exit = true;
         }
     }
+
+    pub fn set_lines(&mut self, lines: Lines) {
+        if self.lines.contains(lines) {
+            return;
+        }
+        self.lines.insert(lines);
+        self.tight_exit = true;
+    }
+
+    pub fn clear_lines(&mut self, lines: Lines) {
+        if !self.lines.contains(lines) {
+            return;
+        }
+        self.lines.remove(lines);
+        self.tight_exit = true;
+    }
 }
 
 macro_rules! branch {
@@ -224,6 +253,7 @@ impl Cpu {
                 branch_pc: 0,
                 clock: 0,
                 tight_exit: false,
+                lines: Lines::empty(),
             },
             bus: bus,
             cop0: None,
@@ -232,7 +262,7 @@ impl Cpu {
             cop3: None,
             logger: logger,
             until: 0,
-            last_fetch_addr: 0,
+            last_fetch_addr: 0xFFFF_FFFF,
             last_fetch_mem: MemIoR::default(),
         };
     }
@@ -262,6 +292,23 @@ impl Cpu {
         self.ctx.pc
     }
 
+    pub fn set_lines(&mut self, lines: Lines) {
+        self.ctx.set_lines(lines);
+    }
+    pub fn clear_lines(&mut self, lines: Lines) {
+        self.ctx.clear_lines(lines);
+    }
+
+    pub fn reset(&mut self) {
+        self.exception(Exception::RESET);
+    }
+
+    fn exception(&mut self, exc: Exception) {
+        if let Some(ref mut cop0) = self.cop0 {
+            cop0.exception(&mut self.ctx, exc);
+        }
+    }
+
     fn trap_overflow(&mut self) {
         unimplemented!();
     }
@@ -280,6 +327,7 @@ impl Cpu {
                 0x07 => *op.mrd64() = (op.irt32() >> (op.rs32() & 0x1F)).sx64(), // SRAV
                 0x08 => branch!(op, true, op.rs32(), link(false)),   // JR
                 0x09 => branch!(op, true, op.rs32(), link(true)),    // JALR
+                0x0D => op.cpu.exception(Exception::BP),             // BREAK
                 0x0F => {}                                           // SYNC
 
                 0x10 => *op.mrd64() = op.cpu.ctx.hi, // MFHI
@@ -371,7 +419,11 @@ impl Cpu {
                 0x11 => branch!(op, op.irs64() >= 0, op.btgt(), link(true), likely(false)), // BGEZAL
                 0x12 => branch!(op, op.irs64() < 0, op.btgt(), link(true), likely(true)), // BLTZALL
                 0x13 => branch!(op, op.irs64() >= 0, op.btgt(), link(true), likely(true)), // BGEZALL
-                _ => panic!("unimplemented regimm opcode: func=0x{:x?}", op.rt()),
+                _ => panic!(
+                    "unimplemented regimm opcode: func=0x{:x?} pc=0x{:x?}",
+                    op.rt(),
+                    op.cpu.ctx.pc - 4
+                ),
             },
 
             0x02 => branch!(op, true, op.jtgt(), link(false)), // J
@@ -504,14 +556,22 @@ impl Cpu {
     pub fn run(&mut self, until: i64) {
         self.until = until;
         while self.ctx.clock < self.until {
-            let mut pc = self.ctx.pc;
+            if self.ctx.lines.contains(Lines::HALT) {
+                self.ctx.clock = self.until;
+                return;
+            }
+
+            let pc = self.ctx.pc;
             if let Some(ref mut cop0) = self.cop0 {
                 if cop0.pending_int() {
-                    pc = cop0.exception(Exception::Int, pc);
+                    cop0.exception(&mut self.ctx, Exception::INT);
                 }
             }
 
-            let mut iter = self.fetch(pc).iter().unwrap();
+            let mut iter = self
+                .fetch(pc)
+                .iter()
+                .expect(&format!("non-linear memory at PC: {}", pc.hex()));
 
             // Tight loop: go through continuous memory, no branches, no IRQs
             self.ctx.tight_exit = false;

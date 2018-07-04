@@ -5,5 +5,5 @@ mod cpu;
 mod fpu;
 
 pub use self::cp0::Cp0;
-pub use self::cpu::{Cop, Cop0, Cpu, CpuContext, Exception};
+pub use self::cpu::{Cop, Cop0, Cpu, CpuContext, Exception, Lines};
 pub use self::fpu::Fpu;

@@ -23,9 +23,7 @@ impl Cop0 for Cp0 {
         false
     }
 
-    fn exception(&mut self, _exc: Exception, pc: u32) -> u32 {
-        pc
-    }
+    fn exception(&mut self, _ctx: &mut CpuContext, _exc: Exception) {}
 }
 
 struct C0op<'a> {
