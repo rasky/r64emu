@@ -458,11 +458,23 @@ impl Cpu {
                 let rt = op.rt();
                 if_cop!(op, cop1, { *cop1.reg(rt) = val });
             }
+            0x32 => {
+                // LWC2
+                let val = op.cpu.read::<u32>(op.ea()) as u64;
+                let rt = op.rt();
+                if_cop!(op, cop2, { *cop2.reg(rt) = val });
+            }
             0x35 => {
                 // LDC1
                 let val = op.cpu.read::<u64>(op.ea());
                 let rt = op.rt();
                 if_cop!(op, cop1, { *cop1.reg(rt) = val });
+            }
+            0x36 => {
+                // LDC2
+                let val = op.cpu.read::<u64>(op.ea());
+                let rt = op.rt();
+                if_cop!(op, cop2, { *cop2.reg(rt) = val });
             }
             0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()), // LD
             0x39 => {
@@ -472,11 +484,25 @@ impl Cpu {
                 if_cop!(op, cop1, { val = *cop1.reg(rt) });
                 op.cpu.write::<u32>(op.ea(), val as u32);
             }
+            0x3A => {
+                // SWC2
+                let mut val: u64 = 0xffff_ffff_ffff_ffff;
+                let rt = op.rt();
+                if_cop!(op, cop2, { val = *cop2.reg(rt) });
+                op.cpu.write::<u32>(op.ea(), val as u32);
+            }
             0x3D => {
                 // SDC1
                 let mut val: u64 = 0xffff_ffff_ffff_ffff;
                 let rt = op.rt();
                 if_cop!(op, cop1, { val = *cop1.reg(rt) });
+                op.cpu.write::<u64>(op.ea(), val);
+            }
+            0x3E => {
+                // SDC2
+                let mut val: u64 = 0xffff_ffff_ffff_ffff;
+                let rt = op.rt();
+                if_cop!(op, cop2, { val = *cop2.reg(rt) });
                 op.cpu.write::<u64>(op.ea(), val);
             }
             0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()), // SD
