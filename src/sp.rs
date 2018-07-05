@@ -98,7 +98,7 @@ impl Sp {
             let spb = sp.borrow();
             let mut cpu = spb.core_cpu.borrow_mut();
             cpu.set_cop0(SpCop0::new(&sp));
-            let mut ctx = cpu.ctx_mut();
+            let ctx = cpu.ctx_mut();
             ctx.set_halt_line(true);
             ctx.set_pc(0);
         }
