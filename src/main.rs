@@ -28,6 +28,7 @@ mod mips64;
 mod pi;
 mod si;
 mod sp;
+mod spvector;
 mod vi;
 
 use cartridge::{Cartridge, CicModel};

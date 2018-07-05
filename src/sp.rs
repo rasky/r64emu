@@ -1,6 +1,7 @@
 extern crate emu;
 extern crate slog;
 
+use super::spvector::SpVector;
 use emu::bus::be::{Bus, DevPtr, Mem, Reg32};
 use emu::int::Numerics;
 use errors::*;
@@ -98,6 +99,8 @@ impl Sp {
             let spb = sp.borrow();
             let mut cpu = spb.core_cpu.borrow_mut();
             cpu.set_cop0(SpCop0::new(&sp));
+            cpu.set_cop2(SpVector::new(&sp));
+
             let ctx = cpu.ctx_mut();
             ctx.set_halt_line(true);
             ctx.set_pc(0);
