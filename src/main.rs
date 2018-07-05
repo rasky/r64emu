@@ -170,7 +170,7 @@ impl hw::OutputProducer for N64 {
     }
 
     fn finish(&mut self) {
-        info!(self.logger, "finish"; o!("pc" => format!("{:x}", self.cpu.borrow().get_pc())));
+        info!(self.logger, "finish"; o!("pc" => format!("{:x}", self.cpu.borrow().ctx().get_pc())));
     }
 }
 

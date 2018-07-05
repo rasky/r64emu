@@ -31,10 +31,8 @@ pub enum Exception {
     NMI = 0x102,
 }
 
-bitflags! {
-    pub struct Lines: u8 {
-        const HALT = 0b0000_0001;
-    }
+struct Lines {
+    halt: bool,
 }
 
 /// Cop0 is a MIPS64 coprocessor #0, which (in addition to being a normal coprocessor)
@@ -53,8 +51,8 @@ pub struct CpuContext {
     pub regs: [u64; 32],
     pub hi: u64,
     pub lo: u64,
-    pub pc: u32,
-    pub branch_pc: u32,
+    pub(crate) pc: u32,
+    pub(crate) branch_pc: u32,
     pub clock: i64,
     pub tight_exit: bool,
     lines: Lines,
@@ -175,20 +173,18 @@ impl CpuContext {
         }
     }
 
-    pub fn set_lines(&mut self, lines: Lines) {
-        if self.lines.contains(lines) {
-            return;
-        }
-        self.lines.insert(lines);
+    pub fn set_halt_line(&mut self, stat: bool) {
+        self.lines.halt = stat;
         self.tight_exit = true;
     }
 
-    pub fn clear_lines(&mut self, lines: Lines) {
-        if !self.lines.contains(lines) {
-            return;
-        }
-        self.lines.remove(lines);
-        self.tight_exit = true;
+    pub fn set_pc(&mut self, pc: u32) {
+        self.pc = pc;
+        self.branch_pc = 0;
+    }
+
+    pub fn get_pc(&self) -> u32 {
+        self.pc
     }
 }
 
@@ -253,7 +249,7 @@ impl Cpu {
                 branch_pc: 0,
                 clock: 0,
                 tight_exit: false,
-                lines: Lines::empty(),
+                lines: Lines { halt: false },
             },
             bus: bus,
             cop0: None,
@@ -267,6 +263,14 @@ impl Cpu {
         };
     }
 
+    pub fn ctx(&self) -> &CpuContext {
+        &self.ctx
+    }
+
+    pub fn ctx_mut(&mut self) -> &mut CpuContext {
+        &mut self.ctx
+    }
+
     pub fn set_cop0(&mut self, cop0: Box<dyn Cop0>) {
         self.cop0 = Some(cop0);
     }
@@ -278,25 +282,6 @@ impl Cpu {
     }
     pub fn set_cop3(&mut self, cop3: Box<dyn Cop>) {
         self.cop3 = Some(cop3);
-    }
-
-    /// Change the CPU Program Counter. This is a low-level method that
-    /// should only be invoked if you know what you're doing; usually,
-    /// the CPU should be halted.
-    pub fn set_pc(&mut self, pc: u32) {
-        self.ctx.pc = pc;
-        self.ctx.branch_pc = 0;
-    }
-
-    pub fn get_pc(&self) -> u32 {
-        self.ctx.pc
-    }
-
-    pub fn set_lines(&mut self, lines: Lines) {
-        self.ctx.set_lines(lines);
-    }
-    pub fn clear_lines(&mut self, lines: Lines) {
-        self.ctx.clear_lines(lines);
     }
 
     pub fn reset(&mut self) {
@@ -556,7 +541,7 @@ impl Cpu {
     pub fn run(&mut self, until: i64) {
         self.until = until;
         while self.ctx.clock < self.until {
-            if self.ctx.lines.contains(Lines::HALT) {
+            if self.ctx.lines.halt {
                 self.ctx.clock = self.until;
                 return;
             }
