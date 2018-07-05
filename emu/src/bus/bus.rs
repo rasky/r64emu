@@ -73,6 +73,10 @@ pub struct MemIoR<O: ByteOrder, U: MemInt> {
     phantom: PhantomData<(O, U)>,
 }
 
+use std::iter;
+pub type MemIoRIterator<'a, U: MemInt> =
+    iter::Map<slice::ExactChunks<'a, u8>, for<'r> fn(&'r [u8]) -> U>;
+
 impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
     pub fn default() -> Self {
         MemIoR {
@@ -105,7 +109,7 @@ impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
     // If MemIoR points to a memory area, returns an iterator over it
     // that yields consecutive elements of type U.
     // Otherwise, returns None.
-    pub fn iter(&self) -> Option<impl Iterator<Item = U>> {
+    pub fn iter<'s, 'r: 's>(&'s self) -> Option<MemIoRIterator<'r, U>> {
         match self.hwio {
             HwIoR::Mem(ref buf, mask) => {
                 // Use unsafe here for performance: we don't want

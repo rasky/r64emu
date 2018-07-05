@@ -7,7 +7,7 @@ mod memint;
 mod radix;
 mod regs;
 
-pub use self::bus::{Bus, MemIoR, MemIoW};
+pub use self::bus::{Bus, MemIoR, MemIoRIterator, MemIoW};
 pub use self::device::{DevPtr, Device};
 pub use self::mem::{Mem, MemFlags};
 pub use self::memint::MemInt;
