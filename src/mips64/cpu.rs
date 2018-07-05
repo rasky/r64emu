@@ -579,10 +579,7 @@ impl Cpu {
                 }
             }
 
-            let mut iter = self
-                .fetch(pc)
-                .iter()
-                .expect(&format!("non-linear memory at PC: {}", pc.hex()));
+            let mut iter = self.fetch(pc).iter().unwrap();
 
             // Tight loop: go through continuous memory, no branches, no IRQs
             self.ctx.tight_exit = false;
