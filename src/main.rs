@@ -124,6 +124,7 @@ impl N64 {
             vsyncs: vec![],
         });
         sync.register(cpu.clone(), MAIN_CLOCK / 2);
+        sync.register(sp.borrow().core_cpu.clone(), MAIN_CLOCK / 3);
 
         return Ok(N64 {
             logger,
