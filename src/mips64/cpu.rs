@@ -12,6 +12,34 @@ use std::rc::Rc;
 pub trait Cop {
     fn reg(&mut self, idx: usize) -> &mut u64;
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32);
+
+    fn lwc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
+        let rt = ((op >> 16) & 0x1f) as usize;
+        let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
+        let val = bus.borrow().read::<u32>(ea & 0x1FFF_FFFC) as u64;
+        *self.reg(rt) = val;
+    }
+
+    fn ldc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
+        let rt = ((op >> 16) & 0x1f) as usize;
+        let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
+        let val = bus.borrow().read::<u64>(ea & 0x1FFF_FFFC) as u64;
+        *self.reg(rt) = val;
+    }
+
+    fn swc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
+        let rt = ((op >> 16) & 0x1f) as usize;
+        let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
+        let val = *self.reg(rt);
+        bus.borrow().write::<u32>(ea & 0x1FFF_FFFC, val as u32);
+    }
+
+    fn sdc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
+        let rt = ((op >> 16) & 0x1f) as usize;
+        let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
+        let val = *self.reg(rt);
+        bus.borrow().write::<u64>(ea & 0x1FFF_FFFC, val);
+    }
 }
 
 pub enum Exception {
@@ -122,10 +150,6 @@ impl<'a> Mipsop<'a> {
     fn rt64(&self) -> u64 {
         self.cpu.ctx.regs[self.rt()]
     }
-    fn ft64(&mut self) -> u64 {
-        let rt = self.rt();
-        *self.cpu.cop1.as_mut().unwrap().reg(rt)
-    }
     fn irs64(&self) -> i64 {
         self.rs64() as i64
     }
@@ -149,10 +173,6 @@ impl<'a> Mipsop<'a> {
     }
     fn mrd64(&'a mut self) -> &'a mut u64 {
         &mut self.cpu.ctx.regs[self.rd()]
-    }
-    fn mft64(&'a mut self) -> &'a mut u64 {
-        let rt = self.rt();
-        self.cpu.cop1.as_mut().unwrap().reg(rt)
     }
     fn hex(&self) -> String {
         format!("{:x}", self.opcode)
@@ -452,60 +472,16 @@ impl Cpu {
             0x2E => op.cpu.write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32())), // SWR
             0x2F => {}                                               // CACHE
 
-            0x31 => {
-                // LWC1
-                let val = op.cpu.read::<u32>(op.ea()) as u64;
-                let rt = op.rt();
-                if_cop!(op, cop1, { *cop1.reg(rt) = val });
-            }
-            0x32 => {
-                // LWC2
-                let val = op.cpu.read::<u32>(op.ea()) as u64;
-                let rt = op.rt();
-                if_cop!(op, cop2, { *cop2.reg(rt) = val });
-            }
-            0x35 => {
-                // LDC1
-                let val = op.cpu.read::<u64>(op.ea());
-                let rt = op.rt();
-                if_cop!(op, cop1, { *cop1.reg(rt) = val });
-            }
-            0x36 => {
-                // LDC2
-                let val = op.cpu.read::<u64>(op.ea());
-                let rt = op.rt();
-                if_cop!(op, cop2, { *cop2.reg(rt) = val });
-            }
-            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()), // LD
-            0x39 => {
-                // SWC1
-                let mut val: u64 = 0xffff_ffff_ffff_ffff;
-                let rt = op.rt();
-                if_cop!(op, cop1, { val = *cop1.reg(rt) });
-                op.cpu.write::<u32>(op.ea(), val as u32);
-            }
-            0x3A => {
-                // SWC2
-                let mut val: u64 = 0xffff_ffff_ffff_ffff;
-                let rt = op.rt();
-                if_cop!(op, cop2, { val = *cop2.reg(rt) });
-                op.cpu.write::<u32>(op.ea(), val as u32);
-            }
-            0x3D => {
-                // SDC1
-                let mut val: u64 = 0xffff_ffff_ffff_ffff;
-                let rt = op.rt();
-                if_cop!(op, cop1, { val = *cop1.reg(rt) });
-                op.cpu.write::<u64>(op.ea(), val);
-            }
-            0x3E => {
-                // SDC2
-                let mut val: u64 = 0xffff_ffff_ffff_ffff;
-                let rt = op.rt();
-                if_cop!(op, cop2, { val = *cop2.reg(rt) });
-                op.cpu.write::<u64>(op.ea(), val);
-            }
-            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()), // SD
+            0x31 => if_cop!(op, cop1, cop1.lwc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LWC1
+            0x32 => if_cop!(op, cop2, cop2.lwc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LWC2
+            0x35 => if_cop!(op, cop1, cop1.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC1
+            0x36 => if_cop!(op, cop2, cop2.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC2
+            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()),                        // LD
+            0x39 => if_cop!(op, cop1, cop1.swc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SWC1
+            0x3A => if_cop!(op, cop2, cop2.swc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SWC2
+            0x3D => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SDC1
+            0x3E => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SDC2
+            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),                          // SD
 
             _ => panic!(
                 "unimplemented opcode: func=0x{:x?}, pc={}",
