@@ -602,6 +602,90 @@ impl Cpu {
     }
 }
 
+/*
+pub trait Executor<'a, 'c: 'a> {
+    type Ctx;
+
+    fn exec_begin(&'a mut self) -> (&'a mut Self, Self::Ctx);
+    fn exec_step(&mut self, ectx: &mut Self::Ctx) -> bool;
+    fn exec_finish(&mut self, ectx: Self::Ctx);
+}
+
+use emu::bus::MemIoRIterator;
+
+pub struct ExecContext<'c> {
+    iter: MemIoRIterator<'c, u32>,
+}
+
+impl<'a, 'c: 'a> Executor<'a, 'c> for Box<Cpu> {
+    type Ctx = ExecContext<'c>;
+
+    #[inline(always)]
+    fn exec_begin(&'a mut self) -> (&'a mut Self, ExecContext<'static>) {
+        let pc = self.ctx.pc;
+        let iter = self
+            .bus
+            .borrow()
+            .fetch_read::<u32>(pc & 0x1FFF_FFFC)
+            .iter()
+            .unwrap();
+        self.ctx.tight_exit = false;
+        (self, ExecContext { iter })
+    }
+
+    #[inline(always)]
+    fn exec_step(&mut self, ectx: &mut ExecContext) -> bool {
+        if let Some(op) = ectx.iter.next() {
+            self.ctx.pc += 4;
+            self.op(op);
+            return !self.ctx.tight_exit;
+        }
+        return false;
+    }
+    #[inline(always)]
+    fn exec_finish(&mut self, mut ectx: ExecContext) {
+        if self.ctx.branch_pc != 0 {
+            let pc = self.ctx.pc;
+            let op = ectx.iter.next().unwrap_or_else(|| self.fetch(pc).read());
+            self.ctx.pc = self.ctx.branch_pc;
+            self.ctx.branch_pc = 0;
+            self.op(op);
+        }
+        // if let Some(ref mut cop0) = self.cop0 {
+        //     if cop0.pending_int() {
+        //         cop0.exception(&mut self.ctx, Exception::INT);
+        //     }
+        // }
+    }
+}
+
+pub fn run_two<'a, 'c: 'a, E1: Executor<'a, 'c>, E2: Executor<'a, 'c>>(
+    e1: &'a mut E1,
+    n1: usize,
+    e2: &'a mut E2,
+    n2: usize,
+) {
+    let (e1, mut ectx1) = e1.exec_begin();
+    let (e2, mut ectx2) = e2.exec_begin();
+
+    'iloop: loop {
+        for _ in 0..n1 {
+            if !e1.exec_step(&mut ectx1) {
+                break 'iloop;
+            }
+        }
+        for _ in 0..n2 {
+            if !e2.exec_step(&mut ectx2) {
+                break 'iloop;
+            }
+        }
+    }
+
+    e1.exec_finish(ectx1);
+    e2.exec_finish(ectx2);
+}
+*/
+
 impl sync::Subsystem for Box<Cpu> {
     fn run(&mut self, until: i64) {
         Cpu::run(self, until)
