@@ -74,8 +74,7 @@ pub struct MemIoR<O: ByteOrder, U: MemInt> {
 }
 
 use std::iter;
-pub type MemIoRIterator<'a, U: MemInt> =
-    iter::Map<slice::ExactChunks<'a, u8>, for<'r> fn(&'r [u8]) -> U>;
+pub type MemIoRIterator<'a, U> = iter::Map<slice::ExactChunks<'a, u8>, for<'r> fn(&'r [u8]) -> U>;
 
 impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
     pub fn default() -> Self {
