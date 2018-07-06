@@ -1,6 +1,6 @@
 extern crate byteorder;
 
-use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
+use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW, MemIoR, MemIoW};
 use super::memint::{ByteOrderCombiner, MemInt};
 use std::cell::RefCell;
 use std::fmt;
@@ -161,6 +161,14 @@ where
                 }
             }))
         }
+    }
+
+    pub fn reader(&self) -> MemIoR<O, U> {
+        self.hwio_r::<U>().at::<O, U>(0)
+    }
+
+    pub fn writer(&self) -> MemIoW<O, U> {
+        self.hwio_w::<U>().at::<O, U>(0)
     }
 }
 

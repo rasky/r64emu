@@ -1,5 +1,6 @@
 extern crate byteorder;
 
+use self::byteorder::ByteOrder;
 use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
 use super::memint::MemInt;
 use std::cell::{RefCell, RefMut};
@@ -83,6 +84,13 @@ impl Mem {
         }
 
         HwIoW::Mem(self.buf.clone(), (self.psize - 1) as u32)
+    }
+
+    pub fn write<O: ByteOrder, S: MemInt>(&self, addr: u32, val: S) {
+        self.hwio_w::<S>().at::<O, S>(addr).write(val);
+    }
+    pub fn read<O: ByteOrder, S: MemInt>(&self, addr: u32) -> S {
+        self.hwio_r::<S>().at::<O, S>(addr).read()
     }
 }
 
