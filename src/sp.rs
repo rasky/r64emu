@@ -32,10 +32,10 @@ bitflags! {
 #[derive(DeviceBE)]
 pub struct Sp {
     #[mem(bank = 0, offset = 0x0000, size = 4096)]
-    dmem: Mem,
+    pub(crate) dmem: Mem,
 
     #[mem(bank = 0, offset = 0x1000, size = 4096)]
-    imem: Mem,
+    pub(crate) imem: Mem,
 
     #[reg(bank = 2, offset = 0x0, rwmask = 0xFFF, wcb, rcb)]
     reg_rsp_pc: Reg32,
@@ -99,7 +99,7 @@ impl Sp {
             let spb = sp.borrow();
             let mut cpu = spb.core_cpu.borrow_mut();
             cpu.set_cop0(SpCop0::new(&sp));
-            cpu.set_cop2(SpVector::new(&sp));
+            cpu.set_cop2(SpVector::new(&sp, spb.logger.new(o!())));
 
             let ctx = cpu.ctx_mut();
             ctx.set_halt_line(true);
