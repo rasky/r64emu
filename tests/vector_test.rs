@@ -70,34 +70,71 @@ fn asm(inst: I) -> u32 {
     }
 }
 
+fn test_vector(
+    testname: &str,
+    sp: &DevPtr<Sp>,
+    main_bus: &Rc<RefCell<Box<Bus>>>,
+    inregs: Vec<(usize, u128)>,
+    insn: Vec<I>,
+    outregs: Vec<(usize, u128)>,
+) {
+    let cpu = sp.borrow().core_cpu.clone();
+
+    {
+        let mut cpu = cpu.borrow_mut();
+        let spv = cpu.cop2().unwrap();
+        for (idx, val) in inregs {
+            spv.set_reg(idx, val)
+        }
+        spv.set_reg(0, 0x0400_7000_7000_9FFF_0000_3333_FFFF_0001);
+        spv.set_reg(1, 0x0300_2000_F000_9FFF_0000_4444_0002_0001);
+    }
+
+    {
+        let spb = sp.borrow();
+
+        let mut addr = 0u32;
+        for i in insn {
+            spb.imem.write::<BigEndian, u32>(addr, asm(i));
+            addr += 4;
+        }
+        spb.imem
+            .write::<BigEndian, u32>(addr, asm(I::SuSpecial(O::BREAK)));
+    }
+
+    main_bus.borrow().write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
+    cpu.borrow_mut().run(10000);
+
+    {
+        let mut cpu = cpu.borrow_mut();
+        let spv = cpu.cop2().unwrap();
+
+        for (idx, exp) in outregs {
+            let found = spv.reg(idx);
+            if found != exp {
+                assert!(
+                    false,
+                    "{}: invalid outreg {}:\nFound: {:x}\nExp:   {:x}",
+                    testname, idx, found, exp
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn vadd() {
     let (sp, main_bus) = make_sp();
-    {
-        let cpu = sp.borrow().core_cpu.clone();
 
-        {
-            let mut cpu = cpu.borrow_mut();
-            let spv = cpu.cop2().unwrap();
-            spv.set_reg(0, 0x0400_7000_7000_9FFF_0000_3333_FFFF_0001);
-            spv.set_reg(1, 0x0300_2000_F000_9FFF_0000_4444_0002_0001);
-        }
-
-        {
-            let spb = sp.borrow();
-            spb.imem
-                .write::<BigEndian, u32>(0, asm(I::Vu(O::VADD, 0, 1, 0, 2)));
-            spb.imem
-                .write::<BigEndian, u32>(4, asm(I::SuSpecial(O::BREAK)));
-        }
-
-        main_bus.borrow().write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
-        cpu.borrow_mut().run(10000);
-
-        {
-            let mut cpu = cpu.borrow_mut();
-            let spv = cpu.cop2().unwrap();
-            assert_eq!(spv.reg(2), 0x0700_7FFF_6000_8000_0000_7777_0001_0002);
-        }
-    }
+    test_vector(
+        "vadd1",
+        &sp,
+        &main_bus,
+        vec![
+            (0, 0x0400_7000_7000_9FFF_0000_3333_FFFF_0001),
+            (1, 0x0300_2000_F000_9FFF_0000_4444_0002_0001),
+        ],
+        vec![I::Vu(O::VADD, 0, 1, 0, 2)],
+        vec![(2, 0x0700_7FFF_6000_8000_0000_7777_0001_0002)],
+    )
 }
