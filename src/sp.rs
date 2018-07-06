@@ -31,11 +31,14 @@ bitflags! {
 
 #[derive(DeviceBE)]
 pub struct Sp {
+    pub core_cpu: Rc<RefCell<Box<mips64::Cpu>>>,
+    pub core_bus: Rc<RefCell<Box<Bus>>>,
+
     #[mem(bank = 0, offset = 0x0000, size = 4096)]
-    pub(crate) dmem: Mem,
+    pub dmem: Mem,
 
     #[mem(bank = 0, offset = 0x1000, size = 4096)]
-    pub(crate) imem: Mem,
+    pub imem: Mem,
 
     #[reg(bank = 2, offset = 0x0, rwmask = 0xFFF, wcb, rcb)]
     reg_rsp_pc: Reg32,
@@ -61,9 +64,6 @@ pub struct Sp {
     logger: slog::Logger,
 
     main_bus: Rc<RefCell<Box<Bus>>>,
-
-    pub(crate) core_cpu: Rc<RefCell<Box<mips64::Cpu>>>,
-    core_bus: Rc<RefCell<Box<Bus>>>,
 }
 
 impl Sp {
@@ -305,12 +305,12 @@ impl Sp {
     }
 }
 
-struct SpCop0 {
+pub struct SpCop0 {
     sp: DevPtr<Sp>,
 }
 
 impl SpCop0 {
-    fn new(sp: &DevPtr<Sp>) -> Box<SpCop0> {
+    pub fn new(sp: &DevPtr<Sp>) -> Box<SpCop0> {
         Box::new(SpCop0 { sp: sp.clone() })
     }
 }
@@ -339,7 +339,10 @@ impl mips64::Cop0 for SpCop0 {
 }
 
 impl mips64::Cop for SpCop0 {
-    fn reg(&mut self, _idx: usize) -> &mut u64 {
+    fn set_reg(&mut self, _idx: usize, _val: u128) {
+        panic!("unsupported COP0 reg access in RSP")
+    }
+    fn reg(&self, _idx: usize) -> u128 {
         panic!("unsupported COP0 reg access in RSP")
     }
 

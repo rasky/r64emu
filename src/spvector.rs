@@ -1,7 +1,7 @@
 extern crate emu;
 
 use super::sp::Sp;
-use byteorder::{BigEndian, ByteOrder};
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
 use emu::int::Numerics;
 use mips64::{Cop, CpuContext};
@@ -75,8 +75,8 @@ impl<'a> Vectorop<'a> {
     }
     fn setvd(&mut self, val: __m128i) {
         unsafe {
-            let rt = self.rt();
-            _mm_store_si128(self.spv.vregs.0[rt].as_ptr() as *mut _, val);
+            let rd = self.rd();
+            _mm_store_si128(self.spv.vregs.0[rd].as_ptr() as *mut _, val);
         }
     }
     fn accum(&mut self, idx: usize) -> __m128i {
@@ -85,8 +85,11 @@ impl<'a> Vectorop<'a> {
 }
 
 impl Cop for SpVector {
-    fn reg(&mut self, _idx: usize) -> &mut u64 {
-        unimplemented!()
+    fn reg(&self, idx: usize) -> u128 {
+        LittleEndian::read_u128(&self.vregs.0[idx])
+    }
+    fn set_reg(&mut self, idx: usize, val: u128) {
+        LittleEndian::write_u128(&mut self.vregs.0[idx], val);
     }
 
     fn op(&mut self, _cpu: &mut CpuContext, op: u32) {
@@ -102,6 +105,12 @@ impl Cop for SpVector {
                     let vt = op.vt();
                     let res = _mm_adds_epi16(vs, vt);
                     op.setvd(res);
+                    println!(
+                        "vadd: {:x}+{:x} = {:x}",
+                        LittleEndian::read_u128(&op.spv.vregs.0[op.rs()]),
+                        LittleEndian::read_u128(&op.spv.vregs.0[op.rt()]),
+                        LittleEndian::read_u128(&op.spv.vregs.0[op.rd()]),
+                    );
                 }
                 0x1D => {
                     // VSAR

@@ -205,8 +205,11 @@ impl Fpu {
 }
 
 impl Cop for Fpu {
-    fn reg(&mut self, idx: usize) -> &mut u64 {
-        &mut self.regs[idx]
+    fn reg(&self, idx: usize) -> u128 {
+        self.regs[idx] as u128
+    }
+    fn set_reg(&mut self, idx: usize, val: u128) {
+        self.regs[idx] = val as u64;
     }
 
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32) {

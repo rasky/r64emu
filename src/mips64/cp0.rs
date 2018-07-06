@@ -54,10 +54,18 @@ impl<'a> C0op<'a> {
 }
 
 impl Cop for Cp0 {
-    fn reg(&mut self, idx: usize) -> &mut u64 {
+    fn reg(&self, idx: usize) -> u128 {
         match idx {
-            12 => &mut self.reg_status,
-            13 => &mut self.reg_cause,
+            12 => self.reg_status as u128,
+            13 => self.reg_cause as u128,
+            _ => unimplemented!(),
+        }
+    }
+
+    fn set_reg(&mut self, idx: usize, val: u128) {
+        match idx {
+            12 => self.reg_status = val as u64,
+            13 => self.reg_cause = val as u64,
             _ => unimplemented!(),
         }
     }

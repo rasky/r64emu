@@ -10,34 +10,36 @@ use std::rc::Rc;
 
 /// Cop is a MIPS64 coprocessor that can be installed within the core.
 pub trait Cop {
-    fn reg(&mut self, idx: usize) -> &mut u64;
+    fn reg(&self, idx: usize) -> u128;
+    fn set_reg(&mut self, idx: usize, val: u128);
+
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32);
 
     fn lwc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
         let val = bus.borrow().read::<u32>(ea & 0x1FFF_FFFC) as u64;
-        *self.reg(rt) = val;
+        self.set_reg(rt, val as u128);
     }
 
     fn ldc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
         let val = bus.borrow().read::<u64>(ea & 0x1FFF_FFFC) as u64;
-        *self.reg(rt) = val;
+        self.set_reg(rt, val as u128);
     }
 
     fn swc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
-        let val = *self.reg(rt);
-        bus.borrow().write::<u32>(ea & 0x1FFF_FFFC, val as u32);
+        let val = self.reg(rt) as u32;
+        bus.borrow().write::<u32>(ea & 0x1FFF_FFFC, val);
     }
 
     fn sdc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
-        let val = *self.reg(rt);
+        let val = self.reg(rt) as u64;
         bus.borrow().write::<u64>(ea & 0x1FFF_FFFC, val);
     }
 }
@@ -303,6 +305,9 @@ impl Cpu {
     pub fn set_cop3(&mut self, cop3: Box<dyn Cop>) {
         self.cop3 = Some(cop3);
     }
+    pub fn cop2(&mut self) -> Option<&mut Box<dyn Cop>> {
+        self.cop2.as_mut()
+    }
 
     pub fn reset(&mut self) {
         self.exception(Exception::RESET);
@@ -548,13 +553,15 @@ impl Cpu {
                 return;
             }
 
-            let pc = self.ctx.pc;
             if let Some(ref mut cop0) = self.cop0 {
                 if cop0.pending_int() {
                     cop0.exception(&mut self.ctx, Exception::INT);
+                    continue;
                 }
             }
 
+            let pc = self.ctx.pc;
+            println!("pc_ {:x}", pc);
             let mut iter = self.fetch(pc).iter().unwrap();
 
             // Tight loop: go through continuous memory, no branches, no IRQs
