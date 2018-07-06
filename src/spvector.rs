@@ -19,18 +19,27 @@ struct VectorRegs([[u8; 16]; 32]);
 #[repr(align(16))]
 struct AccumRegs([[u8; 8]; 8]);
 
+#[repr(align(16))]
+struct VectorReg([u8; 16]);
+
 pub struct SpVector {
     vregs: VectorRegs,
     accum: AccumRegs,
+    vco_carry: VectorReg,
+    vco_ne: VectorReg,
     sp: DevPtr<Sp>,
     logger: slog::Logger,
 }
 
 impl SpVector {
+    pub const REG_VCC: usize = 33;
+
     pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Box<SpVector> {
         Box::new(SpVector {
             vregs: VectorRegs([[0u8; 16]; 32]),
             accum: AccumRegs([[0u8; 8]; 8]),
+            vco_carry: VectorReg([0u8; 16]),
+            vco_ne: VectorReg([0u8; 16]),
             sp: sp.clone(),
             logger,
         })
@@ -43,6 +52,22 @@ impl SpVector {
         let element = (op >> 7) & 0xF;
         let offset = op & 0x7F;
         (base, vt, opcode, element, offset)
+    }
+
+    fn vcc(&self) -> u16 {
+        let mut res = 0u16;
+        for i in 0..8 {
+            res |= LittleEndian::read_u16(&self.vco_carry.0[i * 2..]) << i;
+            res |= LittleEndian::read_u16(&self.vco_ne.0[i * 2..]) << (i + 8);
+        }
+        res
+    }
+
+    fn set_vcc(&mut self, vcc: u16) {
+        for i in 0..8 {
+            LittleEndian::write_u16(&mut self.vco_carry.0[i * 2..], (vcc >> i) & 1);
+            LittleEndian::write_u16(&mut self.vco_ne.0[i * 2..], (vcc >> (i + 8)) & 1);
+        }
     }
 }
 
@@ -79,17 +104,29 @@ impl<'a> Vectorop<'a> {
             _mm_store_si128(self.spv.vregs.0[rd].as_ptr() as *mut _, val);
         }
     }
-    fn accum(&mut self, idx: usize) -> __m128i {
+    fn accum(&self, idx: usize) -> __m128i {
         unsafe { _mm_loadu_si128(self.spv.accum.0[idx..].as_ptr() as *const _) }
+    }
+    fn carry(&self) -> __m128i {
+        unsafe { _mm_loadu_si128(self.spv.vco_carry.0.as_ptr() as *const _) }
+    }
+    fn setcarry(&self, val: __m128i) {
+        unsafe { _mm_store_si128(self.spv.vco_carry.0.as_ptr() as *mut _, val) }
     }
 }
 
 impl Cop for SpVector {
     fn reg(&self, idx: usize) -> u128 {
-        LittleEndian::read_u128(&self.vregs.0[idx])
+        match idx {
+            SpVector::REG_VCC => self.vcc() as u128,
+            _ => LittleEndian::read_u128(&self.vregs.0[idx]),
+        }
     }
     fn set_reg(&mut self, idx: usize, val: u128) {
-        LittleEndian::write_u128(&mut self.vregs.0[idx], val);
+        match idx {
+            SpVector::REG_VCC => self.set_vcc(val as u16),
+            _ => LittleEndian::write_u128(&mut self.vregs.0[idx], val),
+        }
     }
 
     fn op(&mut self, _cpu: &mut CpuContext, op: u32) {
@@ -103,14 +140,10 @@ impl Cop for SpVector {
                     }
                     let vs = op.vs();
                     let vt = op.vt();
-                    let res = _mm_adds_epi16(vs, vt);
+                    let carry = op.carry();
+                    let res = _mm_adds_epi16(_mm_adds_epi16(vs, vt), carry);
                     op.setvd(res);
-                    println!(
-                        "vadd: {:x}+{:x} = {:x}",
-                        LittleEndian::read_u128(&op.spv.vregs.0[op.rs()]),
-                        LittleEndian::read_u128(&op.spv.vregs.0[op.rt()]),
-                        LittleEndian::read_u128(&op.spv.vregs.0[op.rd()]),
-                    );
+                    op.setcarry(_mm_setzero_si128());
                 }
                 0x1D => {
                     // VSAR
