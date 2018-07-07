@@ -70,16 +70,16 @@ impl SpVector {
     fn vco(&self) -> u16 {
         let mut res = 0u16;
         for i in 0..8 {
-            res |= LittleEndian::read_u16(&self.vco_carry.0[i * 2..]) << i;
-            res |= LittleEndian::read_u16(&self.vco_ne.0[i * 2..]) << (i + 8);
+            res |= LittleEndian::read_u16(&self.vco_carry.0[(7 - i) * 2..]) << i;
+            res |= LittleEndian::read_u16(&self.vco_ne.0[(7 - i) * 2..]) << (i + 8);
         }
         res
     }
 
     fn set_vco(&mut self, vco: u16) {
         for i in 0..8 {
-            LittleEndian::write_u16(&mut self.vco_carry.0[i * 2..], (vco >> i) & 1);
-            LittleEndian::write_u16(&mut self.vco_ne.0[i * 2..], (vco >> (i + 8)) & 1);
+            LittleEndian::write_u16(&mut self.vco_carry.0[(7 - i) * 2..], (vco >> i) & 1);
+            LittleEndian::write_u16(&mut self.vco_ne.0[(7 - i) * 2..], (vco >> (i + 8)) & 1);
         }
     }
 }
@@ -129,6 +129,9 @@ impl<'a> Vectorop<'a> {
     fn setcarry(&self, val: __m128i) {
         unsafe { _mm_store_si128(self.spv.vco_carry.0.as_ptr() as *mut _, val) }
     }
+    fn setne(&self, val: __m128i) {
+        unsafe { _mm_store_si128(self.spv.vco_ne.0.as_ptr() as *mut _, val) }
+    }
 }
 
 impl Cop for SpVector {
@@ -168,19 +171,40 @@ impl Cop for SpVector {
                         let vs = op.vs();
                         let vt = op.vt();
                         let carry = op.carry();
-                        let res = _mm_adds_epi16(_mm_adds_epi16(vs, vt), carry);
-                        op.setvd(res);
+                        op.setvd(_mm_adds_epi16(_mm_adds_epi16(vs, vt), carry));
+                        op.setaccum(0, _mm_add_epi16(_mm_add_epi16(vs, vt), carry));
                         op.setcarry(_mm_setzero_si128());
+                        op.setne(_mm_setzero_si128());
+                    }
+                    0x14 => {
+                        // VADDC
+                        if op.e() != 0 {
+                            unimplemented!();
+                        }
+                        let vs = op.vs();
+                        let vt = op.vt();
+                        let res = _mm_add_epi16(vs, vt);
+                        op.setvd(res);
+                        op.setaccum(0, res);
+                        op.setne(_mm_setzero_si128());
+
+                        // We need to compute the carry bit. To do so, we use signed
+                        // comparison of 16-bit integers, xoring with 0x8000 to obtain
+                        // the unsigned result.
+                        let mask = _mm_set1_epi16(-32768i16);
+                        let carry =
+                            _mm_cmpgt_epi16(_mm_xor_si128(mask, vs), _mm_xor_si128(mask, res));
+                        op.setcarry(_mm_srli_epi16(carry, 15));
                     }
                     0x1D => {
                         // VSAR
                         let e = op.e();
                         match e {
                             8..=10 => {
-                                let sar = op.accum(e - 8);
+                                let sar = op.accum(2 - (e - 8));
                                 op.setvd(sar);
                                 let new = op.vs();
-                                op.setaccum(e - 8, new);
+                                op.setaccum(2 - (e - 8), new);
                             }
                             _ => unimplemented!(),
                         }

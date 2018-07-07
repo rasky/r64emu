@@ -43,6 +43,7 @@ fn make_sp() -> (DevPtr<Sp>, Rc<RefCell<Box<Bus>>>) {
 // SP opcodes
 enum O {
     VADD = 0b010000,
+    VADDC = 0b010100,
     VSAR = 0b011101,
     BREAK = 0b001101,
 }
@@ -130,14 +131,47 @@ fn vadd() {
         &sp,
         &main_bus,
         vec![
+            // carry:
+            //       0    1    0    0    1    1    1    1  (= 0xF2 right-to-left)
             (0, 0x0400_7000_7000_9FFF_0000_3333_FFFF_0001),
             (1, 0x0300_2000_F000_9FFF_0000_4444_0002_0001),
-            (SpVector::REG_VCO, 0x00_4F),
+            (SpVector::REG_VCO, 0xAA_F2), // F2 is VCO-carry (used); AA is VCO-NE (ignored)
         ],
         vec![I::Vu(O::VADD, 0, 1, 0, 2)],
         vec![
             (2, 0x0700_7FFF_6000_8000_0001_7778_0002_0003),
-            (SpVector::REG_VCO, 0),
+            (SpVector::REG_VCO, 0), // ne+carry should be zero after VADD
+            (
+                SpVector::REG_ACCUM_LO,
+                0x0700_9001_6000_3FFE_0001_7778_0002_0003, // non-saturated add
+            ),
+        ],
+    )
+}
+
+#[test]
+fn vaddc() {
+    let (sp, main_bus) = make_sp();
+
+    test_vector(
+        "vaddc",
+        &sp,
+        &main_bus,
+        vec![
+            (0, 0x0400_7000_7000_9FFF_0000_3333_FFFF_0001),
+            (1, 0x0300_2000_F000_9FFF_0000_4444_0002_0001),
+            (SpVector::REG_VCO, 0xFF_FF), // carry/ne should be ignored
+        ],
+        vec![I::Vu(O::VADDC, 0, 1, 0, 2)],
+        vec![
+            (2, 0x0700_9000_6000_3FFE_0000_7777_0001_0002),
+            // expected carry:
+            //       0    0    1    1    0    0    1    0  (= 0x4C right-to-left)
+            (SpVector::REG_VCO, 0x00_4C),
+            (
+                SpVector::REG_ACCUM_LO,
+                0x0700_9000_6000_3FFE_0000_7777_0001_0002,
+            ),
         ],
     )
 }
@@ -168,9 +202,9 @@ fn vsar() {
             ),
         ],
         vec![
-            I::Vu(O::VSAR, 0, 0, 8, 20),
+            I::Vu(O::VSAR, 0, 0, 10, 20),
             I::Vu(O::VSAR, 1, 0, 9, 21),
-            I::Vu(O::VSAR, 2, 0, 10, 22),
+            I::Vu(O::VSAR, 2, 0, 8, 22),
         ],
         vec![
             (20, 0xAAAA_BBBB_CCCC_DDDD_EEEE_FFFF_0000_1111),
