@@ -30,10 +30,12 @@ pub struct SpVector {
 }
 
 impl SpVector {
+    pub const REG_VCO: usize = 32;
     pub const REG_VCC: usize = 33;
-    pub const REG_ACCUM_LO: usize = 34;
-    pub const REG_ACCUM_MD: usize = 35;
-    pub const REG_ACCUM_HI: usize = 36;
+    pub const REG_VCE: usize = 34;
+    pub const REG_ACCUM_LO: usize = 35;
+    pub const REG_ACCUM_MD: usize = 36;
+    pub const REG_ACCUM_HI: usize = 37;
 
     pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Box<SpVector> {
         Box::new(SpVector {
@@ -55,7 +57,17 @@ impl SpVector {
         (base, vt, opcode, element, offset)
     }
 
+    fn vce(&self) -> u16 {
+        0
+    }
+    fn set_vce(&self, _vec: u16) {}
+
     fn vcc(&self) -> u16 {
+        0
+    }
+    fn set_vcc(&self, _vec: u16) {}
+
+    fn vco(&self) -> u16 {
         let mut res = 0u16;
         for i in 0..8 {
             res |= LittleEndian::read_u16(&self.vco_carry.0[i * 2..]) << i;
@@ -64,10 +76,10 @@ impl SpVector {
         res
     }
 
-    fn set_vcc(&mut self, vcc: u16) {
+    fn set_vco(&mut self, vco: u16) {
         for i in 0..8 {
-            LittleEndian::write_u16(&mut self.vco_carry.0[i * 2..], (vcc >> i) & 1);
-            LittleEndian::write_u16(&mut self.vco_ne.0[i * 2..], (vcc >> (i + 8)) & 1);
+            LittleEndian::write_u16(&mut self.vco_carry.0[i * 2..], (vco >> i) & 1);
+            LittleEndian::write_u16(&mut self.vco_ne.0[i * 2..], (vco >> (i + 8)) & 1);
         }
     }
 }
@@ -122,7 +134,9 @@ impl<'a> Vectorop<'a> {
 impl Cop for SpVector {
     fn reg(&self, idx: usize) -> u128 {
         match idx {
+            SpVector::REG_VCO => self.vco() as u128,
             SpVector::REG_VCC => self.vcc() as u128,
+            SpVector::REG_VCE => self.vce() as u128,
             SpVector::REG_ACCUM_LO => LittleEndian::read_u128(&self.accum[0].0),
             SpVector::REG_ACCUM_MD => LittleEndian::read_u128(&self.accum[1].0),
             SpVector::REG_ACCUM_HI => LittleEndian::read_u128(&self.accum[2].0),
@@ -131,7 +145,9 @@ impl Cop for SpVector {
     }
     fn set_reg(&mut self, idx: usize, val: u128) {
         match idx {
+            SpVector::REG_VCO => self.set_vco(val as u16),
             SpVector::REG_VCC => self.set_vcc(val as u16),
+            SpVector::REG_VCE => self.set_vce(val as u16),
             SpVector::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.accum[0].0, val),
             SpVector::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.accum[1].0, val),
             SpVector::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.accum[2].0, val),
@@ -139,36 +155,48 @@ impl Cop for SpVector {
         }
     }
 
-    fn op(&mut self, _cpu: &mut CpuContext, op: u32) {
+    fn op(&mut self, cpu: &mut CpuContext, op: u32) {
         let mut op = Vectorop { op, spv: self };
-        unsafe {
-            match op.func() {
-                0x10 => {
-                    // VADD
-                    if op.e() != 0 {
-                        unimplemented!();
-                    }
-                    let vs = op.vs();
-                    let vt = op.vt();
-                    let carry = op.carry();
-                    let res = _mm_adds_epi16(_mm_adds_epi16(vs, vt), carry);
-                    op.setvd(res);
-                    op.setcarry(_mm_setzero_si128());
-                }
-                0x1D => {
-                    // VSAR
-                    let e = op.e();
-                    match e {
-                        8..=10 => {
-                            let sar = op.accum(e - 8);
-                            op.setvd(sar);
-                            let new = op.vs();
-                            op.setaccum(e - 8, new);
+        if op.op & (1 << 25) != 0 {
+            unsafe {
+                match op.func() {
+                    0x10 => {
+                        // VADD
+                        if op.e() != 0 {
+                            unimplemented!();
                         }
-                        _ => unimplemented!(),
+                        let vs = op.vs();
+                        let vt = op.vt();
+                        let carry = op.carry();
+                        let res = _mm_adds_epi16(_mm_adds_epi16(vs, vt), carry);
+                        op.setvd(res);
+                        op.setcarry(_mm_setzero_si128());
                     }
+                    0x1D => {
+                        // VSAR
+                        let e = op.e();
+                        match e {
+                            8..=10 => {
+                                let sar = op.accum(e - 8);
+                                op.setvd(sar);
+                                let new = op.vs();
+                                op.setaccum(e - 8, new);
+                            }
+                            _ => unimplemented!(),
+                        }
+                    }
+                    _ => panic!("unimplemented COP2 VU opcode={}", op.func().hex()),
                 }
-                _ => panic!("unimplemented VU opcode={}", op.func().hex()),
+            }
+        } else {
+            match op.e() {
+                0x2 => match op.rs() {
+                    0 => cpu.regs[op.rt()] = op.spv.vco() as u64,
+                    1 => cpu.regs[op.rt()] = op.spv.vcc() as u64,
+                    2 => cpu.regs[op.rt()] = op.spv.vce() as u64,
+                    _ => panic!("unimplement COP2 CTC2 reg:{}", op.rs()),
+                },
+                _ => panic!("unimplemented COP2 non-VU opcode={:x}", op.e()),
             }
         }
     }

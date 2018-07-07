@@ -132,12 +132,12 @@ fn vadd() {
         vec![
             (0, 0x0400_7000_7000_9FFF_0000_3333_FFFF_0001),
             (1, 0x0300_2000_F000_9FFF_0000_4444_0002_0001),
-            (SpVector::REG_VCC, 0x00_4F),
+            (SpVector::REG_VCO, 0x00_4F),
         ],
         vec![I::Vu(O::VADD, 0, 1, 0, 2)],
         vec![
             (2, 0x0700_7FFF_6000_8000_0001_7778_0002_0003),
-            (SpVector::REG_VCC, 0),
+            (SpVector::REG_VCO, 0),
         ],
     )
 }
