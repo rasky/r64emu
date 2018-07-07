@@ -561,7 +561,6 @@ impl Cpu {
             }
 
             let pc = self.ctx.pc;
-            println!("pc_ {:x}", pc);
             let mut iter = self.fetch(pc).iter().unwrap();
 
             // Tight loop: go through continuous memory, no branches, no IRQs
