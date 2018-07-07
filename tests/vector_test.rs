@@ -43,6 +43,7 @@ fn make_sp() -> (DevPtr<Sp>, Rc<RefCell<Box<Bus>>>) {
 // SP opcodes
 enum O {
     VADD = 0b010000,
+    VSAR = 0b011101,
     BREAK = 0b001101,
 }
 
@@ -86,8 +87,6 @@ fn test_vector(
         for (idx, val) in inregs {
             spv.set_reg(idx, val)
         }
-        spv.set_reg(0, 0x0400_7000_7000_9FFF_0000_3333_FFFF_0001);
-        spv.set_reg(1, 0x0300_2000_F000_9FFF_0000_4444_0002_0001);
     }
 
     {
@@ -139,6 +138,56 @@ fn vadd() {
         vec![
             (2, 0x0700_7FFF_6000_8000_0001_7778_0002_0003),
             (SpVector::REG_VCC, 0),
+        ],
+    )
+}
+
+#[test]
+fn vsar() {
+    let (sp, main_bus) = make_sp();
+
+    test_vector(
+        "vsar1",
+        &sp,
+        &main_bus,
+        vec![
+            (0, 0x1212_3434_5656_7878_9A9A_BCBC_DEDE_F0F0),
+            (1, 0x0110_2332_4554_6776_8998_ABBA_CDDC_EFFE),
+            (2, 0xFDEC_BA98_7654_3210_0123_4567_89AB_CDEF),
+            (
+                SpVector::REG_ACCUM_LO,
+                0xAAAA_BBBB_CCCC_DDDD_EEEE_FFFF_0000_1111,
+            ),
+            (
+                SpVector::REG_ACCUM_MD,
+                0x2222_3333_4444_5555_6666_7777_8888_9999,
+            ),
+            (
+                SpVector::REG_ACCUM_HI,
+                0x0AA0_0BB0_FCCF_0DD0_0EE0_0FF0_F00F_0110,
+            ),
+        ],
+        vec![
+            I::Vu(O::VSAR, 0, 0, 8, 20),
+            I::Vu(O::VSAR, 1, 0, 9, 21),
+            I::Vu(O::VSAR, 2, 0, 10, 22),
+        ],
+        vec![
+            (20, 0xAAAA_BBBB_CCCC_DDDD_EEEE_FFFF_0000_1111),
+            (21, 0x2222_3333_4444_5555_6666_7777_8888_9999),
+            (22, 0x0AA0_0BB0_FCCF_0DD0_0EE0_0FF0_F00F_0110),
+            (
+                SpVector::REG_ACCUM_LO,
+                0x1212_3434_5656_7878_9A9A_BCBC_DEDE_F0F0,
+            ),
+            (
+                SpVector::REG_ACCUM_MD,
+                0x0110_2332_4554_6776_8998_ABBA_CDDC_EFFE,
+            ),
+            (
+                SpVector::REG_ACCUM_HI,
+                0xFDEC_BA98_7654_3210_0123_4567_89AB_CDEF,
+            ),
         ],
     )
 }

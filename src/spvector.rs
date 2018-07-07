@@ -16,15 +16,13 @@ use std::rc::Rc;
 #[repr(align(16))]
 struct VectorRegs([[u8; 16]; 32]);
 
-#[repr(align(16))]
-struct AccumRegs([[u8; 8]; 8]);
-
+#[derive(Copy, Clone)]
 #[repr(align(16))]
 struct VectorReg([u8; 16]);
 
 pub struct SpVector {
     vregs: VectorRegs,
-    accum: AccumRegs,
+    accum: [VectorReg; 3],
     vco_carry: VectorReg,
     vco_ne: VectorReg,
     sp: DevPtr<Sp>,
@@ -33,11 +31,14 @@ pub struct SpVector {
 
 impl SpVector {
     pub const REG_VCC: usize = 33;
+    pub const REG_ACCUM_LO: usize = 34;
+    pub const REG_ACCUM_MD: usize = 35;
+    pub const REG_ACCUM_HI: usize = 36;
 
     pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Box<SpVector> {
         Box::new(SpVector {
             vregs: VectorRegs([[0u8; 16]; 32]),
-            accum: AccumRegs([[0u8; 8]; 8]),
+            accum: [VectorReg([0u8; 16]); 3],
             vco_carry: VectorReg([0u8; 16]),
             vco_ne: VectorReg([0u8; 16]),
             sp: sp.clone(),
@@ -105,7 +106,10 @@ impl<'a> Vectorop<'a> {
         }
     }
     fn accum(&self, idx: usize) -> __m128i {
-        unsafe { _mm_loadu_si128(self.spv.accum.0[idx..].as_ptr() as *const _) }
+        unsafe { _mm_loadu_si128(self.spv.accum[idx].0.as_ptr() as *const _) }
+    }
+    fn setaccum(&mut self, idx: usize, val: __m128i) {
+        unsafe { _mm_store_si128(self.spv.accum[idx].0.as_ptr() as *mut _, val) }
     }
     fn carry(&self) -> __m128i {
         unsafe { _mm_loadu_si128(self.spv.vco_carry.0.as_ptr() as *const _) }
@@ -119,12 +123,18 @@ impl Cop for SpVector {
     fn reg(&self, idx: usize) -> u128 {
         match idx {
             SpVector::REG_VCC => self.vcc() as u128,
+            SpVector::REG_ACCUM_LO => LittleEndian::read_u128(&self.accum[0].0),
+            SpVector::REG_ACCUM_MD => LittleEndian::read_u128(&self.accum[1].0),
+            SpVector::REG_ACCUM_HI => LittleEndian::read_u128(&self.accum[2].0),
             _ => LittleEndian::read_u128(&self.vregs.0[idx]),
         }
     }
     fn set_reg(&mut self, idx: usize, val: u128) {
         match idx {
             SpVector::REG_VCC => self.set_vcc(val as u16),
+            SpVector::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.accum[0].0, val),
+            SpVector::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.accum[1].0, val),
+            SpVector::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.accum[2].0, val),
             _ => LittleEndian::write_u128(&mut self.vregs.0[idx], val),
         }
     }
@@ -147,25 +157,16 @@ impl Cop for SpVector {
                 }
                 0x1D => {
                     // VSAR
-                    let mut a0 = op.accum(0);
-                    let mut a1 = op.accum(2);
-                    let mut a2 = op.accum(4);
-                    let mut a3 = op.accum(6);
-                    // FIXME: refactor using _mm_shuffle*
-                    let mask = _mm_set_epi64x(0xFFFF, 0xFFFF);
-                    let count = _mm_set_epi64x(16, 16);
-                    a0 = _mm_srl_epi64(a0, count);
-                    a1 = _mm_srl_epi64(a1, count);
-                    a2 = _mm_srl_epi64(a2, count);
-                    a3 = _mm_srl_epi64(a3, count);
-                    a0 = _mm_and_si128(a0, mask);
-                    a1 = _mm_and_si128(a1, mask);
-                    a2 = _mm_and_si128(a2, mask);
-                    a3 = _mm_and_si128(a3, mask);
-                    let b0 = _mm_packs_epi32(a0, a1);
-                    let b1 = _mm_packs_epi32(a2, a3);
-                    let c0 = _mm_packs_epi32(b0, b1);
-                    op.setvd(c0);
+                    let e = op.e();
+                    match e {
+                        8..=10 => {
+                            let sar = op.accum(e - 8);
+                            op.setvd(sar);
+                            let new = op.vs();
+                            op.setaccum(e - 8, new);
+                        }
+                        _ => unimplemented!(),
+                    }
                 }
                 _ => panic!("unimplemented VU opcode={}", op.func().hex()),
             }
