@@ -111,6 +111,13 @@ impl<'a> Vectorop<'a> {
     fn vt(&self) -> __m128i {
         unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rt()].as_ptr() as *const _) }
     }
+    fn vte(&self) -> __m128i {
+        let e = self.e();
+        if e != 0 {
+            unimplemented!();
+        }
+        unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rt()].as_ptr() as *const _) }
+    }
     fn setvd(&mut self, val: __m128i) {
         unsafe {
             let rd = self.rd();
@@ -160,33 +167,28 @@ impl Cop for SpVector {
 
     fn op(&mut self, cpu: &mut CpuContext, op: u32) {
         let mut op = Vectorop { op, spv: self };
+        let VZERO = unsafe { _mm_setzero_si128() };
         if op.op & (1 << 25) != 0 {
             unsafe {
                 match op.func() {
                     0x10 => {
                         // VADD
-                        if op.e() != 0 {
-                            unimplemented!();
-                        }
                         let vs = op.vs();
-                        let vt = op.vt();
+                        let vt = op.vte();
                         let carry = op.carry();
                         op.setvd(_mm_adds_epi16(_mm_adds_epi16(vs, vt), carry));
                         op.setaccum(0, _mm_add_epi16(_mm_add_epi16(vs, vt), carry));
-                        op.setcarry(_mm_setzero_si128());
-                        op.setne(_mm_setzero_si128());
+                        op.setcarry(VZERO);
+                        op.setne(VZERO);
                     }
                     0x14 => {
                         // VADDC
-                        if op.e() != 0 {
-                            unimplemented!();
-                        }
                         let vs = op.vs();
-                        let vt = op.vt();
+                        let vt = op.vte();
                         let res = _mm_add_epi16(vs, vt);
                         op.setvd(res);
                         op.setaccum(0, res);
-                        op.setne(_mm_setzero_si128());
+                        op.setne(VZERO);
 
                         // We need to compute the carry bit. To do so, we use signed
                         // comparison of 16-bit integers, xoring with 0x8000 to obtain
@@ -211,67 +213,40 @@ impl Cop for SpVector {
                     }
                     0x28 => {
                         // VAND
-                        if op.e() != 0 {
-                            unimplemented!();
-                        }
-                        let vs = op.vs();
-                        let vt = op.vt();
-                        let res = _mm_and_si128(vs, vt);
+                        let res = _mm_and_si128(op.vs(), op.vte());
                         op.setvd(res);
                         op.setaccum(0, res);
                     }
                     0x29 => {
                         // VNAND
-                        if op.e() != 0 {
-                            unimplemented!();
-                        }
-                        let vs = op.vs();
-                        let vt = op.vt();
-                        let res = _mm_xor_si128(_mm_and_si128(vs, vt), _mm_set1_epi16(-1));
+                        let res =
+                            _mm_xor_si128(_mm_and_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
                         op.setvd(res);
                         op.setaccum(0, res);
                     }
                     0x2A => {
                         // VOR
-                        if op.e() != 0 {
-                            unimplemented!();
-                        }
-                        let vs = op.vs();
-                        let vt = op.vt();
-                        let res = _mm_or_si128(vs, vt);
+                        let res = _mm_or_si128(op.vs(), op.vte());
                         op.setvd(res);
                         op.setaccum(0, res);
                     }
                     0x2B => {
                         // VNOR
-                        if op.e() != 0 {
-                            unimplemented!();
-                        }
-                        let vs = op.vs();
-                        let vt = op.vt();
-                        let res = _mm_xor_si128(_mm_or_si128(vs, vt), _mm_set1_epi16(-1));
+                        let res =
+                            _mm_xor_si128(_mm_or_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
                         op.setvd(res);
                         op.setaccum(0, res);
                     }
                     0x2C => {
                         // VXOR
-                        if op.e() != 0 {
-                            unimplemented!();
-                        }
-                        let vs = op.vs();
-                        let vt = op.vt();
-                        let res = _mm_xor_si128(vs, vt);
+                        let res = _mm_xor_si128(op.vs(), op.vte());
                         op.setvd(res);
                         op.setaccum(0, res);
                     }
                     0x2D => {
                         // VNXOR
-                        if op.e() != 0 {
-                            unimplemented!();
-                        }
-                        let vs = op.vs();
-                        let vt = op.vt();
-                        let res = _mm_xor_si128(_mm_xor_si128(vs, vt), _mm_set1_epi16(-1));
+                        let res =
+                            _mm_xor_si128(_mm_xor_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
                         op.setvd(res);
                         op.setaccum(0, res);
                     }
