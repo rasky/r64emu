@@ -209,6 +209,28 @@ impl Cop for SpVector {
                             _ => unimplemented!(),
                         }
                     }
+                    0x28 => {
+                        // VAND
+                        if op.e() != 0 {
+                            unimplemented!();
+                        }
+                        let vs = op.vs();
+                        let vt = op.vt();
+                        let res = _mm_and_si128(vs, vt);
+                        op.setvd(res);
+                        op.setaccum(0, res);
+                    }
+                    0x29 => {
+                        // VNAND
+                        if op.e() != 0 {
+                            unimplemented!();
+                        }
+                        let vs = op.vs();
+                        let vt = op.vt();
+                        let res = _mm_xor_si128(_mm_and_si128(vt, vs), _mm_set1_epi16(-1));
+                        op.setvd(res);
+                        op.setaccum(0, res);
+                    }
                     _ => panic!("unimplemented COP2 VU opcode={}", op.func().hex()),
                 }
             }

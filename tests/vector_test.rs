@@ -44,6 +44,8 @@ fn make_sp() -> (DevPtr<Sp>, Rc<RefCell<Box<Bus>>>) {
 enum O {
     VADD = 0b010000,
     VADDC = 0b010100,
+    VAND = 0b101000,
+    VNAND = 0b101001,
     VSAR = 0b011101,
     BREAK = 0b001101,
 }
@@ -171,6 +173,32 @@ fn vaddc() {
             (
                 SpVector::REG_ACCUM_LO,
                 0x0700_9000_6000_3FFE_0000_7777_0001_0002,
+            ),
+        ],
+    )
+}
+
+#[test]
+fn vand() {
+    let (sp, main_bus) = make_sp();
+
+    test_vector(
+        "vand",
+        &sp,
+        &main_bus,
+        vec![
+            (0, 0x1212_3434_5656_7878_9A9A_BCBC_DEDE_F0F0),
+            (1, 0x0F0F_F0F0_0F0F_F0F0_0F0F_F0F0_0F0F_F0F0),
+            (SpVector::REG_VCO, 0xAB_CD),
+        ],
+        vec![I::Vu(O::VAND, 0, 1, 0, 2), I::Vu(O::VNAND, 1, 1, 0, 3)],
+        vec![
+            (2, 0x0202_3030_0606_7070_0A0A_B0B0_0E0E_F0F0),
+            (3, 0xF0F0_0F0F_F0F0_0F0F_F0F0_0F0F_F0F0_0F0F),
+            (SpVector::REG_VCO, 0xAB_CD),
+            (
+                SpVector::REG_ACCUM_LO,
+                0xF0F0_0F0F_F0F0_0F0F_F0F0_0F0F_F0F0_0F0F,
             ),
         ],
     )
