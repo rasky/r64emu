@@ -46,6 +46,10 @@ enum O {
     VADDC = 0b010100,
     VAND = 0b101000,
     VNAND = 0b101001,
+    VOR = 0b101010,
+    VNOR = 0b101011,
+    VXOR = 0b101100,
+    VNXOR = 0b101101,
     VSAR = 0b011101,
     BREAK = 0b001101,
 }
@@ -179,11 +183,11 @@ fn vaddc() {
 }
 
 #[test]
-fn vand() {
+fn vlogical() {
     let (sp, main_bus) = make_sp();
 
     test_vector(
-        "vand",
+        "vlogical",
         &sp,
         &main_bus,
         vec![
@@ -191,14 +195,25 @@ fn vand() {
             (1, 0x0F0F_F0F0_0F0F_F0F0_0F0F_F0F0_0F0F_F0F0),
             (SpVector::REG_VCO, 0xAB_CD),
         ],
-        vec![I::Vu(O::VAND, 0, 1, 0, 2), I::Vu(O::VNAND, 1, 1, 0, 3)],
+        vec![
+            I::Vu(O::VAND, 0, 1, 0, 2),
+            I::Vu(O::VNAND, 1, 1, 0, 3),
+            I::Vu(O::VOR, 0, 1, 0, 4),
+            I::Vu(O::VNOR, 3, 1, 0, 5),
+            I::Vu(O::VXOR, 0, 2, 0, 6),
+            I::Vu(O::VNXOR, 3, 1, 0, 7),
+        ],
         vec![
             (2, 0x0202_3030_0606_7070_0A0A_B0B0_0E0E_F0F0),
             (3, 0xF0F0_0F0F_F0F0_0F0F_F0F0_0F0F_F0F0_0F0F),
+            (4, 0x1F1F_F4F4_5F5F_F8F8_9F9F_FCFC_DFDF_F0F0),
+            (5, 0x0000_0000_0000_0000_0000_0000_0000_0000),
+            (6, 0x1010_0404_5050_0808_9090_0C0C_D0D0_0000),
+            (7, 0x0000_0000_0000_0000_0000_0000_0000_0000),
             (SpVector::REG_VCO, 0xAB_CD),
             (
                 SpVector::REG_ACCUM_LO,
-                0xF0F0_0F0F_F0F0_0F0F_F0F0_0F0F_F0F0_0F0F,
+                0x0000_0000_0000_0000_0000_0000_0000_0000,
             ),
         ],
     )

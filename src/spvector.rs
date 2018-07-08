@@ -227,7 +227,51 @@ impl Cop for SpVector {
                         }
                         let vs = op.vs();
                         let vt = op.vt();
-                        let res = _mm_xor_si128(_mm_and_si128(vt, vs), _mm_set1_epi16(-1));
+                        let res = _mm_xor_si128(_mm_and_si128(vs, vt), _mm_set1_epi16(-1));
+                        op.setvd(res);
+                        op.setaccum(0, res);
+                    }
+                    0x2A => {
+                        // VOR
+                        if op.e() != 0 {
+                            unimplemented!();
+                        }
+                        let vs = op.vs();
+                        let vt = op.vt();
+                        let res = _mm_or_si128(vs, vt);
+                        op.setvd(res);
+                        op.setaccum(0, res);
+                    }
+                    0x2B => {
+                        // VNOR
+                        if op.e() != 0 {
+                            unimplemented!();
+                        }
+                        let vs = op.vs();
+                        let vt = op.vt();
+                        let res = _mm_xor_si128(_mm_or_si128(vs, vt), _mm_set1_epi16(-1));
+                        op.setvd(res);
+                        op.setaccum(0, res);
+                    }
+                    0x2C => {
+                        // VXOR
+                        if op.e() != 0 {
+                            unimplemented!();
+                        }
+                        let vs = op.vs();
+                        let vt = op.vt();
+                        let res = _mm_xor_si128(vs, vt);
+                        op.setvd(res);
+                        op.setaccum(0, res);
+                    }
+                    0x2D => {
+                        // VNXOR
+                        if op.e() != 0 {
+                            unimplemented!();
+                        }
+                        let vs = op.vs();
+                        let vt = op.vt();
+                        let res = _mm_xor_si128(_mm_xor_si128(vs, vt), _mm_set1_epi16(-1));
                         op.setvd(res);
                         op.setaccum(0, res);
                     }
