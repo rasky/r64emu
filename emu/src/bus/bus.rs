@@ -108,7 +108,7 @@ impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
     // If MemIoR points to a memory area, returns an iterator over it
     // that yields consecutive elements of type U.
     // Otherwise, returns None.
-    pub fn iter<'s, 'r: 's>(&'s self) -> Option<MemIoRIterator<'r, U>> {
+    pub fn iter<'s, 'r: 's>(&'s self) -> Option<impl Iterator<Item = U>> {
         match self.hwio {
             HwIoR::Mem(ref buf, mask) => {
                 // Use unsafe here for performance: we don't want
