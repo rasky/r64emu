@@ -209,6 +209,9 @@ impl SpVector {
                         // VSAR
                         let e = op.e();
                         match e {
+                            0..=2 => {
+                                op.setvd(vzero);
+                            }
                             8..=10 => {
                                 let sar = op.accum(2 - (e - 8));
                                 op.setvd(sar);
