@@ -175,6 +175,8 @@ impl SpVector {
                     0x09 => op_vmul!(op, vmacu), // VMACU
                     0x06 => op_vmul!(op, vmudn), // VMUDN
                     0x07 => op_vmul!(op, vmudh), // VMUDH
+                    0x0E => op_vmul!(op, vmadn), // VMADN
+                    0x0F => op_vmul!(op, vmadh), // VMADH
                     0x10 => {
                         // VADD
                         let vs = op.vs();

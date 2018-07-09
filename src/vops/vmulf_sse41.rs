@@ -89,11 +89,7 @@ unsafe fn internal_vmulfu(
     (res, plo, pmd, phi)
 }
 
-#[target_feature(enable = "sse4.1")]
-gen_mul_variant!(vmulf, internal_vmulfu, true, false);
-#[target_feature(enable = "sse4.1")]
-gen_mul_variant!(vmulu, internal_vmulfu, false, false);
-#[target_feature(enable = "sse4.1")]
-gen_mul_variant!(vmacf, internal_vmulfu, true, true);
-#[target_feature(enable = "sse4.1")]
-gen_mul_variant!(vmacu, internal_vmulfu, false, true);
+gen_mul_variant!(vmulf, internal_vmulfu, "sse4.1", true, false);
+gen_mul_variant!(vmulu, internal_vmulfu, "sse4.1", false, false);
+gen_mul_variant!(vmacf, internal_vmulfu, "sse4.1", true, true);
+gen_mul_variant!(vmacu, internal_vmulfu, "sse4.1", false, true);

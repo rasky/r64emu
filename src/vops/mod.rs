@@ -7,7 +7,8 @@
 /// (including JIT).
 
 macro_rules! gen_mul_variant {
-    ($name:ident, $base:ident, $arg1:expr) => {
+    ($name:ident, $base:ident, $target:expr, $($arg:expr),*) => {
+        #[target_feature(enable = $target)]
         #[inline]
         pub unsafe fn $name(
             vs: __m128i,
@@ -16,20 +17,7 @@ macro_rules! gen_mul_variant {
             acmd: __m128i,
             achi: __m128i,
         ) -> (__m128i, __m128i, __m128i, __m128i) {
-            $base(vs, vt, aclo, acmd, achi, $arg1)
-        }
-    };
-
-    ($name:ident, $base:ident, $arg1:expr, $arg2:expr) => {
-        #[inline]
-        pub unsafe fn $name(
-            vs: __m128i,
-            vt: __m128i,
-            aclo: __m128i,
-            acmd: __m128i,
-            achi: __m128i,
-        ) -> (__m128i, __m128i, __m128i, __m128i) {
-            $base(vs, vt, aclo, acmd, achi, $arg1, $arg2)
+            $base(vs, vt, aclo, acmd, achi, $($arg),*)
         }
     };
 }

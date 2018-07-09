@@ -132,7 +132,7 @@ unsafe fn internal_vmulfu(
     (res, plo, pmd, phi)
 }
 
-gen_mul_variant!(vmulf, internal_vmulfu, true, false);
-gen_mul_variant!(vmulu, internal_vmulfu, false, false);
-gen_mul_variant!(vmacf, internal_vmulfu, true, true);
-gen_mul_variant!(vmacu, internal_vmulfu, false, true);
+gen_mul_variant!(vmulf, internal_vmulfu, "sse2", true, false);
+gen_mul_variant!(vmulu, internal_vmulfu, "sse2", false, false);
+gen_mul_variant!(vmacf, internal_vmulfu, "sse2", true, true);
+gen_mul_variant!(vmacu, internal_vmulfu, "sse2", false, true);
