@@ -77,7 +77,7 @@ macro_rules! accum_add2 {
 
 // SSE2 version
 #[inline(always)]
-pub unsafe fn vmulf(
+unsafe fn internal_vmulfu(
     vs: __m128i,
     vt: __m128i,
     aclo: __m128i,
@@ -131,3 +131,8 @@ pub unsafe fn vmulf(
 
     (res, plo, pmd, phi)
 }
+
+gen_mul_variant!(vmulf, internal_vmulfu, true, false);
+gen_mul_variant!(vmulu, internal_vmulfu, false, false);
+gen_mul_variant!(vmacf, internal_vmulfu, true, true);
+gen_mul_variant!(vmacu, internal_vmulfu, false, true);

@@ -1,22 +1,5 @@
 use std::arch::x86_64::*;
 
-trait VMudInst {
-    const HIGH: bool;
-    const MAC: bool;
-}
-
-struct VMudN {}
-impl VMudInst for VMudN {
-    const HIGH: bool = false;
-    const MAC: bool = false;
-}
-
-struct VMudH {}
-impl VMudInst for VMudH {
-    const HIGH: bool = true;
-    const MAC: bool = false;
-}
-
 // Convert a 16-bit packed register into 2 32-bit packed registers with the same values
 // usign either sign extension (signed integers) o zero extension (unsigned integers).
 #[inline(always)]
@@ -37,15 +20,17 @@ unsafe fn _mm_unpack_epi16(v: __m128i, sign_extend: bool) -> (__m128i, __m128i) 
 // SSE 4.1 version
 #[inline] // FIXME: for some reason, Rust doesn't allow inline(always) here
 #[target_feature(enable = "sse4.1")]
-unsafe fn vmud<I: VMudInst>(
+unsafe fn internal_vmud(
     vs: __m128i,
     vt: __m128i,
     aclo: __m128i,
     acmd: __m128i,
     achi: __m128i,
+    high: bool,
+    mac: bool,
 ) -> (__m128i, __m128i, __m128i, __m128i) {
     // Expand to 32-bit: VS:zeroex, VT:signex
-    let (vs1, vs2) = _mm_unpack_epi16(vs, I::HIGH);
+    let (vs1, vs2) = _mm_unpack_epi16(vs, high);
     let (vt1, vt2) = _mm_unpack_epi16(vt, true);
 
     let acc1 = _mm_mullo_epi32(vs1, vt1);
@@ -54,7 +39,7 @@ unsafe fn vmud<I: VMudInst>(
     #[allow(overflowing_literals)]
     let lomask = _mm_set1_epi32(0xFFFF);
 
-    if !I::HIGH {
+    if !high {
         let res = _mm_packus_epi32(_mm_and_si128(acc1, lomask), _mm_and_si128(acc2, lomask));
         let acc_lo = res;
         let acc_md = _mm_packus_epi32(_mm_srli_epi32(acc1, 16), _mm_srli_epi32(acc2, 16));
@@ -69,26 +54,7 @@ unsafe fn vmud<I: VMudInst>(
     }
 }
 
-#[inline]
 #[target_feature(enable = "sse4.1")]
-pub unsafe fn vmudn(
-    vs: __m128i,
-    vt: __m128i,
-    aclo: __m128i,
-    acmd: __m128i,
-    achi: __m128i,
-) -> (__m128i, __m128i, __m128i, __m128i) {
-    vmud::<VMudN>(vs, vt, aclo, acmd, achi)
-}
-
-#[inline]
+gen_mul_variant!(vmudn, internal_vmud, false, false);
 #[target_feature(enable = "sse4.1")]
-pub unsafe fn vmudh(
-    vs: __m128i,
-    vt: __m128i,
-    aclo: __m128i,
-    acmd: __m128i,
-    achi: __m128i,
-) -> (__m128i, __m128i, __m128i, __m128i) {
-    vmud::<VMudH>(vs, vt, aclo, acmd, achi)
-}
+gen_mul_variant!(vmudh, internal_vmud, true, false);

@@ -145,16 +145,14 @@ impl<'a> Vectorop<'a> {
     }
 }
 
-macro_rules! op_vmulf {
-    ($op:expr,signed($signed:expr),mac($mac:expr)) => {{
-        let (res, acc_lo, acc_md, acc_hi) = vops::vmulf(
+macro_rules! op_vmul {
+    ($op:expr, $name:ident) => {{
+        let (res, acc_lo, acc_md, acc_hi) = vops::$name(
             $op.vs(),
             $op.vte(),
             $op.accum(0),
             $op.accum(1),
             $op.accum(2),
-            $signed,
-            $mac,
         );
         $op.setvd(res);
         $op.setaccum(0, acc_lo);
@@ -171,36 +169,12 @@ impl SpVector {
         if op.op & (1 << 25) != 0 {
             unsafe {
                 match op.func() {
-                    0x00 => op_vmulf!(op, signed(true), mac(false)), // VMULF
-                    0x01 => op_vmulf!(op, signed(false), mac(false)), // VMULU
-                    0x08 => op_vmulf!(op, signed(true), mac(true)),  // VMACF
-                    0x09 => op_vmulf!(op, signed(false), mac(true)), // VMACU
-                    0x06 => {
-                        // VMUDN
-                        let vs = op.vs();
-                        let vt = op.vte();
-
-                        let (res, acc_lo, acc_md, acc_hi) =
-                            vops::vmudn(op.vs(), op.vte(), op.accum(0), op.accum(1), op.accum(2));
-
-                        op.setaccum(0, acc_lo);
-                        op.setaccum(1, acc_md);
-                        op.setaccum(2, acc_hi);
-                        op.setvd(res);
-                    }
-                    0x07 => {
-                        // VMUDH
-                        let vs = op.vs();
-                        let vt = op.vte();
-
-                        let (res, acc_lo, acc_md, acc_hi) =
-                            vops::vmudh(op.vs(), op.vte(), op.accum(0), op.accum(1), op.accum(2));
-
-                        op.setaccum(0, acc_lo);
-                        op.setaccum(1, acc_md);
-                        op.setaccum(2, acc_hi);
-                        op.setvd(res);
-                    }
+                    0x00 => op_vmul!(op, vmulf), // VMULF
+                    0x01 => op_vmul!(op, vmulu), // VMULU
+                    0x08 => op_vmul!(op, vmacf), // VMACF
+                    0x09 => op_vmul!(op, vmacu), // VMACU
+                    0x06 => op_vmul!(op, vmudn), // VMUDN
+                    0x07 => op_vmul!(op, vmudh), // VMUDH
                     0x10 => {
                         // VADD
                         let vs = op.vs();

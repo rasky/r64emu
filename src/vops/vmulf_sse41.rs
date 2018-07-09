@@ -30,9 +30,9 @@ unsafe fn _mm_adds_epi32(a: __m128i, b: __m128i) -> __m128i {
 }
 
 // SSE 4.1 version
-#[inline] // FIXME: for some reason, Rust doesn't allow inline(always) here
+#[inline]
 #[target_feature(enable = "sse4.1")]
-pub unsafe fn vmulf(
+unsafe fn internal_vmulfu(
     vs: __m128i,
     vt: __m128i,
     aclo: __m128i,
@@ -88,3 +88,12 @@ pub unsafe fn vmulf(
 
     (res, plo, pmd, phi)
 }
+
+#[target_feature(enable = "sse4.1")]
+gen_mul_variant!(vmulf, internal_vmulfu, true, false);
+#[target_feature(enable = "sse4.1")]
+gen_mul_variant!(vmulu, internal_vmulfu, false, false);
+#[target_feature(enable = "sse4.1")]
+gen_mul_variant!(vmacf, internal_vmulfu, true, true);
+#[target_feature(enable = "sse4.1")]
+gen_mul_variant!(vmacu, internal_vmulfu, false, true);
