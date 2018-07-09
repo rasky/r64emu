@@ -236,41 +236,56 @@ where
     }
 
     pub fn read<U: MemInt + 'a>(&self, addr: u32) -> U {
-        self.internal_fetch_read::<U>(addr).read::<Order, U>(addr)
+        self.internal_fetch_read::<U>(addr, true)
+            .read::<Order, U>(addr)
     }
 
     pub fn write<U: MemInt + 'a>(&self, addr: u32, val: U) {
-        self.internal_fetch_write::<U>(addr)
+        self.internal_fetch_write::<U>(addr, true)
             .write::<Order, U>(addr, val);
     }
 
     #[inline(never)]
     pub fn fetch_read<U: MemInt + 'a>(&self, addr: u32) -> MemIoR<Order, U> {
-        self.internal_fetch_read::<U>(addr).at(addr)
+        self.internal_fetch_read::<U>(addr, true).at(addr)
     }
 
     #[inline(never)]
     pub fn fetch_write<U: MemInt + 'a>(&self, addr: u32) -> MemIoW<Order, U> {
-        self.internal_fetch_write::<U>(addr).at(addr)
+        self.internal_fetch_write::<U>(addr, true).at(addr)
+    }
+
+    #[inline(never)]
+    fn fetch_read_nolog<U: MemInt + 'a>(&self, addr: u32) -> MemIoR<Order, U> {
+        self.internal_fetch_read::<U>(addr, false).at(addr)
+    }
+
+    #[inline(never)]
+    fn fetch_write_nolog<U: MemInt + 'a>(&self, addr: u32) -> MemIoW<Order, U> {
+        self.internal_fetch_write::<U>(addr, false).at(addr)
     }
 
     #[inline(always)]
-    fn internal_fetch_read<U: MemInt + 'a>(&'b self, addr: u32) -> &'b HwIoR {
+    fn internal_fetch_read<U: MemInt + 'a>(&'b self, addr: u32, unmapped_log: bool) -> &'b HwIoR {
         self.reads[U::ACCESS_SIZE]
             .lookup(addr)
             .or_else(|| {
-                error!(self.logger, "unmapped bus read"; o!("addr" => format!("0x{:x}", addr), "size" => U::SIZE));
+                if unmapped_log {
+                    error!(self.logger, "unmapped bus read"; o!("addr" => format!("0x{:x}", addr), "size" => U::SIZE));
+                }
                 Some(&self.unmap_r)
             })
             .unwrap()
     }
 
     #[inline(always)]
-    fn internal_fetch_write<U: MemInt + 'a>(&'b self, addr: u32) -> &'b HwIoW {
+    fn internal_fetch_write<U: MemInt + 'a>(&'b self, addr: u32, unmapped_log: bool) -> &'b HwIoW {
         self.writes[U::ACCESS_SIZE]
             .lookup(addr)
             .or_else(|| {
-                error!(self.logger, "unmapped bus write"; o!("addr" => format!("0x{:x}", addr), "size" => U::SIZE));
+                if unmapped_log {
+                    error!(self.logger, "unmapped bus write"; o!("addr" => format!("0x{:x}", addr), "size" => U::SIZE));
+                }
                 Some(&self.unmap_w)
             })
             .unwrap()
@@ -344,8 +359,8 @@ where
     // This function guarantees that accesses happens in address order irrespective
     // of the endianess (that is, in the above example, 0x8 is read before 0xA).
     fn map_combine<U: MemInt + 'static>(&mut self, addr: u32) -> Result<(), &'static str> {
-        let before = self.fetch_read::<U::Half>(addr);
-        let after = self.fetch_read::<U::Half>(addr + (mem::size_of::<U>() as u32) / 2);
+        let before = self.fetch_read_nolog::<U::Half>(addr);
+        let after = self.fetch_read_nolog::<U::Half>(addr + (mem::size_of::<U>() as u32) / 2);
 
         self.reads[U::ACCESS_SIZE].insert_range(
             addr,
@@ -359,8 +374,8 @@ where
         )?;
 
         let off: u32 = (mem::size_of::<U>() as u32) / 2;
-        let before = self.fetch_write::<U::Half>(addr);
-        let after = self.fetch_write::<U::Half>(addr + off);
+        let before = self.fetch_write_nolog::<U::Half>(addr);
+        let after = self.fetch_write_nolog::<U::Half>(addr + off);
 
         self.writes[U::ACCESS_SIZE].insert_range(
             addr,
