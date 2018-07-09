@@ -5,6 +5,7 @@ use super::memint::{ByteOrderCombiner, MemInt};
 use std::cell::RefCell;
 use std::fmt;
 use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 bitflags! {
@@ -92,6 +93,10 @@ where
         };
         reg.set(init);
         return reg;
+    }
+
+    pub fn as_ref<R: RegDeref<Type = U>>(&self) -> RegRef<O, R> {
+        RegRef::new(self)
     }
 
     /// Get the current value of the register in memory, bypassing any callback.
@@ -188,6 +193,68 @@ impl<O: ByteOrderCombiner, U: MemInt + 'static> fmt::Debug for Reg<O, U> {
             .field("rcb", &self.rcb.is_some())
             .field("wcb", &self.wcb.is_some())
             .finish()
+    }
+}
+
+/// A type that can be used as reference to a register (eg: a bitflags).
+/// Implementing this trait allows to use Reg::as_ref as a convenient way
+/// to access a reference to a register, with conversion and scoping.
+pub trait RegDeref {
+    type Type: MemInt + 'static;
+    fn from(v: Self::Type) -> Self;
+    fn to(&self) -> Self::Type;
+}
+
+impl<U: MemInt + 'static> RegDeref for U {
+    type Type = U;
+    fn from(v: Self::Type) -> Self {
+        v
+    }
+    fn to(&self) -> Self::Type {
+        *self
+    }
+}
+
+/// A scoped reference to a Reg.
+pub struct RegRef<O: ByteOrderCombiner, U: RegDeref> {
+    raw: Rc<RefCell<Box<[u8]>>>,
+    val: U,
+    old: U,
+    phantom: PhantomData<(O, U)>,
+}
+
+impl<O: ByteOrderCombiner, U: RegDeref> RegRef<O, U> {
+    fn new(r: &Reg<O, U::Type>) -> Self {
+        let val = r.get();
+        Self {
+            raw: r.raw.clone(),
+            val: U::from(val),
+            old: U::from(val),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<O: ByteOrderCombiner, U: RegDeref> Drop for RegRef<O, U> {
+    fn drop(&mut self) {
+        let val = self.val.to();
+        let old = self.old.to();
+        if val != old {
+            Reg::<O, U::Type>::refcell_set(&self.raw, val);
+        }
+    }
+}
+
+impl<O: ByteOrderCombiner, U: RegDeref> Deref for RegRef<O, U> {
+    type Target = U;
+    fn deref(&self) -> &U {
+        &self.val
+    }
+}
+
+impl<O: ByteOrderCombiner, U: RegDeref> DerefMut for RegRef<O, U> {
+    fn deref_mut(&mut self) -> &mut U {
+        &mut self.val
     }
 }
 
