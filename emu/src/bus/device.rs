@@ -15,7 +15,6 @@ pub trait Device {
     ) -> Result<(), &'static str>;
 }
 
-#[derive(Clone)]
 pub struct DevPtr<T: Device> {
     dev: Rc<RefCell<T>>,
 }
@@ -45,5 +44,9 @@ where
 
     pub fn borrow_mut(&mut self) -> RefMut<T> {
         self.dev.borrow_mut()
+    }
+
+    pub fn unwrap(self) -> Rc<RefCell<T>> {
+        self.dev
     }
 }
