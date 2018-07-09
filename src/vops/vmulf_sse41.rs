@@ -2,6 +2,7 @@ use std::arch::x86_64::*;
 
 #[inline(always)]
 unsafe fn _mm_adds_epi32(a: __m128i, b: __m128i) -> __m128i {
+    #[allow(overflowing_literals)]
     let int_min = _mm_set1_epi32(0x80000000);
     let int_max = _mm_set1_epi32(0x7FFFFFFF);
 
@@ -36,7 +37,7 @@ pub unsafe fn vmulf(
     vt: __m128i,
     aclo: __m128i,
     acmd: __m128i,
-    achi: __m128i,
+    _achi: __m128i,
     signed: bool,
     mac: bool,
 ) -> (__m128i, __m128i, __m128i, __m128i) {

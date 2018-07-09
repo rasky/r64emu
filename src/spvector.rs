@@ -1,8 +1,11 @@
 extern crate emu;
 
+// Select SSE version used by RSP vector code
+// FIXME: eventually, this can be a runtime switch
+use super::vops::sse2 as vops;
+
 use super::sp::Sp;
-use super::vops;
-use byteorder::{BigEndian, ByteOrder, LittleEndian};
+use byteorder::{ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
 use emu::int::Numerics;
 use mips64::{Cop, CpuContext};
@@ -150,7 +153,7 @@ unsafe fn to_u128(x: __m128i) -> u128 {
 
 macro_rules! op_vmulf {
     ($op:expr,signed($signed:expr),mac($mac:expr)) => {{
-        let (res, acc_lo, acc_md, acc_hi) = vops::sse2::vmulf(
+        let (res, acc_lo, acc_md, acc_hi) = vops::vmulf(
             $op.vs(),
             $op.vte(),
             $op.accum(0),
@@ -191,7 +194,7 @@ impl Cop for SpVector {
 
     fn op(&mut self, cpu: &mut CpuContext, op: u32) {
         let mut op = Vectorop { op, spv: self };
-        let VZERO = unsafe { _mm_setzero_si128() };
+        let vzero = unsafe { _mm_setzero_si128() };
         if op.op & (1 << 25) != 0 {
             unsafe {
                 match op.func() {
@@ -206,8 +209,8 @@ impl Cop for SpVector {
                         let carry = op.carry();
                         op.setvd(_mm_adds_epi16(_mm_adds_epi16(vs, vt), carry));
                         op.setaccum(0, _mm_add_epi16(_mm_add_epi16(vs, vt), carry));
-                        op.setcarry(VZERO);
-                        op.setne(VZERO);
+                        op.setcarry(vzero);
+                        op.setne(vzero);
                     }
                     0x14 => {
                         // VADDC
@@ -216,12 +219,13 @@ impl Cop for SpVector {
                         let res = _mm_add_epi16(vs, vt);
                         op.setvd(res);
                         op.setaccum(0, res);
-                        op.setne(VZERO);
+                        op.setne(vzero);
 
                         // We need to compute the carry bit. To do so, we use signed
                         // comparison of 16-bit integers, xoring with 0x8000 to obtain
                         // the unsigned result.
-                        let mask = _mm_set1_epi16(-32768i16);
+                        #[allow(overflowing_literals)]
+                        let mask = _mm_set1_epi16(0x8000);
                         let carry =
                             _mm_cmpgt_epi16(_mm_xor_si128(mask, vs), _mm_xor_si128(mask, res));
                         op.setcarry(_mm_srli_epi16(carry, 15));

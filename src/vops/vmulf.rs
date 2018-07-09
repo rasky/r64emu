@@ -18,7 +18,8 @@ macro_rules! _mm_add_epi16_carry {
     ($a:expr, $b:expr) => {{
         let va = $a;
         let vb = $b;
-        let mask = _mm_set1_epi16(-32768i16);
+        #[allow(overflowing_literals)]
+        let mask = _mm_set1_epi16(0x8000);
         let res = _mm_add_epi16(va, vb);
         let carry = _mm_srli_epi16(
             _mm_cmpgt_epi16(_mm_xor_si128(va, mask), _mm_xor_si128(res, mask)),
@@ -28,6 +29,7 @@ macro_rules! _mm_add_epi16_carry {
     }};
 }
 
+#[allow(unused_macros)]
 macro_rules! accum_add {
     ($aclo:expr, $acmd:expr, $achi:expr, $lo:expr, $md:expr, $hi:expr) => {{
         let (aclo, carry1) = _mm_add_epi16_carry!($aclo, $lo);
@@ -48,6 +50,7 @@ macro_rules! accum_add2 {
             // If it saturates, we need to saturate the lower part as well.
             let acmd = _mm_adds_epi16($acmd, $md);
             let acmdu = _mm_add_epi16($acmd, $md);
+            #[allow(overflowing_literals)]
             let aclo = _mm_or_si128(
                 _mm_xor_si128(_mm_cmpeq_epi16(acmd, acmdu), _mm_set1_epi16(0xFFFF)),
                 aclo,
@@ -55,6 +58,7 @@ macro_rules! accum_add2 {
 
             let acmd2 = _mm_adds_epi16(acmd, carry1);
             let acmdu2 = _mm_add_epi16(acmd, carry1);
+            #[allow(overflowing_literals)]
             let aclo2 = _mm_or_si128(
                 _mm_xor_si128(_mm_cmpeq_epi16(acmd2, acmdu2), _mm_set1_epi16(0xFFFF)),
                 aclo,
@@ -78,7 +82,7 @@ pub unsafe fn vmulf(
     vt: __m128i,
     aclo: __m128i,
     acmd: __m128i,
-    achi: __m128i,
+    _achi: __m128i,
     signed: bool,
     mac: bool,
 ) -> (__m128i, __m128i, __m128i, __m128i) {
@@ -88,7 +92,7 @@ pub unsafe fn vmulf(
     let phi = vzero;
 
     // Left-shift accumulator by 1
-    let (plo, pmd, phi) = accum_shl!(plo, pmd, phi, 1);
+    let (plo, pmd, _) = accum_shl!(plo, pmd, phi, 1);
 
     let (plo, pmd) = if mac {
         accum_add2!(aclo, acmd, plo, pmd, signed)
@@ -98,7 +102,8 @@ pub unsafe fn vmulf(
 
     // Add 0x8000 to accumulator md/lo (if not VMAC)
     let (plo, pmd) = if !mac {
-        let round = _mm_set1_epi16(-32768i16); // 0x8000
+        #[allow(overflowing_literals)]
+        let round = _mm_set1_epi16(0x8000);
         let (plo1, locarry) = _mm_add_epi16_carry!(plo, round);
         let pmd1 = _mm_add_epi16(pmd, locarry);
         (plo1, pmd1)
