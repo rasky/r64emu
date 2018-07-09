@@ -2,7 +2,7 @@ extern crate emu;
 
 // Select SSE version used by RSP vector code
 // FIXME: eventually, this can be a runtime switch
-use super::vops::sse2 as vops;
+use super::vops::sse41 as vops;
 
 use super::sp::Sp;
 use byteorder::{ByteOrder, LittleEndian};
@@ -145,12 +145,6 @@ impl<'a> Vectorop<'a> {
     }
 }
 
-unsafe fn to_u128(x: __m128i) -> u128 {
-    let v: [u8; 16] = [0u8; 16];
-    _mm_store_si128(v.as_ptr() as *mut _, x);
-    LittleEndian::read_u128(&v)
-}
-
 macro_rules! op_vmulf {
     ($op:expr,signed($signed:expr),mac($mac:expr)) => {{
         let (res, acc_lo, acc_md, acc_hi) = vops::vmulf(
@@ -168,31 +162,10 @@ macro_rules! op_vmulf {
         $op.setaccum(2, acc_hi);
     }};
 }
-impl Cop for SpVector {
-    fn reg(&self, idx: usize) -> u128 {
-        match idx {
-            SpVector::REG_VCO => self.vco() as u128,
-            SpVector::REG_VCC => self.vcc() as u128,
-            SpVector::REG_VCE => self.vce() as u128,
-            SpVector::REG_ACCUM_LO => LittleEndian::read_u128(&self.accum[0].0),
-            SpVector::REG_ACCUM_MD => LittleEndian::read_u128(&self.accum[1].0),
-            SpVector::REG_ACCUM_HI => LittleEndian::read_u128(&self.accum[2].0),
-            _ => LittleEndian::read_u128(&self.vregs.0[idx]),
-        }
-    }
-    fn set_reg(&mut self, idx: usize, val: u128) {
-        match idx {
-            SpVector::REG_VCO => self.set_vco(val as u16),
-            SpVector::REG_VCC => self.set_vcc(val as u16),
-            SpVector::REG_VCE => self.set_vce(val as u16),
-            SpVector::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.accum[0].0, val),
-            SpVector::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.accum[1].0, val),
-            SpVector::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.accum[2].0, val),
-            _ => LittleEndian::write_u128(&mut self.vregs.0[idx], val),
-        }
-    }
 
-    fn op(&mut self, cpu: &mut CpuContext, op: u32) {
+impl SpVector {
+    #[target_feature(enable = "sse4.1")]
+    unsafe fn uop(&mut self, cpu: &mut CpuContext, op: u32) {
         let mut op = Vectorop { op, spv: self };
         let vzero = unsafe { _mm_setzero_si128() };
         if op.op & (1 << 25) != 0 {
@@ -202,6 +175,32 @@ impl Cop for SpVector {
                     0x01 => op_vmulf!(op, signed(false), mac(false)), // VMULU
                     0x08 => op_vmulf!(op, signed(true), mac(true)),  // VMACF
                     0x09 => op_vmulf!(op, signed(false), mac(true)), // VMACU
+                    0x06 => {
+                        // VMUDN
+                        let vs = op.vs();
+                        let vt = op.vte();
+
+                        let (res, acc_lo, acc_md, acc_hi) =
+                            vops::vmudn(op.vs(), op.vte(), op.accum(0), op.accum(1), op.accum(2));
+
+                        op.setaccum(0, acc_lo);
+                        op.setaccum(1, acc_md);
+                        op.setaccum(2, acc_hi);
+                        op.setvd(res);
+                    }
+                    0x07 => {
+                        // VMUDH
+                        let vs = op.vs();
+                        let vt = op.vte();
+
+                        let (res, acc_lo, acc_md, acc_hi) =
+                            vops::vmudh(op.vs(), op.vte(), op.accum(0), op.accum(1), op.accum(2));
+
+                        op.setaccum(0, acc_lo);
+                        op.setaccum(1, acc_md);
+                        op.setaccum(2, acc_hi);
+                        op.setvd(res);
+                    }
                     0x10 => {
                         // VADD
                         let vs = op.vs();
@@ -296,6 +295,41 @@ impl Cop for SpVector {
                 _ => panic!("unimplemented COP2 non-VU opcode={:x}", op.e()),
             }
         }
+    }
+}
+
+unsafe fn to_u128(x: __m128i) -> u128 {
+    let v: [u8; 16] = [0u8; 16];
+    _mm_store_si128(v.as_ptr() as *mut _, x);
+    LittleEndian::read_u128(&v)
+}
+
+impl Cop for SpVector {
+    fn reg(&self, idx: usize) -> u128 {
+        match idx {
+            SpVector::REG_VCO => self.vco() as u128,
+            SpVector::REG_VCC => self.vcc() as u128,
+            SpVector::REG_VCE => self.vce() as u128,
+            SpVector::REG_ACCUM_LO => LittleEndian::read_u128(&self.accum[0].0),
+            SpVector::REG_ACCUM_MD => LittleEndian::read_u128(&self.accum[1].0),
+            SpVector::REG_ACCUM_HI => LittleEndian::read_u128(&self.accum[2].0),
+            _ => LittleEndian::read_u128(&self.vregs.0[idx]),
+        }
+    }
+    fn set_reg(&mut self, idx: usize, val: u128) {
+        match idx {
+            SpVector::REG_VCO => self.set_vco(val as u16),
+            SpVector::REG_VCC => self.set_vcc(val as u16),
+            SpVector::REG_VCE => self.set_vce(val as u16),
+            SpVector::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.accum[0].0, val),
+            SpVector::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.accum[1].0, val),
+            SpVector::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.accum[2].0, val),
+            _ => LittleEndian::write_u128(&mut self.vregs.0[idx], val),
+        }
+    }
+
+    fn op(&mut self, cpu: &mut CpuContext, op: u32) {
+        unsafe { self.uop(cpu, op) }
     }
 
     fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
