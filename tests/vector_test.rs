@@ -45,6 +45,10 @@ enum O {
     VADD = 0b010000,
     VADDC = 0b010100,
     VAND = 0b101000,
+    VMULF = 0b000000,
+    VMULU = 0b000001,
+    VMACF = 0b001000,
+    VMACU = 0b001001,
     VNAND = 0b101001,
     VOR = 0b101010,
     VNOR = 0b101011,
@@ -267,4 +271,129 @@ fn vsar() {
             ),
         ],
     )
+}
+
+#[test]
+fn vmulf() {
+    let (sp, main_bus) = make_sp();
+
+    test_vector(
+        "vmulf",
+        &sp,
+        &main_bus,
+        vec![
+            (0, 0x1212_3434_5656_7878_9A9A_BCBC_DEDE_F0F0),
+            (1, 0xFDEC_BA98_7654_3210_0123_4567_89AB_CDEF),
+        ],
+        vec![I::Vu(O::VMULF, 0, 1, 0, 10)],
+        vec![
+            // Roughly: ((VS*VD)*2 + .5) >> 16
+            (10, 0xffb5_e3b2_4fd0_2f1e_ff19_db87_1ea1_05e4),
+            (
+                SpVector::REG_ACCUM_LO,
+                0x6530_0dc0_7070_6f00_fa1c_b748_d894_c020,
+            ),
+            (
+                SpVector::REG_ACCUM_MD,
+                0xffb5_e3b2_4fd0_2f1e_ff19_db87_1ea1_05e4,
+            ),
+            (
+                SpVector::REG_ACCUM_HI,
+                0xffff_ffff_0000_0000_ffff_ffff_0000_0000,
+            ),
+        ],
+    );
+}
+
+#[test]
+fn vmacf() {
+    let (sp, main_bus) = make_sp();
+
+    test_vector(
+        "vmacf",
+        &sp,
+        &main_bus,
+        vec![
+            (0, 0x1212_3434_5656_7878_9A9A_BCBC_DEDE_F0F0),
+            (1, 0xFDEC_BA98_7654_3210_0123_4567_89AB_CDEF),
+        ],
+        vec![I::Vu(O::VMULF, 0, 1, 0, 10), I::Vu(O::VMACF, 0, 1, 0, 10)],
+        vec![
+            (10, 0xff6a_c763_7fff_5e3c_fe33_b70e_3d43_0bc9),
+            (
+                SpVector::REG_ACCUM_LO,
+                0x4a60_9b80_ffff_5e00_7438_ee90_3128_0040,
+            ),
+            (
+                SpVector::REG_ACCUM_MD,
+                0xff6a_c763_7fff_5e3c_fe33_b70e_3d43_0bc9,
+            ),
+            (
+                SpVector::REG_ACCUM_HI,
+                0xffff_ffff_0000_0000_ffff_ffff_0000_0000,
+            ),
+        ],
+    );
+}
+
+#[test]
+fn vmulu() {
+    let (sp, main_bus) = make_sp();
+
+    test_vector(
+        "vmulu",
+        &sp,
+        &main_bus,
+        vec![
+            (0, 0x1212_3434_5656_7878_9A9A_BCBC_DEDE_F0F0),
+            (1, 0xFDEC_BA98_7654_3210_0123_4567_89AB_CDEF),
+        ],
+        vec![I::Vu(O::VMULU, 0, 1, 0, 10)],
+        vec![
+            (10, 0x0000_0000_4fd0_2f1e_0000_0000_1ea1_05e4),
+            (
+                SpVector::REG_ACCUM_LO,
+                0x6530_0dc0_7070_6f00_fa1c_b748_d894_c020,
+            ),
+            (
+                SpVector::REG_ACCUM_MD,
+                0xffb5_e3b2_4fd0_2f1e_ff19_db87_1ea1_05e4,
+            ),
+            (
+                SpVector::REG_ACCUM_HI,
+                0xffff_ffff_0000_0000_ffff_ffff_0000_0000,
+            ),
+        ],
+    );
+}
+
+#[test]
+fn vmacu() {
+    let (sp, main_bus) = make_sp();
+
+    test_vector(
+        "vmacf",
+        &sp,
+        &main_bus,
+        vec![
+            (0, 0x1212_3434_5656_7878_9A9A_BCBC_DEDE_F0F0),
+            (1, 0xFDEC_BA98_7654_3210_0123_4567_89AB_CDEF),
+        ],
+        vec![I::Vu(O::VMULF, 0, 1, 0, 10), I::Vu(O::VMACU, 0, 1, 0, 10)],
+        vec![
+            (10, 0xffff_ffff_ffff_5e3c_ffff_ffff_3d43_0bc9),
+            (
+                SpVector::REG_ACCUM_LO,
+                0x4a60_9b80_60e0_5e00_7438_ee90_3128_0040,
+            ),
+            (
+                SpVector::REG_ACCUM_MD,
+                0xff6a_c763_9fa0_5e3c_fe33_b70e_3d43_0bc9,
+            ),
+            (
+                SpVector::REG_ACCUM_HI,
+                0x0000_0000_0000_0000_0000_0000_0000_0000,
+            ),
+        ],
+    );
 }
