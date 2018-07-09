@@ -7,6 +7,7 @@ use slog::Drain;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use super::ai::Ai;
 use super::cartridge::{Cartridge, CicModel};
 use super::dp::Dp;
 use super::errors::*;
@@ -35,6 +36,7 @@ pub struct N64 {
     sp: DevPtr<Sp>,
     dp: DevPtr<Dp>,
     vi: DevPtr<Vi>,
+    ai: DevPtr<Ai>,
 }
 
 impl N64 {
@@ -54,6 +56,7 @@ impl N64 {
         let si = DevPtr::new(Si::new(logger.new(o!())));
         let dp = DevPtr::new(Dp::new(logger.new(o!())));
         let vi = DevPtr::new(Vi::new(logger.new(o!()), bus.clone()));
+        let ai = DevPtr::new(Ai::new(logger.new(o!())));
 
         {
             // Install CPU coprocessors
@@ -73,6 +76,7 @@ impl N64 {
             bus.map_device(0x0408_0000, &sp, 2)?;
             bus.map_device(0x0410_0000, &dp, 0)?;
             bus.map_device(0x0440_0000, &vi, 0)?;
+            bus.map_device(0x0450_0000, &ai, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
             bus.map_device(0x0480_0000, &si, 0)?;
             bus.map_device(0x1000_0000, &cart, 0)?;
@@ -104,6 +108,7 @@ impl N64 {
             sp,
             dp,
             vi,
+            ai,
         });
     }
 
