@@ -22,12 +22,14 @@ macro_rules! gen_mul_variant {
     };
 }
 
+mod vmud;
 mod vmud_sse41;
 mod vmulf;
 mod vmulf_sse41;
 
 #[allow(dead_code)]
 pub mod sse2 {
+    pub use super::vmud::*;
     pub use super::vmulf::*;
 }
 

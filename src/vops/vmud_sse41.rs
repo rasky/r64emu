@@ -17,15 +17,31 @@ unsafe fn _mm_unpack_epi16(v: __m128i, sign_extend: bool) -> (__m128i, __m128i) 
     }
 }
 
+#[inline]
+#[target_feature(enable = "sse4.1")]
+unsafe fn _mm_mullo_epi32_polyfill(v1: __m128i, v2: __m128i, sse41: bool) -> __m128i {
+    if sse41 {
+        _mm_mullo_epi32(v1, v2)
+    } else {
+        let tmp1 = _mm_mul_epu32(v1, v2);
+        let tmp2 = _mm_mul_epu32(_mm_srli_si128(v1, 4), _mm_srli_si128(v2, 4));
+        _mm_unpacklo_epi32(
+            _mm_shuffle_epi32(tmp1, 2 << 2),
+            _mm_shuffle_epi32(tmp2, 2 << 2),
+        )
+    }
+}
+
 // SSE 4.1 version
 #[inline] // FIXME: for some reason, Rust doesn't allow inline(always) here
 #[target_feature(enable = "sse4.1")]
-unsafe fn internal_vmud(
+pub(crate) unsafe fn internal_vmud(
     vs: __m128i,
     vt: __m128i,
     old_acc_lo: __m128i,
     old_acc_md: __m128i,
     old_acc_hi: __m128i,
+    sse41: bool,
     high: bool,
     mac: bool,
 ) -> (__m128i, __m128i, __m128i, __m128i) {
@@ -33,8 +49,9 @@ unsafe fn internal_vmud(
     let (vs1, vs2) = _mm_unpack_epi16(vs, high);
     let (vt1, vt2) = _mm_unpack_epi16(vt, true);
 
-    let mut acc1 = _mm_mullo_epi32(vs1, vt1);
-    let mut acc2 = _mm_mullo_epi32(vs2, vt2);
+    // ACC = VS*VT (32-bit wide)
+    let mut acc1 = _mm_mullo_epi32_polyfill(vs1, vt1, sse41);
+    let mut acc2 = _mm_mullo_epi32_polyfill(vs2, vt2, sse41);
 
     #[allow(overflowing_literals)]
     let lomask = _mm_set1_epi32(0xFFFF);
@@ -62,7 +79,7 @@ unsafe fn internal_vmud(
     }
 }
 
-gen_mul_variant!(vmudn, internal_vmud, "sse4.1", false, false);
-gen_mul_variant!(vmudh, internal_vmud, "sse4.1", true, false);
-gen_mul_variant!(vmadn, internal_vmud, "sse4.1", false, true);
-gen_mul_variant!(vmadh, internal_vmud, "sse4.1", true, true);
+gen_mul_variant!(vmudn, internal_vmud, "sse4.1", true, false, false);
+gen_mul_variant!(vmudh, internal_vmud, "sse4.1", true, true, false);
+gen_mul_variant!(vmadn, internal_vmud, "sse4.1", true, false, true);
+gen_mul_variant!(vmadh, internal_vmud, "sse4.1", true, true, true);
