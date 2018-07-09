@@ -22,6 +22,8 @@ pub mod errors {
     }
 }
 
+mod vops;
+
 pub mod cartridge;
 pub mod dp;
 pub mod mips64;
