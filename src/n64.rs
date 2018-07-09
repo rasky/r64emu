@@ -54,7 +54,7 @@ impl N64 {
         );
         let sp = Sp::new(logger.new(o!()), bus.clone())?;
         let si = DevPtr::new(Si::new(logger.new(o!())));
-        let dp = DevPtr::new(Dp::new(logger.new(o!())));
+        let dp = DevPtr::new(Dp::new(logger.new(o!()), bus.clone()));
         let vi = DevPtr::new(Vi::new(logger.new(o!()), bus.clone()));
         let ai = DevPtr::new(Ai::new(logger.new(o!())));
 
@@ -95,6 +95,7 @@ impl N64 {
         });
         sync.register(cpu.clone(), MAIN_CLOCK / 2);
         sync.register(sp.borrow().core_cpu.clone(), MAIN_CLOCK / 3);
+        sync.register(dp.clone().unwrap(), MAIN_CLOCK / 3);
 
         return Ok(N64 {
             logger,
