@@ -1,6 +1,9 @@
+extern crate bit_field;
 extern crate emu;
 extern crate slog;
-use emu::bus::be::{Bus, DevPtr, MemIoR, Reg32, RegDeref, RegRef};
+use self::bit_field::BitField;
+use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
+use emu::fp::{FixedPoint, I30F2};
 use emu::int::Numerics;
 use emu::sync;
 use std::cell::RefCell;
@@ -58,10 +61,6 @@ pub struct Dp {
     gfx: Box<DpGfx>,
 }
 
-pub struct DpGfx {
-    logger: slog::Logger,
-}
-
 impl Dp {
     pub fn new(logger: slog::Logger, main_bus: Rc<RefCell<Box<Bus>>>) -> Dp {
         let gfx_logger = logger.new(o!());
@@ -77,7 +76,7 @@ impl Dp {
             fetched_mem: MemIoR::default(),
             fetched_start_addr: 0,
             fetched_end_addr: 0,
-            gfx: Box::new(DpGfx { logger: gfx_logger }),
+            gfx: Box::new(DpGfx::new(gfx_logger)),
         }
     }
 
@@ -173,12 +172,178 @@ impl sync::Subsystem for Dp {
     }
 }
 
-impl DpGfx {
-    fn op(&mut self, cmd: u64) {
-        match (cmd >> 56) & 0x3F {
-            _ => {
-                warn!(self.logger, "unimplemented command"; o!("cmd" => (((cmd>>56)&0x3F) as u8).hex()))
-            }
+#[derive(Copy, Clone, Debug, Default)]
+struct Rect<FP: FixedPoint> {
+    pub x0: FP,
+    pub y0: FP,
+    pub x1: FP,
+    pub y1: FP,
+}
+
+impl<FP: FixedPoint> Rect<FP> {
+    fn new(x0: FP, y0: FP, x1: FP, y1: FP) -> Self {
+        Rect { x0, y0, x1, y1 }
+    }
+
+    fn from_bits(x0: FP::BITS, y0: FP::BITS, x1: FP::BITS, y1: FP::BITS) -> Self {
+        Self::new(
+            FP::from_bits(x0),
+            FP::from_bits(y0),
+            FP::from_bits(x1),
+            FP::from_bits(y1),
+        )
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum ColorFormat {
+    RGBA,
+    YUV,
+    COLOR_INDEX,
+    INTENSITY_ALPHA,
+    INTENSITY,
+}
+
+impl ColorFormat {
+    fn from_bits(bits: usize) -> Option<ColorFormat> {
+        match bits {
+            0 => Some(ColorFormat::RGBA),
+            1 => Some(ColorFormat::YUV),
+            2 => Some(ColorFormat::COLOR_INDEX),
+            3 => Some(ColorFormat::INTENSITY_ALPHA),
+            4 => Some(ColorFormat::INTENSITY),
+            _ => None,
         }
+    }
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+struct TileDescriptor {
+    color_format: ColorFormat,
+    bpp: usize,
+    pitch: usize,
+    tmem_addr: u32,
+    palette: usize,
+    clamp: [bool; 2],
+    mirror: [bool; 2],
+    mask: [u32; 2],
+    shift: [u32; 2],
+}
+
+impl Default for ColorFormat {
+    fn default() -> ColorFormat {
+        ColorFormat::RGBA
+    }
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+struct ImageFormat {
+    color_format: ColorFormat,
+    bpp: usize,
+    width: usize,
+    dram_addr: u32,
+}
+
+pub struct DpGfx {
+    logger: slog::Logger,
+    clip: Rect<I30F2>,
+    fb: ImageFormat,
+    tex: ImageFormat,
+    tiles: [TileDescriptor; 8],
+}
+
+impl DpGfx {
+    fn new(logger: slog::Logger) -> DpGfx {
+        DpGfx {
+            logger: logger,
+            clip: Rect::default(),
+            fb: ImageFormat::default(),
+            tex: ImageFormat::default(),
+            tiles: [TileDescriptor::default(); 8],
+        }
+    }
+
+    fn parse_color_format(&self, bits: u64) -> ColorFormat {
+        ColorFormat::from_bits(bits as usize)
+            .or_else(|| {
+                error!(self.logger, "invalid color format"; "format" => bits);
+                Some(ColorFormat::RGBA)
+            })
+            .unwrap()
+    }
+
+    fn op(&mut self, cmd: u64) {
+        let op = cmd.get_bits(56..62);
+        match op {
+            0x2D => {
+                // Set Scissor
+                self.clip = Rect::from_bits(
+                    cmd.get_bits(44..56) as i32,
+                    cmd.get_bits(32..44) as i32,
+                    cmd.get_bits(12..24) as i32,
+                    cmd.get_bits(0..12) as i32,
+                );
+                info!(self.logger, "DP: Set Scissor"; "clip" => ?self.clip);
+            }
+            0x3D | 0x3F => {
+                // Set Color/Texture Image
+                let format = ImageFormat {
+                    color_format: self.parse_color_format(cmd.get_bits(53..56)),
+                    bpp: 4 << cmd.get_bits(51..53),
+                    width: cmd.get_bits(32..42) as usize + 1,
+                    dram_addr: cmd.get_bits(0..26) as u32,
+                };
+
+                if op == 0x3D {
+                    self.fb = format;
+                    info!(self.logger, "DP: Set Color Image"; "format" => ?self.fb);
+                } else {
+                    self.tex = format;
+                    info!(self.logger, "DP: Set Texture Image"; "format" => ?self.tex);
+                }
+            }
+            0x2F => {
+                // Set Other Modes
+                warn!(self.logger, "DP: Set Other Modes");
+            }
+            0x34 => {
+                // Load Tile
+                let tile = cmd.get_bits(24..27);
+                let s0 = cmd.get_bits(44..56) as i32;
+                let t0 = cmd.get_bits(32..44) as i32;
+                let s1 = cmd.get_bits(12..24) as i32;
+                let t1 = cmd.get_bits(0..12) as i32;
+                let rect = Rect::<I30F2>::from_bits(s0, t0, s1, t1);
+                info!(self.logger, "DP: Load Tile"; "idx" => tile, "rect" => ?rect);
+            }
+            0x35 => {
+                // Set Tile
+                let idx = cmd.get_bits(24..27) as usize;
+                let color_format = self.parse_color_format(cmd.get_bits(53..56));
+                let tile = &mut self.tiles[idx];
+                tile.color_format = color_format;
+                tile.bpp = 4 << cmd.get_bits(51..53);
+                tile.pitch = cmd.get_bits(41..50) as usize * 8;
+                tile.tmem_addr = cmd.get_bits(32..41) as u32;
+                tile.palette = cmd.get_bits(20..24) as usize;
+                tile.clamp[0] = cmd.get_bit(9);
+                tile.clamp[1] = cmd.get_bit(19);
+                tile.mirror[0] = cmd.get_bit(8);
+                tile.mirror[1] = cmd.get_bit(18);
+                tile.mask[0] = (1 << cmd.get_bits(4..8)) - 1;
+                tile.mask[1] = (1 << cmd.get_bits(14..18)) - 1;
+                tile.shift[0] = cmd.get_bits(0..4) as u32;
+                tile.shift[1] = cmd.get_bits(10..14) as u32;
+                info!(self.logger, "DP: Set Tile"; "idx" => idx, "format" => ?tile);
+            }
+            0x3C => {
+                // Set Combine Mode
+                warn!(self.logger, "DP: Set Combine Mode");
+            }
+
+            _ => {
+                warn!(self.logger, "unimplemented command"; "cmd" => (((cmd>>56)&0x3F) as u8).hex())
+            }
+        };
     }
 }
