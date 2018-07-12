@@ -47,6 +47,9 @@ pub trait FixedPoint: Copy {
     fn round(self) -> Self::BITS;
 
     #[inline(always)]
+    fn ceil(self) -> Self::BITS;
+
+    #[inline(always)]
     fn into<BITS2, FRAC2>(self) -> Q<BITS2, FRAC2>
     where
         BITS2: FixedPointInt,
@@ -113,6 +116,12 @@ where
     #[inline(always)]
     fn round(self) -> BITS {
         let round = BITS::from(1i64 << (FRAC::to_usize() - 1)).unwrap();
+        (self.bits + round) >> FRAC::to_usize()
+    }
+
+    #[inline(always)]
+    fn ceil(self) -> BITS {
+        let round = BITS::from((1i64 << FRAC::to_usize()) - 1).unwrap();
         (self.bits + round) >> FRAC::to_usize()
     }
 
@@ -261,11 +270,18 @@ mod test {
 
     #[test]
     fn add_conv_round() {
-        let v = Q::<i32, U10>::from_f32(100.6);
-        let v2 = Q::<i32, U5>::from_f32(100.3);
+        let v = Q::<i32, U10>::from_f32(98.6);
+        let v2 = Q::<i32, U5>::from_f32(102.3);
 
         assert_eq!((v + v2).round(), 201);
         assert_eq!((v2 + v).round(), 201);
+
+        assert_eq!((v - v2).round(), -4);
+        assert_eq!((v2 - v).round(), 4);
+        assert_eq!((v - v2).floor(), -4); // FIXME?
+        assert_eq!((v2 - v).floor(), 3);
+        assert_eq!((v - v2).ceil(), -3); // FIXME?
+        assert_eq!((v2 - v).ceil(), 4);
     }
 
     #[test]
