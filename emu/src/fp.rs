@@ -1,35 +1,24 @@
 extern crate num;
 extern crate typenum;
+use self::num::cast::NumCast;
 use self::num::PrimInt;
 use self::typenum::{Cmp, Greater, Less, U0, U10, U2, U29, U32, U5, Unsigned};
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops;
 
-pub trait FixedPointInt: PrimInt + Into<i64> {
+pub trait FixedPointInt: PrimInt {
+    type DoubleInt: PrimInt;
     type Len: Unsigned;
 
-    fn truncate_from(val: i64) -> Self;
-    fn truncate_from_f32(val: f32) -> Self;
     fn sizeof() -> usize {
         Self::Len::to_usize()
-    }
-    fn to_i64(self) -> i64 {
-        self.into()
-    }
-    fn to_u64(self) -> u64 {
-        self.to_i64() as u64
     }
 }
 
 impl FixedPointInt for i32 {
+    type DoubleInt = i64;
     type Len = U32;
-    fn truncate_from(val: i64) -> i32 {
-        val as i32
-    }
-    fn truncate_from_f32(val: f32) -> i32 {
-        val as i32
-    }
 }
 
 pub trait FixedPoint: Copy {
@@ -92,8 +81,8 @@ where
 
     #[inline(always)]
     fn from_f32(v: f32) -> Self {
-        let bits = BITS::truncate_from_f32(v * (1 << FRAC::to_usize()) as f32);
-        let int: i64 = bits.into();
+        let bits = BITS::from(v * (1 << FRAC::to_usize()) as f32).unwrap();
+        let int: i64 = bits.to_i64().unwrap();
         if (int >> FRAC::to_usize()) as f32 != v.floor() {
             panic!("fixed point overflow")
         }
@@ -113,7 +102,7 @@ where
 
     #[inline(always)]
     fn to_f32(self) -> f32 {
-        (self.bits.to_i64() as f32) / ((1 << FRAC::to_usize()) as f32)
+        (self.bits.to_i64().unwrap() as f32) / ((1 << FRAC::to_usize()) as f32)
     }
 
     #[inline(always)]
@@ -123,7 +112,7 @@ where
 
     #[inline(always)]
     fn round(self) -> BITS {
-        let round = BITS::truncate_from(1i64 << (FRAC::to_usize() - 1));
+        let round = BITS::from(1i64 << (FRAC::to_usize() - 1)).unwrap();
         (self.bits + round) >> FRAC::to_usize()
     }
 
@@ -133,7 +122,7 @@ where
         BITS2: FixedPointInt,
         FRAC2: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS2::Len, Output = Less>,
     {
-        let bits: BITS2 = BITS2::truncate_from(self.bits.into());
+        let bits = BITS2::from(self.bits).unwrap();
 
         let bits2 = if FRAC::to_usize() < FRAC2::to_usize() {
             let bits2 = bits << (FRAC2::to_usize() - FRAC::to_usize());
@@ -168,7 +157,12 @@ where
     FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "Q({:0.*x})", BITS::sizeof() * 2, self.bits.to_u64())
+        write!(
+            f,
+            "Q({:0.*x})",
+            BITS::sizeof() * 2,
+            self.bits.to_u64().unwrap()
+        )
     }
 }
 
@@ -185,6 +179,65 @@ where
         let other: Self = other.into();
         Self {
             bits: self.bits + other.bits,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<BITS, FRAC, RHS> ops::Sub<RHS> for Q<BITS, FRAC>
+where
+    BITS: FixedPointInt,
+    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    RHS: FixedPoint,
+{
+    type Output = Self;
+
+    #[inline(always)]
+    fn sub(self, other: RHS) -> Self {
+        let other: Self = other.into();
+        Self {
+            bits: self.bits - other.bits,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<BITS, FRAC, BITS2, FRAC2> ops::Mul<Q<BITS2, FRAC2>> for Q<BITS, FRAC>
+where
+    BITS: FixedPointInt,
+    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    BITS2: FixedPointInt,
+    FRAC2: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS2::Len, Output = Less>,
+{
+    type Output = Self;
+
+    #[inline(always)]
+    fn mul(self, other: Q<BITS2, FRAC2>) -> Self {
+        let b1 = <BITS::DoubleInt as NumCast>::from(self.bits).unwrap();
+        let b2 = <BITS::DoubleInt as NumCast>::from(other.bits).unwrap();
+        Self {
+            bits: BITS::from((b1 * b2) >> FRAC2::to_usize()).unwrap(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<BITS, FRAC, BITS2, FRAC2> ops::Div<Q<BITS2, FRAC2>> for Q<BITS, FRAC>
+where
+    BITS: FixedPointInt,
+    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    BITS2: FixedPointInt,
+    FRAC2: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS2::Len, Output = Less>,
+{
+    type Output = Self;
+
+    #[inline(always)]
+    fn div(self, other: Q<BITS2, FRAC2>) -> Self {
+        let b1 = <BITS::DoubleInt as NumCast>::from(self.bits).unwrap();
+        let b2 = <BITS::DoubleInt as NumCast>::from(other.bits).unwrap();
+
+        Self {
+            bits: BITS::from((b1 << FRAC2::to_usize()) / b2).unwrap(),
             phantom: PhantomData,
         }
     }
@@ -228,5 +281,15 @@ mod test {
     }
 
     #[test]
-    fn add() {}
+    fn mul_div() {
+        let v = Q::<i32, U10>::from_f32(13.5);
+        let v2 = Q::<i32, U5>::from_f32(142.5);
+        assert_eq!((v * v2).round(), 1924);
+        assert_eq!((v2 / v).round(), 11);
+
+        let v = Q::<i32, U10>::from_f32(13.5);
+        let v2 = Q::<i32, U5>::from_f32(-142.5);
+        assert_eq!((v * v2).round(), -1924);
+        assert_eq!((v2 / v).round(), -11);
+    }
 }
