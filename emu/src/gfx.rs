@@ -397,6 +397,7 @@ impl<C: Color + Sized> OwnedGfxBuffer<C> {
 
 #[cfg(test)]
 mod tests {
+    use super::byteorder::ByteOrder;
     use super::*;
 
     #[test]
