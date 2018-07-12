@@ -2,14 +2,14 @@ extern crate num;
 extern crate typenum;
 use self::num::cast::NumCast;
 use self::num::PrimInt;
-use self::typenum::{Cmp, Greater, Less, U0, U10, U2, U29, U32, U5, Unsigned};
+use self::typenum::{IsGreater, IsLessOrEqual, True, U0, U10, U2, U29, U32, U5, U64, Unsigned};
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops;
 
 pub trait FixedPointInt: PrimInt {
     type DoubleInt: PrimInt;
-    type Len: Unsigned;
+    type Len: Unsigned + IsGreater<U0, Output = True>;
 
     fn sizeof() -> usize {
         Self::Len::to_usize()
@@ -21,12 +21,14 @@ impl FixedPointInt for i32 {
     type Len = U32;
 }
 
+impl FixedPointInt for i64 {
+    type DoubleInt = i128;
+    type Len = U64;
+}
+
 pub trait FixedPoint: Copy {
     type BITS: FixedPointInt;
-    type FRAC: Unsigned
-        + Copy
-        + Cmp<U0, Output = Greater>
-        + Cmp<<Self::BITS as FixedPointInt>::Len, Output = Less>;
+    type FRAC: Unsigned + Copy + IsLessOrEqual<<Self::BITS as FixedPointInt>::Len, Output = True>;
 
     #[inline(always)]
     fn from_int(int: Self::BITS) -> Self;
@@ -41,6 +43,9 @@ pub trait FixedPoint: Copy {
     fn to_f32(self) -> f32;
 
     #[inline(always)]
+    fn bits(self) -> Self::BITS;
+
+    #[inline(always)]
     fn floor(self) -> Self::BITS;
 
     #[inline(always)]
@@ -50,10 +55,13 @@ pub trait FixedPoint: Copy {
     fn ceil(self) -> Self::BITS;
 
     #[inline(always)]
+    fn truncate(self) -> Q<i64, U0>;
+
+    #[inline(always)]
     fn into<BITS2, FRAC2>(self) -> Q<BITS2, FRAC2>
     where
         BITS2: FixedPointInt,
-        FRAC2: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS2::Len, Output = Less>;
+        FRAC2: Unsigned + Copy + IsLessOrEqual<BITS2::Len, Output = True>;
 }
 
 #[derive(Copy, Clone, Default)]
@@ -65,7 +73,7 @@ pub struct Q<BITS, FRAC> {
 impl<BITS, FRAC> FixedPoint for Q<BITS, FRAC>
 where
     BITS: FixedPointInt,
-    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    FRAC: Unsigned + Copy + IsLessOrEqual<BITS::Len, Output = True>,
 {
     type BITS = BITS;
     type FRAC = FRAC;
@@ -109,6 +117,11 @@ where
     }
 
     #[inline(always)]
+    fn bits(self) -> BITS {
+        self.bits
+    }
+
+    #[inline(always)]
     fn floor(self) -> BITS {
         self.bits >> FRAC::to_usize()
     }
@@ -126,10 +139,15 @@ where
     }
 
     #[inline(always)]
+    fn truncate(self) -> Q<i64, U0> {
+        FixedPoint::into(self)
+    }
+
+    #[inline(always)]
     fn into<BITS2, FRAC2>(self) -> Q<BITS2, FRAC2>
     where
         BITS2: FixedPointInt,
-        FRAC2: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS2::Len, Output = Less>,
+        FRAC2: Unsigned + Copy + IsLessOrEqual<BITS2::Len, Output = True>,
     {
         let bits = BITS2::from(self.bits).unwrap();
 
@@ -153,7 +171,7 @@ where
 impl<BITS, FRAC> fmt::Debug for Q<BITS, FRAC>
 where
     BITS: FixedPointInt,
-    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    FRAC: Unsigned + Copy + IsLessOrEqual<BITS::Len, Output = True>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Q({0:.3})", self.to_f32())
@@ -163,7 +181,7 @@ where
 impl<BITS, FRAC> fmt::LowerHex for Q<BITS, FRAC>
 where
     BITS: FixedPointInt,
-    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    FRAC: Unsigned + Copy + IsLessOrEqual<BITS::Len, Output = True>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(
@@ -178,7 +196,7 @@ where
 impl<BITS, FRAC, RHS> ops::Add<RHS> for Q<BITS, FRAC>
 where
     BITS: FixedPointInt,
-    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    FRAC: Unsigned + Copy + IsLessOrEqual<BITS::Len, Output = True>,
     RHS: FixedPoint,
 {
     type Output = Self;
@@ -196,7 +214,7 @@ where
 impl<BITS, FRAC, RHS> ops::Sub<RHS> for Q<BITS, FRAC>
 where
     BITS: FixedPointInt,
-    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    FRAC: Unsigned + Copy + IsLessOrEqual<BITS::Len, Output = True>,
     RHS: FixedPoint,
 {
     type Output = Self;
@@ -214,9 +232,9 @@ where
 impl<BITS, FRAC, BITS2, FRAC2> ops::Mul<Q<BITS2, FRAC2>> for Q<BITS, FRAC>
 where
     BITS: FixedPointInt,
-    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    FRAC: Unsigned + Copy + IsLessOrEqual<BITS::Len, Output = True>,
     BITS2: FixedPointInt,
-    FRAC2: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS2::Len, Output = Less>,
+    FRAC2: Unsigned + Copy + IsLessOrEqual<BITS2::Len, Output = True>,
 {
     type Output = Self;
 
@@ -234,9 +252,9 @@ where
 impl<BITS, FRAC, BITS2, FRAC2> ops::Div<Q<BITS2, FRAC2>> for Q<BITS, FRAC>
 where
     BITS: FixedPointInt,
-    FRAC: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS::Len, Output = Less>,
+    FRAC: Unsigned + Copy + IsLessOrEqual<BITS::Len, Output = True>,
     BITS2: FixedPointInt,
-    FRAC2: Unsigned + Copy + Cmp<U0, Output = Greater> + Cmp<BITS2::Len, Output = Less>,
+    FRAC2: Unsigned + Copy + IsLessOrEqual<BITS2::Len, Output = True>,
 {
     type Output = Self;
 
@@ -252,8 +270,11 @@ where
     }
 }
 
-pub type I27F5 = Q<i32, U5>;
+pub type I32F0 = Q<i32, U0>;
 pub type I30F2 = Q<i32, U2>;
+pub type I27F5 = Q<i32, U5>;
+pub type I22F10 = Q<i32, U10>;
+pub type I3F29 = Q<i32, U29>;
 
 #[cfg(test)]
 mod test {
@@ -307,5 +328,13 @@ mod test {
         let v2 = Q::<i32, U5>::from_f32(-142.5);
         assert_eq!((v * v2).round(), -1924);
         assert_eq!((v2 / v).round(), -11);
+    }
+
+    #[test]
+    fn truncated() {
+        let v = Q::<i32, U0>::from_f32(14.74);
+        let v2 = Q::<i32, U10>::from_f32(14.74).truncate();
+        assert_eq!(v.bits(), 14);
+        assert_eq!(v2.bits(), 14);
     }
 }
