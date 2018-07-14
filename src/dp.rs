@@ -232,6 +232,9 @@ pub struct DpGfx {
     fb: ImageFormat,
     tex: ImageFormat,
     tiles: [TileDescriptor; 8],
+
+    cmdbuf: [u64; 16],
+    cmdlen: usize,
 }
 
 impl DpGfx {
@@ -246,6 +249,8 @@ impl DpGfx {
             fb: ImageFormat::default(),
             tex: ImageFormat::default(),
             tiles: [TileDescriptor::default(); 8],
+            cmdbuf: [0u64; 16],
+            cmdlen: 0,
         }
     }
 
@@ -259,7 +264,10 @@ impl DpGfx {
     }
 
     fn op(&mut self, cmd: u64) {
-        let op = cmd.get_bits(56..62);
+        self.cmdbuf[self.cmdlen] = cmd;
+        self.cmdlen += 1;
+
+        let op = self.cmdbuf[0].get_bits(56..62);
         match op {
             0x2D => {
                 // Set Scissor
@@ -270,6 +278,7 @@ impl DpGfx {
                     cmd.get_bits(0..12) as i32,
                 );
                 info!(self.logger, "DP: Set Scissor"; "clip" => ?self.clip);
+                self.cmdlen = 0;
             }
             0x3D | 0x3F => {
                 // Set Color/Texture Image
@@ -287,10 +296,41 @@ impl DpGfx {
                     self.tex = format;
                     info!(self.logger, "DP: Set Texture Image"; "format" => ?self.tex);
                 }
+                self.cmdlen = 0;
+            }
+            0x28 => {
+                // Sync Tile
+                info!(self.logger, "DP: Sync Tile");
+                self.cmdlen = 0;
             }
             0x2F => {
                 // Set Other Modes
                 warn!(self.logger, "DP: Set Other Modes");
+                self.cmdlen = 0;
+            }
+            0x24 => {
+                // Texture rectangle (2 words)
+                if self.cmdlen != 2 {
+                    return;
+                }
+
+                let tile = self.cmdbuf[0].get_bits(24..27) as usize;
+                let x0 = self.cmdbuf[0].get_bits(44..56) as u32;
+                let y0 = self.cmdbuf[0].get_bits(32..44) as u32;
+                let x1 = self.cmdbuf[0].get_bits(12..24) as u32;
+                let y1 = self.cmdbuf[0].get_bits(0..12) as u32;
+                let rect = Rect::<U30F2>::from_bits(x0, y0, x1, y1);
+
+                let s = Q::<I6F10>::from_bits(self.cmdbuf[1].get_bits(48..64) as i16);
+                let t = Q::<I6F10>::from_bits(self.cmdbuf[1].get_bits(32..48) as i16);
+                let dsdx = Q::<I6F10>::from_bits(self.cmdbuf[1].get_bits(16..32) as i16);
+                let dtdy = Q::<I6F10>::from_bits(self.cmdbuf[1].get_bits(0..16) as i16);
+
+                let ptex = Point::new(s, t);
+                let slope = Point::new(dsdx, dtdy);
+
+                info!(self.logger, "DP: Textured Rectangle"; "idx" => tile, "screen" => ?rect, "ptex" => ?ptex, "slope" => ?slope);
+                self.cmdlen = 0;
             }
             0x34 => {
                 // Load Tile
@@ -333,6 +373,7 @@ impl DpGfx {
                     &tex,
                     rect.cast::<U27F5>(),
                 );
+                self.cmdlen = 0;
             }
             0x35 => {
                 // Set Tile
@@ -353,14 +394,17 @@ impl DpGfx {
                 tile.shift[0] = cmd.get_bits(0..4) as u32;
                 tile.shift[1] = cmd.get_bits(10..14) as u32;
                 info!(self.logger, "DP: Set Tile"; "idx" => idx, "format" => ?tile);
+                self.cmdlen = 0;
             }
             0x3C => {
                 // Set Combine Mode
                 warn!(self.logger, "DP: Set Combine Mode");
+                self.cmdlen = 0;
             }
 
             _ => {
-                warn!(self.logger, "unimplemented command"; "cmd" => (((cmd>>56)&0x3F) as u8).hex())
+                warn!(self.logger, "unimplemented command"; "cmd" => (((cmd>>56)&0x3F) as u8).hex());
+                self.cmdlen = 0;
             }
         };
     }
