@@ -1,7 +1,8 @@
 use super::super::fp::{FixedPoint, Q};
+use std::fmt;
 use std::ops;
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Default)]
 pub struct Point<FP: FixedPoint> {
     pub x: Q<FP>,
     pub y: Q<FP>,
@@ -50,7 +51,13 @@ impl<FP: FixedPoint> ops::Sub for Point<FP> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+impl<FP: FixedPoint> fmt::Debug for Point<FP> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "Point {{ x:{:?} , y:{:?} }}", self.x, self.y)
+    }
+}
+
+#[derive(Copy, Clone, Default)]
 pub struct Rect<FP: FixedPoint> {
     pub c0: Point<FP>,
     pub c1: Point<FP>,
@@ -82,5 +89,23 @@ impl<FP: FixedPoint> Rect<FP> {
     #[inline(always)]
     pub fn truncate(self) -> Rect<impl FixedPoint> {
         Rect::new(self.c0.truncate(), self.c1.truncate())
+    }
+    #[inline(always)]
+    pub fn set_width(&mut self, w: Q<FP>) {
+        self.c1.x = self.c0.x + w;
+    }
+    #[inline(always)]
+    pub fn set_height(&mut self, h: Q<FP>) {
+        self.c1.y = self.c0.y + h;
+    }
+}
+
+impl<FP: FixedPoint> fmt::Debug for Rect<FP> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(
+            f,
+            "Rect {{ {:?},{:?} - {:?},{:?} }}",
+            self.c0.x, self.c0.y, self.c1.x, self.c1.y
+        )
     }
 }
