@@ -51,6 +51,21 @@ impl FixedPointInt for i128 {
     type Len = U128;
 }
 
+impl FixedPointInt for u32 {
+    type DoubleInt = u64;
+    type Len = U32;
+}
+
+impl FixedPointInt for u64 {
+    type DoubleInt = u128;
+    type Len = U64;
+}
+
+impl FixedPointInt for u128 {
+    type DoubleInt = u128;
+    type Len = U128;
+}
+
 pub trait FixedPoint: Copy + Clone {
     type BITS: FixedPointInt;
     type FRAC: Unsigned + Copy;
@@ -136,6 +151,11 @@ impl<FP: FixedPoint> Q<FP> {
     pub fn ceil(self) -> FP::BITS {
         let round = <FP::BITS as NumCast>::from((1i64 << FP::shift()) - 1).unwrap();
         (self.bits + round) >> FP::shift()
+    }
+
+    #[inline(always)]
+    pub fn is_negative(self) -> bool {
+        self.bits < FP::BITS::zero()
     }
 
     #[inline(always)]
@@ -275,6 +295,8 @@ pub type I1F31 = q<i32, U31>;
 
 pub type I33F31 = q<i64, U31>;
 pub type I32F32 = q<i64, U32>;
+
+pub type U30F2 = q<u32, U2>;
 
 #[cfg(test)]
 mod test {
