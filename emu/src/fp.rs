@@ -310,7 +310,22 @@ pub mod formats {
         U26, U27, U28, U29, U3, U30, U31, U32, U4, U5, U6, U7, U8, U9,
     };
 
+    pub type I16F0 = q<i16, U0>;
+    pub type I15F1 = q<i16, U1>;
+    pub type I14F2 = q<i16, U2>;
+    pub type I13F3 = q<i16, U3>;
+    pub type I12F4 = q<i16, U4>;
+    pub type I11F5 = q<i16, U5>;
+    pub type I10F6 = q<i16, U6>;
+    pub type I9F7 = q<i16, U7>;
     pub type I8F8 = q<i16, U8>;
+    pub type I7F9 = q<i16, U9>;
+    pub type I6F10 = q<i16, U10>;
+    pub type I5F11 = q<i16, U11>;
+    pub type I4F12 = q<i16, U12>;
+    pub type I3F13 = q<i16, U13>;
+    pub type I2F14 = q<i16, U14>;
+    pub type I1F15 = q<i16, U15>;
 
     pub type I32F0 = q<i32, U0>;
     pub type I31F1 = q<i32, U1>;
@@ -348,6 +363,24 @@ pub mod formats {
     pub type I33F31 = q<i64, U31>;
     pub type I32F32 = q<i64, U32>;
 
+    pub type U16F0 = q<u16, U0>;
+    pub type U15F1 = q<u16, U1>;
+    pub type U14F2 = q<u16, U2>;
+    pub type U13F3 = q<u16, U3>;
+    pub type U12F4 = q<u16, U4>;
+    pub type U11F5 = q<u16, U5>;
+    pub type U10F6 = q<u16, U6>;
+    pub type U9F7 = q<u16, U7>;
+    pub type U8F8 = q<u16, U8>;
+    pub type U7F9 = q<u16, U9>;
+    pub type U6F10 = q<u16, U10>;
+    pub type U5F11 = q<u16, U11>;
+    pub type U4F12 = q<u16, U12>;
+    pub type U3F13 = q<u16, U13>;
+    pub type U2F14 = q<u16, U14>;
+    pub type U1F15 = q<u16, U15>;
+    pub type U0F16 = q<u16, U16>;
+
     pub type U32F0 = q<u32, U0>;
     pub type U31F1 = q<u32, U1>;
     pub type U30F2 = q<u32, U2>;
@@ -380,6 +413,7 @@ pub mod formats {
     pub type U3F29 = q<u32, U29>;
     pub type U2F30 = q<u32, U30>;
     pub type U1F31 = q<u32, U31>;
+    pub type U0F32 = q<u32, U32>;
 }
 
 #[cfg(test)]
