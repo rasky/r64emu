@@ -8,48 +8,48 @@ use self::typenum::{
     U26, U27, U28, U29, U3, U30, U31, U4, U5, U6, U7, U8, U9, Unsigned,
 };
 use super::super::bus::MemInt;
-use super::Color;
+use super::{Color, ColorFormat};
 use std::marker::PhantomData;
 
-pub struct GfxBuffer<'a, C: Color + Sized> {
+pub struct GfxBuffer<'a, CF: ColorFormat + Sized> {
     mem: &'a [u8],
     width: usize,
     pitch: usize,
-    phantom: PhantomData<C>,
+    phantom: PhantomData<CF>,
 }
 
-pub struct GfxBufferMut<'a, C: Color + Sized> {
+pub struct GfxBufferMut<'a, CF: ColorFormat + Sized> {
     mem: &'a mut [u8],
     width: usize,
     pitch: usize,
-    phantom: PhantomData<C>,
+    phantom: PhantomData<CF>,
 }
 
-pub struct GfxLine<'a, C: Color + Sized> {
+pub struct GfxLine<'a, CF: ColorFormat + Sized> {
     mem: &'a [u8],
-    phantom: PhantomData<C>,
+    phantom: PhantomData<CF>,
 }
 
-pub struct GfxLineMut<'a, C: Color + Sized> {
+pub struct GfxLineMut<'a, CF: ColorFormat + Sized> {
     mem: &'a mut [u8],
-    phantom: PhantomData<C>,
+    phantom: PhantomData<CF>,
 }
 
-pub struct OwnedGfxBuffer<C: Color + Sized> {
+pub struct OwnedGfxBuffer<CF: ColorFormat + Sized> {
     mem: Vec<u8>,
     width: usize,
     height: usize,
-    phantom: PhantomData<C>,
+    phantom: PhantomData<CF>,
 }
 
-impl<'a: 's, 's, C: Color + Sized> GfxBuffer<'a, C> {
+impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBuffer<'a, CF> {
     pub fn new(
         mem: &'a [u8],
         width: usize,
         height: usize,
         pitch: usize,
-    ) -> Option<GfxBuffer<'a, C>> {
-        if pitch < width * C::U::SIZE {
+    ) -> Option<GfxBuffer<'a, CF>> {
+        if pitch < width * CF::U::SIZE {
             return None;
         }
         if mem.len() < height * pitch {
@@ -67,22 +67,22 @@ impl<'a: 's, 's, C: Color + Sized> GfxBuffer<'a, C> {
         (self.mem, self.pitch)
     }
 
-    pub fn line(&'s self, y: usize) -> GfxLine<'s, C> {
+    pub fn line(&'s self, y: usize) -> GfxLine<'s, CF> {
         GfxLine {
-            mem: &self.mem[y * self.pitch..][..self.width * C::U::SIZE],
+            mem: &self.mem[y * self.pitch..][..self.width * CF::U::SIZE],
             phantom: PhantomData,
         }
     }
 }
 
-impl<'a: 's, 's, C: Color + Sized> GfxBufferMut<'a, C> {
+impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBufferMut<'a, CF> {
     pub fn new(
         mem: &'a mut [u8],
         width: usize,
         height: usize,
         pitch: usize,
-    ) -> Option<GfxBufferMut<'a, C>> {
-        if pitch < width * C::U::SIZE {
+    ) -> Option<GfxBufferMut<'a, CF>> {
+        if pitch < width * CF::U::SIZE {
             return None;
         }
         if mem.len() < height * pitch {
@@ -100,52 +100,52 @@ impl<'a: 's, 's, C: Color + Sized> GfxBufferMut<'a, C> {
         (self.mem, self.pitch)
     }
 
-    pub fn line(&'s mut self, y: usize) -> GfxLineMut<'s, C> {
+    pub fn line(&'s mut self, y: usize) -> GfxLineMut<'s, CF> {
         GfxLineMut {
-            mem: &mut self.mem[y * self.pitch..][..self.width * C::U::SIZE],
+            mem: &mut self.mem[y * self.pitch..][..self.width * CF::U::SIZE],
             phantom: PhantomData,
         }
     }
 
-    pub fn lines(&'s mut self, y1: usize, y2: usize) -> (GfxLineMut<'s, C>, GfxLineMut<'s, C>) {
+    pub fn lines(&'s mut self, y1: usize, y2: usize) -> (GfxLineMut<'s, CF>, GfxLineMut<'s, CF>) {
         let (mem1, mem2) = self.mem.split_at_mut(y2 * self.pitch);
 
         (
             GfxLineMut {
-                mem: &mut mem1[y1 * self.pitch..][..self.width * C::U::SIZE],
+                mem: &mut mem1[y1 * self.pitch..][..self.width * CF::U::SIZE],
                 phantom: PhantomData,
             },
             GfxLineMut {
-                mem: &mut mem2[..self.width * C::U::SIZE],
+                mem: &mut mem2[..self.width * CF::U::SIZE],
                 phantom: PhantomData,
             },
         )
     }
 }
 
-impl<'a, C: Color + Sized> GfxLine<'a, C> {
-    pub fn get(&self, x: usize) -> C {
-        C::from_bits(C::U::endian_read_from::<LittleEndian>(
-            &self.mem[x * C::U::SIZE..],
+impl<'a, CF: ColorFormat + Sized> GfxLine<'a, CF> {
+    pub fn get(&self, x: usize) -> Color<CF> {
+        Color::from_bits(CF::U::endian_read_from::<LittleEndian>(
+            &self.mem[x * CF::U::SIZE..],
         ))
     }
 }
 
-impl<'a, C: Color + Sized> GfxLineMut<'a, C> {
-    pub fn get(&self, x: usize) -> C {
-        C::from_bits(C::U::endian_read_from::<LittleEndian>(
-            &self.mem[x * C::U::SIZE..],
+impl<'a, CF: ColorFormat + Sized> GfxLineMut<'a, CF> {
+    pub fn get(&self, x: usize) -> Color<CF> {
+        Color::from_bits(CF::U::endian_read_from::<LittleEndian>(
+            &self.mem[x * CF::U::SIZE..],
         ))
     }
-    pub fn set(&mut self, x: usize, c: C) {
-        C::U::endian_write_to::<LittleEndian>(&mut self.mem[x * C::U::SIZE..], c.to_bits());
+    pub fn set(&mut self, x: usize, c: Color<CF>) {
+        CF::U::endian_write_to::<LittleEndian>(&mut self.mem[x * CF::U::SIZE..], c.to_bits());
     }
 }
 
-impl<C: Color + Sized> OwnedGfxBuffer<C> {
-    pub fn new(width: usize, height: usize) -> OwnedGfxBuffer<C> {
+impl<CF: ColorFormat + Sized> OwnedGfxBuffer<CF> {
+    pub fn new(width: usize, height: usize) -> OwnedGfxBuffer<CF> {
         let mut v = Vec::new();
-        v.resize(width * height * C::U::SIZE, 0);
+        v.resize(width * height * CF::U::SIZE, 0);
         OwnedGfxBuffer {
             mem: v,
             width,
@@ -154,47 +154,25 @@ impl<C: Color + Sized> OwnedGfxBuffer<C> {
         }
     }
 
-    pub fn buf<'a>(&'a self) -> GfxBuffer<'a, C> {
-        GfxBuffer::new(&self.mem, self.width, self.height, self.width * C::U::SIZE).unwrap()
+    pub fn buf<'a>(&'a self) -> GfxBuffer<'a, CF> {
+        GfxBuffer::new(&self.mem, self.width, self.height, self.width * CF::U::SIZE).unwrap()
     }
 
-    pub fn buf_mut<'a>(&'a mut self) -> GfxBufferMut<'a, C> {
+    pub fn buf_mut<'a>(&'a mut self) -> GfxBufferMut<'a, CF> {
         GfxBufferMut::new(
             &mut self.mem,
             self.width,
             self.height,
-            self.width * C::U::SIZE,
+            self.width * CF::U::SIZE,
         ).unwrap()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Rgb555, Rgb565, Rgb888};
+    use super::super::{Rgb565, Rgb888};
     use super::byteorder::ByteOrder;
     use super::*;
-
-    #[test]
-    fn color() {
-        assert_eq!(Rgb565::new(0x10, 0x10, 0x10).is_some(), true);
-        assert_eq!(Rgb565::new(0x1F, 0x3F, 0x1F).is_some(), true);
-        assert_eq!(Rgb565::new(0x1F, 0x40, 0x1F).is_some(), false);
-
-        let c1 = Rgb888::new_clamped(0xAA, 0x77, 0x33);
-        let c2: Rgb555 = c1.into();
-        assert_eq!(Rgb555::new(0xAA >> 3, 0x77 >> 3, 0x33 >> 3).unwrap(), c2);
-
-        let c1 = Rgb565::new_clamped(0x13, 0x24, 0x14);
-        let c2: Rgb888 = c1.into();
-        assert_eq!(
-            Rgb888::new(
-                (0x13 << 3) | (0x13 >> 2),
-                (0x24 << 2) | (0x24 >> 4),
-                (0x14 << 3) | (0x14 >> 2)
-            ).unwrap(),
-            c2
-        );
-    }
 
     #[test]
     fn buffer() {
@@ -214,7 +192,7 @@ mod tests {
 
         {
             let mut buf1 = GfxBufferMut::<Rgb565>::new(&mut v1, 128, 128, 256).unwrap();
-            let c1 = Rgb565::new_clamped(0x13, 0x24, 0x14);
+            let c1 = Color::<Rgb565>::new_clamped(0x13, 0x24, 0x14);
             for y in 0..128 {
                 let mut line = buf1.line(y);
                 for x in 0..128 {

@@ -95,15 +95,31 @@ impl<U: MemInt, N: Unsigned, S: Unsigned> Component for Value<U, N, S> {
     }
 }
 
-pub trait Color {
+pub trait ColorFormat {
+    /// unsigned integer word (eg: u16)
     type U: MemInt;
-
-    fn from_bits(val: Self::U) -> Self;
-    fn to_bits(&self) -> Self::U;
+    /// numer of red bits
+    type RN: Unsigned;
+    /// shift amount for red bits
+    type RS: Unsigned;
+    /// number of green bits
+    type GN: Unsigned;
+    /// shift amount for green bits
+    type GS: Unsigned;
+    /// number of blue bits
+    type BN: Unsigned;
+    /// shift amount for blue bits
+    type BS: Unsigned;
 }
 
-#[derive(Default, Copy, Clone, PartialEq, Eq)]
-pub struct Rgb<
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub struct cf<U, RN, RS, GN, GS, BN, BS> {
+    phantom: PhantomData<(U, RN, RS, GN, GS, BN, BS)>,
+}
+
+impl<U, RN, RS, GN, GS, BN, BS> ColorFormat for cf<U, RN, RS, GN, GS, BN, BS>
+where
     U: MemInt,
     RN: Unsigned,
     RS: Unsigned,
@@ -111,22 +127,24 @@ pub struct Rgb<
     GS: Unsigned,
     BN: Unsigned,
     BS: Unsigned,
-> {
-    r: Value<U, RN, RS>,
-    g: Value<U, GN, GS>,
-    b: Value<U, BN, BS>,
+{
+    type U = U;
+    type RN = RN;
+    type RS = RS;
+    type GN = GN;
+    type GS = GS;
+    type BN = BN;
+    type BS = BS;
 }
 
-impl<
-        U: MemInt,
-        RN: Unsigned,
-        RS: Unsigned,
-        GN: Unsigned,
-        GS: Unsigned,
-        BN: Unsigned,
-        BS: Unsigned,
-    > Rgb<U, RN, RS, GN, GS, BN, BS>
-{
+#[derive(Default, Copy, Clone, PartialEq, Eq)]
+pub struct Color<CF: ColorFormat> {
+    r: Value<CF::U, CF::RN, CF::RS>,
+    g: Value<CF::U, CF::GN, CF::GS>,
+    b: Value<CF::U, CF::BN, CF::BS>,
+}
+
+impl<CF: ColorFormat> Color<CF> {
     pub fn new<W: Into<i32>>(r: W, g: W, b: W) -> Option<Self> {
         Some(Self {
             r: match Value::new(r) {
@@ -152,52 +170,7 @@ impl<
         }
     }
 
-    pub fn from<
-        U1: MemInt,
-        RN1: Unsigned,
-        RS1: Unsigned,
-        GN1: Unsigned,
-        GS1: Unsigned,
-        BN1: Unsigned,
-        BS1: Unsigned,
-    >(
-        c: Rgb<U1, RN1, RS1, GN1, GS1, BN1, BS1>,
-    ) -> Self {
-        Self {
-            r: c.r.into(),
-            g: c.g.into(),
-            b: c.b.into(),
-        }
-    }
-
-    pub fn into<
-        U1: MemInt,
-        RN1: Unsigned,
-        RS1: Unsigned,
-        GN1: Unsigned,
-        GS1: Unsigned,
-        BN1: Unsigned,
-        BS1: Unsigned,
-    >(
-        self,
-    ) -> Rgb<U1, RN1, RS1, GN1, GS1, BN1, BS1> {
-        Rgb::from(self)
-    }
-}
-
-impl<
-        U: MemInt,
-        RN: Unsigned,
-        RS: Unsigned,
-        GN: Unsigned,
-        GS: Unsigned,
-        BN: Unsigned,
-        BS: Unsigned,
-    > Color for Rgb<U, RN, RS, GN, GS, BN, BS>
-{
-    type U = U;
-
-    fn from_bits(val: U) -> Self {
+    pub fn from_bits(val: CF::U) -> Self {
         Self {
             r: Component::from_bits(val),
             g: Component::from_bits(val),
@@ -205,27 +178,30 @@ impl<
         }
     }
 
-    fn to_bits(&self) -> U {
+    pub fn to_bits(&self) -> CF::U {
         self.r.to_bits() | self.g.to_bits() | self.b.to_bits()
+    }
+
+    pub fn from<CF2: ColorFormat>(c: Color<CF2>) -> Self {
+        Self {
+            r: c.r.into(),
+            g: c.g.into(),
+            b: c.b.into(),
+        }
+    }
+
+    pub fn into<CF2: ColorFormat>(self) -> Color<CF2> {
+        Color::from(self)
     }
 }
 
-impl<
-        U: MemInt,
-        RN: Unsigned,
-        RS: Unsigned,
-        GN: Unsigned,
-        GS: Unsigned,
-        BN: Unsigned,
-        BS: Unsigned,
-    > fmt::Debug for Rgb<U, RN, RS, GN, GS, BN, BS>
-{
+impl<CF: ColorFormat> fmt::Debug for Color<CF> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct(&format!(
             "Rgb{}{}{}",
-            RN::to_usize(),
-            GN::to_usize(),
-            BN::to_usize()
+            CF::RN::to_usize(),
+            CF::GN::to_usize(),
+            CF::BN::to_usize()
         )).field("r", &self.r.val)
             .field("g", &self.g.val)
             .field("b", &self.b.val)
@@ -233,6 +209,36 @@ impl<
     }
 }
 
-pub type Rgb555 = Rgb<u16, U5, U0, U5, U5, U5, U10>;
-pub type Rgb565 = Rgb<u16, U5, U0, U6, U5, U5, U11>;
-pub type Rgb888 = Rgb<u32, U8, U0, U8, U8, U8, U16>;
+pub type Rgb555 = cf<u16, U5, U0, U5, U5, U5, U10>;
+pub type Rgb565 = cf<u16, U5, U0, U6, U5, U5, U11>;
+pub type Rgb888 = cf<u32, U8, U0, U8, U8, U8, U16>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn color() {
+        assert_eq!(Color::<Rgb565>::new(0x10, 0x10, 0x10).is_some(), true);
+        assert_eq!(Color::<Rgb565>::new(0x1F, 0x3F, 0x1F).is_some(), true);
+        assert_eq!(Color::<Rgb565>::new(0x1F, 0x40, 0x1F).is_some(), false);
+
+        let c1 = Color::<Rgb888>::new_clamped(0xAA, 0x77, 0x33);
+        let c2: Color<Rgb555> = c1.into();
+        assert_eq!(
+            Color::<Rgb555>::new(0xAA >> 3, 0x77 >> 3, 0x33 >> 3).unwrap(),
+            c2
+        );
+
+        let c1 = Color::<Rgb565>::new_clamped(0x13, 0x24, 0x14);
+        let c2: Color<Rgb888> = c1.into();
+        assert_eq!(
+            Color::<Rgb888>::new(
+                (0x13 << 3) | (0x13 >> 2),
+                (0x24 << 2) | (0x24 >> 4),
+                (0x14 << 3) | (0x14 >> 2)
+            ).unwrap(),
+            c2
+        );
+    }
+}

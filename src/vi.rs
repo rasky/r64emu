@@ -2,7 +2,7 @@ extern crate byteorder;
 extern crate emu;
 extern crate slog;
 use emu::bus::be::{Bus, Reg32};
-use emu::gfx::{GfxBuffer, GfxBufferMut, Rgb565, Rgb888};
+use emu::gfx::{Color, GfxBuffer, GfxBufferMut, Rgb565, Rgb888};
 use emu::int::Numerics;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -50,7 +50,7 @@ impl Vi {
 
         // display disable -> clear screen
         if bpp == 0 || bpp == 1 {
-            let black = Rgb888::new_clamped(0, 0, 0);
+            let black = Color::<Rgb888>::new_clamped(0, 0, 0);
             for y in 0..480 {
                 let mut line = screen.line(y);
                 for x in 0..640 {
