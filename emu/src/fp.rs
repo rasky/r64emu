@@ -220,12 +220,36 @@ impl<FP: FixedPoint, RHS: FixedPoint> ops::Add<Q<RHS>> for Q<FP> {
     }
 }
 
+impl<FP: FixedPoint, BITS: FixedPointInt> ops::Add<BITS> for Q<FP> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn add(self, other: BITS) -> Self {
+        let other = Self::from_int(<FP::BITS as NumCast>::from(other).unwrap());
+        Self {
+            bits: self.bits + other.bits,
+        }
+    }
+}
+
 impl<FP: FixedPoint, RHS: FixedPoint> ops::Sub<Q<RHS>> for Q<FP> {
     type Output = Self;
 
     #[inline(always)]
     fn sub(self, other: Q<RHS>) -> Self {
         let other: Self = other.cast();
+        Self {
+            bits: self.bits - other.bits,
+        }
+    }
+}
+
+impl<FP: FixedPoint, BITS: FixedPointInt> ops::Sub<BITS> for Q<FP> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn sub(self, other: BITS) -> Self {
+        let other = Self::from_int(<FP::BITS as NumCast>::from(other).unwrap());
         Self {
             bits: self.bits - other.bits,
         }
@@ -245,6 +269,18 @@ impl<FP: FixedPoint, RHS: FixedPoint> ops::Mul<Q<RHS>> for Q<FP> {
     }
 }
 
+impl<FP: FixedPoint, BITS: FixedPointInt> ops::Mul<BITS> for Q<FP> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn mul(self, other: BITS) -> Self {
+        let other = <FP::BITS as NumCast>::from(other).unwrap();
+        Self {
+            bits: self.bits * other,
+        }
+    }
+}
+
 impl<FP: FixedPoint, RHS: FixedPoint> ops::Div<Q<RHS>> for Q<FP> {
     type Output = Self;
 
@@ -254,6 +290,18 @@ impl<FP: FixedPoint, RHS: FixedPoint> ops::Div<Q<RHS>> for Q<FP> {
         let b2 = other.bits.cast();
         Self {
             bits: ((b1 << RHS::shift()) / b2).cast(),
+        }
+    }
+}
+
+impl<FP: FixedPoint, BITS: FixedPointInt> ops::Div<BITS> for Q<FP> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn div(self, other: BITS) -> Self {
+        let other = <FP::BITS as NumCast>::from(other).unwrap();
+        Self {
+            bits: self.bits / other,
         }
     }
 }
@@ -370,5 +418,13 @@ mod test {
 
         let v4 = v.cast::<I8F8>();
         assert_eq!(v4.floor(), 111);
+    }
+
+    #[test]
+    fn math_int() {
+        let v = Q::<I22F10>::from_f32(15.75);
+        let v2 = (((v + 10) * 4) - 100) / 2;
+        assert_eq!(v2.floor(), 1);
+        assert_eq!(v2.ceil(), 2);
     }
 }
