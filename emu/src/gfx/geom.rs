@@ -13,6 +13,10 @@ impl<FP: FixedPoint> Point<FP> {
         Point { x, y }
     }
     #[inline(always)]
+    pub fn from_int(x: FP::BITS, y: FP::BITS) -> Self {
+        Self::new(Q::from_int(x), Q::from_int(y))
+    }
+    #[inline(always)]
     pub fn from_bits(x: FP::BITS, y: FP::BITS) -> Self {
         Self::new(Q::from_bits(x), Q::from_bits(y))
     }
