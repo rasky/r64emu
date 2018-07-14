@@ -2,9 +2,11 @@ extern crate bit_field;
 extern crate emu;
 extern crate slog;
 use self::bit_field::BitField;
+use super::gfx::draw_rect;
 use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
-use emu::fp::I30F2;
-use emu::gfx::Rect;
+use emu::fp::formats::*;
+use emu::fp::Q;
+use emu::gfx::{GfxBuffer, GfxBufferMut, Point, Rect, Rgb555, Rgb888};
 use emu::int::Numerics;
 use emu::sync;
 use std::cell::RefCell;
@@ -71,13 +73,13 @@ impl Dp {
             cmd_current: Reg32::default(),
             cmd_status: Reg32::default(),
             logger,
-            main_bus,
+            main_bus: main_bus.clone(),
             cycles: 0,
             running: false,
             fetched_mem: MemIoR::default(),
             fetched_start_addr: 0,
             fetched_end_addr: 0,
-            gfx: Box::new(DpGfx::new(gfx_logger)),
+            gfx: Box::new(DpGfx::new(gfx_logger, main_bus.clone())),
         }
     }
 
@@ -224,6 +226,8 @@ struct ImageFormat {
 
 pub struct DpGfx {
     logger: slog::Logger,
+    main_bus: Rc<RefCell<Box<Bus>>>,
+    tmem: Box<[u8]>,
     clip: Rect<I30F2>,
     fb: ImageFormat,
     tex: ImageFormat,
@@ -231,9 +235,13 @@ pub struct DpGfx {
 }
 
 impl DpGfx {
-    fn new(logger: slog::Logger) -> DpGfx {
+    fn new(logger: slog::Logger, main_bus: Rc<RefCell<Box<Bus>>>) -> DpGfx {
+        let mut tmem = Vec::new();
+        tmem.resize(4096, 0);
         DpGfx {
             logger: logger,
+            main_bus: main_bus,
+            tmem: tmem.into_boxed_slice(),
             clip: Rect::default(),
             fb: ImageFormat::default(),
             tex: ImageFormat::default(),
@@ -272,7 +280,7 @@ impl DpGfx {
                     dram_addr: cmd.get_bits(0..26) as u32,
                 };
 
-                if op == 0x3D {
+                if op == 0x3F {
                     self.fb = format;
                     info!(self.logger, "DP: Set Color Image"; "format" => ?self.fb);
                 } else {
@@ -286,13 +294,45 @@ impl DpGfx {
             }
             0x34 => {
                 // Load Tile
-                let tile = cmd.get_bits(24..27);
-                let s0 = cmd.get_bits(44..56) as i32;
-                let t0 = cmd.get_bits(32..44) as i32;
-                let s1 = cmd.get_bits(12..24) as i32;
-                let t1 = cmd.get_bits(0..12) as i32;
-                let rect = Rect::<I30F2>::from_bits(s0, t0, s1, t1);
+                let tile = cmd.get_bits(24..27) as usize;
+                let s0 = cmd.get_bits(44..56) as u32;
+                let t0 = cmd.get_bits(32..44) as u32;
+                let s1 = cmd.get_bits(12..24) as u32;
+                let t1 = cmd.get_bits(0..12) as u32;
+                let mut rect = Rect::<U30F2>::from_bits(s0, t0, s1, t1);
                 info!(self.logger, "DP: Load Tile"; "idx" => tile, "rect" => ?rect);
+
+                let tmem_addr = self.tiles[tile].tmem_addr as usize;
+                let tmem_pitch = self.tiles[tile].pitch;
+                let tex_reader = self.main_bus.borrow().fetch_read::<u8>(self.tex.dram_addr);
+                let tex_mem = tex_reader.mem().unwrap();
+                let width = rect.width().floor() as usize + 1;
+                let height = rect.height().floor() as usize + 1;
+
+                let copy_width = width.min(self.tex.width); // FIXME: is this correct? See RDPI4Decode
+                rect.set_width(Q::from_int(copy_width as u32 - 1));
+
+                let mut tmem = GfxBufferMut::<Rgb555>::new(
+                    &mut self.tmem[tmem_addr..],
+                    copy_width,
+                    height,
+                    tmem_pitch,
+                ).unwrap();
+
+                let tex = GfxBuffer::<Rgb555>::new(
+                    &tex_mem,
+                    copy_width,
+                    height,
+                    self.tex.width * self.tex.bpp / 8,
+                ).unwrap();
+
+                info!(self.logger, "DP: Load Tile: draw_rect"; "rect" => ?rect);
+                draw_rect(
+                    &mut tmem,
+                    Point::<U30F2>::from_int(0, 0),
+                    &tex,
+                    rect.cast::<U27F5>(),
+                );
             }
             0x35 => {
                 // Set Tile
@@ -302,7 +342,7 @@ impl DpGfx {
                 tile.color_format = color_format;
                 tile.bpp = 4 << cmd.get_bits(51..53);
                 tile.pitch = cmd.get_bits(41..50) as usize * 8;
-                tile.tmem_addr = cmd.get_bits(32..41) as u32;
+                tile.tmem_addr = cmd.get_bits(32..41) as u32 * 8;
                 tile.palette = cmd.get_bits(20..24) as usize;
                 tile.clamp[0] = cmd.get_bit(9);
                 tile.clamp[1] = cmd.get_bit(19);

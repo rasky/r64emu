@@ -2,10 +2,7 @@ extern crate num;
 extern crate typenum;
 use self::num::cast::NumCast;
 use self::num::{PrimInt, ToPrimitive, Zero};
-use self::typenum::{
-    U0, U1, U10, U11, U12, U128, U13, U14, U15, U16, U17, U18, U19, U2, U20, U21, U22, U23, U24,
-    U25, U26, U27, U28, U29, U3, U30, U31, U32, U4, U5, U6, U64, U7, U8, U9, Unsigned,
-};
+use self::typenum::{U0, U128, U16, U32, U64, U8, Unsigned};
 use std::fmt;
 use std::iter;
 use std::marker::PhantomData;
@@ -306,48 +303,88 @@ impl<FP: FixedPoint, BITS: FixedPointInt> ops::Div<BITS> for Q<FP> {
     }
 }
 
-pub type I8F8 = q<i16, U8>;
+pub mod formats {
+    use super::q;
+    use super::typenum::{
+        U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2, U20, U21, U22, U23, U24, U25,
+        U26, U27, U28, U29, U3, U30, U31, U32, U4, U5, U6, U7, U8, U9,
+    };
 
-pub type I32F0 = q<i32, U0>;
-pub type I31F1 = q<i32, U1>;
-pub type I30F2 = q<i32, U2>;
-pub type I29F3 = q<i32, U3>;
-pub type I28F4 = q<i32, U4>;
-pub type I27F5 = q<i32, U5>;
-pub type I26F6 = q<i32, U6>;
-pub type I25F7 = q<i32, U7>;
-pub type I24F8 = q<i32, U8>;
-pub type I23F9 = q<i32, U9>;
-pub type I22F10 = q<i32, U10>;
-pub type I21F11 = q<i32, U11>;
-pub type I20F12 = q<i32, U12>;
-pub type I19F13 = q<i32, U13>;
-pub type I18F14 = q<i32, U14>;
-pub type I17F15 = q<i32, U15>;
-pub type I16F16 = q<i32, U16>;
-pub type I15F17 = q<i32, U17>;
-pub type I14F18 = q<i32, U18>;
-pub type I13F19 = q<i32, U19>;
-pub type I12F20 = q<i32, U20>;
-pub type I11F21 = q<i32, U21>;
-pub type I10F22 = q<i32, U22>;
-pub type I9F23 = q<i32, U23>;
-pub type I8F24 = q<i32, U24>;
-pub type I7F25 = q<i32, U25>;
-pub type I6F26 = q<i32, U26>;
-pub type I5F27 = q<i32, U27>;
-pub type I4F28 = q<i32, U28>;
-pub type I3F29 = q<i32, U29>;
-pub type I2F30 = q<i32, U30>;
-pub type I1F31 = q<i32, U31>;
+    pub type I8F8 = q<i16, U8>;
 
-pub type I33F31 = q<i64, U31>;
-pub type I32F32 = q<i64, U32>;
+    pub type I32F0 = q<i32, U0>;
+    pub type I31F1 = q<i32, U1>;
+    pub type I30F2 = q<i32, U2>;
+    pub type I29F3 = q<i32, U3>;
+    pub type I28F4 = q<i32, U4>;
+    pub type I27F5 = q<i32, U5>;
+    pub type I26F6 = q<i32, U6>;
+    pub type I25F7 = q<i32, U7>;
+    pub type I24F8 = q<i32, U8>;
+    pub type I23F9 = q<i32, U9>;
+    pub type I22F10 = q<i32, U10>;
+    pub type I21F11 = q<i32, U11>;
+    pub type I20F12 = q<i32, U12>;
+    pub type I19F13 = q<i32, U13>;
+    pub type I18F14 = q<i32, U14>;
+    pub type I17F15 = q<i32, U15>;
+    pub type I16F16 = q<i32, U16>;
+    pub type I15F17 = q<i32, U17>;
+    pub type I14F18 = q<i32, U18>;
+    pub type I13F19 = q<i32, U19>;
+    pub type I12F20 = q<i32, U20>;
+    pub type I11F21 = q<i32, U21>;
+    pub type I10F22 = q<i32, U22>;
+    pub type I9F23 = q<i32, U23>;
+    pub type I8F24 = q<i32, U24>;
+    pub type I7F25 = q<i32, U25>;
+    pub type I6F26 = q<i32, U26>;
+    pub type I5F27 = q<i32, U27>;
+    pub type I4F28 = q<i32, U28>;
+    pub type I3F29 = q<i32, U29>;
+    pub type I2F30 = q<i32, U30>;
+    pub type I1F31 = q<i32, U31>;
 
-pub type U30F2 = q<u32, U2>;
+    pub type I33F31 = q<i64, U31>;
+    pub type I32F32 = q<i64, U32>;
+
+    pub type U32F0 = q<u32, U0>;
+    pub type U31F1 = q<u32, U1>;
+    pub type U30F2 = q<u32, U2>;
+    pub type U29F3 = q<u32, U3>;
+    pub type U28F4 = q<u32, U4>;
+    pub type U27F5 = q<u32, U5>;
+    pub type U26F6 = q<u32, U6>;
+    pub type U25F7 = q<u32, U7>;
+    pub type U24F8 = q<u32, U8>;
+    pub type U23F9 = q<u32, U9>;
+    pub type U22F10 = q<u32, U10>;
+    pub type U21F11 = q<u32, U11>;
+    pub type U20F12 = q<u32, U12>;
+    pub type U19F13 = q<u32, U13>;
+    pub type U18F14 = q<u32, U14>;
+    pub type U17F15 = q<u32, U15>;
+    pub type U16F16 = q<u32, U16>;
+    pub type U15F17 = q<u32, U17>;
+    pub type U14F18 = q<u32, U18>;
+    pub type U13F19 = q<u32, U19>;
+    pub type U12F20 = q<u32, U20>;
+    pub type U11F21 = q<u32, U21>;
+    pub type U10F22 = q<u32, U22>;
+    pub type U9F23 = q<u32, U23>;
+    pub type U8F24 = q<u32, U24>;
+    pub type U7F25 = q<u32, U25>;
+    pub type U6F26 = q<u32, U26>;
+    pub type U5F27 = q<u32, U27>;
+    pub type U4F28 = q<u32, U28>;
+    pub type U3F29 = q<u32, U29>;
+    pub type U2F30 = q<u32, U30>;
+    pub type U1F31 = q<u32, U31>;
+}
 
 #[cfg(test)]
 mod test {
+    use super::formats::*;
     use super::*;
 
     #[test]

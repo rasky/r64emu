@@ -27,6 +27,7 @@ mod vops;
 pub mod ai;
 pub mod cartridge;
 pub mod dp;
+pub mod gfx;
 pub mod mips64;
 pub mod pi;
 pub mod si;
