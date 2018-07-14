@@ -3,7 +3,8 @@ extern crate emu;
 extern crate slog;
 use self::bit_field::BitField;
 use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
-use emu::fp::{FixedPoint, I30F2};
+use emu::fp::I30F2;
+use emu::gfx::Rect;
 use emu::int::Numerics;
 use emu::sync;
 use std::cell::RefCell;
@@ -169,29 +170,6 @@ impl sync::Subsystem for Dp {
 
     fn cycles(&self) -> i64 {
         self.cycles
-    }
-}
-
-#[derive(Copy, Clone, Debug, Default)]
-struct Rect<FP: FixedPoint> {
-    pub x0: FP,
-    pub y0: FP,
-    pub x1: FP,
-    pub y1: FP,
-}
-
-impl<FP: FixedPoint> Rect<FP> {
-    fn new(x0: FP, y0: FP, x1: FP, y1: FP) -> Self {
-        Rect { x0, y0, x1, y1 }
-    }
-
-    fn from_bits(x0: FP::BITS, y0: FP::BITS, x1: FP::BITS, y1: FP::BITS) -> Self {
-        Self::new(
-            FP::from_bits(x0),
-            FP::from_bits(y0),
-            FP::from_bits(x1),
-            FP::from_bits(y1),
-        )
     }
 }
 
