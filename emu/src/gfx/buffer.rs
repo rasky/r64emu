@@ -48,14 +48,24 @@ impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBuffer<'a, CF> {
         width: usize,
         height: usize,
         pitch: usize,
-    ) -> Option<GfxBuffer<'a, CF>> {
+    ) -> Result<GfxBuffer<'a, CF>, String> {
         if pitch < width * CF::U::SIZE {
-            return None;
+            return Err(format!(
+                "pitch ({}) too small for buffer (width: {}, bpp: {})",
+                pitch,
+                width,
+                CF::U::SIZE
+            ));
         }
         if mem.len() < height * pitch {
-            return None;
+            return Err(format!(
+                "mem slice size ({}) too small for buffer (height: {}, pitch: {})",
+                mem.len(),
+                height,
+                pitch,
+            ));
         }
-        Some(Self {
+        Ok(Self {
             mem: &mem[..height * pitch],
             width,
             pitch,
@@ -81,14 +91,24 @@ impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBufferMut<'a, CF> {
         width: usize,
         height: usize,
         pitch: usize,
-    ) -> Option<GfxBufferMut<'a, CF>> {
+    ) -> Result<GfxBufferMut<'a, CF>, String> {
         if pitch < width * CF::U::SIZE {
-            return None;
+            return Err(format!(
+                "pitch ({}) too small for buffer (width: {}, bpp: {})",
+                pitch,
+                width,
+                CF::U::SIZE
+            ));
         }
         if mem.len() < height * pitch {
-            return None;
+            return Err(format!(
+                "mem slice size ({}) too small for buffer (height: {}, pitch: {})",
+                mem.len(),
+                height,
+                pitch,
+            ));
         }
-        Some(Self {
+        Ok(Self {
             mem: &mut mem[..height * pitch],
             width,
             pitch,
@@ -182,11 +202,11 @@ mod tests {
         v2.resize(128 * 128 * 4, 0);
 
         assert_eq!(
-            GfxBuffer::<Rgb888>::new(&mut v1, 128, 128, 256).is_some(),
+            GfxBuffer::<Rgb888>::new(&mut v1, 128, 128, 256).is_ok(),
             false
         );
         assert_eq!(
-            GfxBuffer::<Rgb565>::new(&mut v1, 128, 128, 256).is_some(),
+            GfxBuffer::<Rgb565>::new(&mut v1, 128, 128, 256).is_ok(),
             true
         );
 
