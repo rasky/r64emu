@@ -26,6 +26,16 @@ pub trait FixedPointInt: PrimInt + ToPrimitive + iter::Step {
     }
 }
 
+impl FixedPointInt for i8 {
+    type DoubleInt = i16;
+    type Len = U8;
+}
+
+impl FixedPointInt for i16 {
+    type DoubleInt = i32;
+    type Len = U16;
+}
+
 impl FixedPointInt for i32 {
     type DoubleInt = i64;
     type Len = U32;
@@ -138,7 +148,7 @@ impl<FP: FixedPoint> Q<FP> {
         let bits: FP::BITS = if FP2::shift() > FP::shift() {
             (fp.bits >> (FP2::shift() - FP::shift())).cast()
         } else {
-            (fp.bits << (FP::shift() - FP2::shift())).cast()
+            (fp.bits.cast::<FP::BITS>() << (FP::shift() - FP2::shift()))
         };
         let q = Self::from_bits(bits);
         if q.floor().to_i64().unwrap() != fp.floor().to_i64().unwrap() {
@@ -228,6 +238,8 @@ impl<FP: FixedPoint, RHS: FixedPoint> ops::Div<Q<RHS>> for Q<FP> {
     }
 }
 
+pub type I8F8 = q<i16, U8>;
+
 pub type I32F0 = q<i32, U0>;
 pub type I31F1 = q<i32, U1>;
 pub type I30F2 = q<i32, U2>;
@@ -260,6 +272,9 @@ pub type I4F28 = q<i32, U28>;
 pub type I3F29 = q<i32, U29>;
 pub type I2F30 = q<i32, U30>;
 pub type I1F31 = q<i32, U31>;
+
+pub type I33F31 = q<i64, U31>;
+pub type I32F32 = q<i64, U32>;
 
 #[cfg(test)]
 mod test {
@@ -321,5 +336,17 @@ mod test {
         let v2 = Q::<I22F10>::from_f32(14.74).truncate();
         assert_eq!(v.bits(), 14);
         assert_eq!(v2.bits(), 14);
+    }
+
+    #[test]
+    fn upcast() {
+        let v = Q::<I32F0>::from_int(111);
+        let v2 = v.cast::<I33F31>();
+        let v3 = v.cast::<I32F32>();
+        assert_eq!(v2.floor(), 111);
+        assert_eq!(v3.floor(), 111);
+
+        let v4 = v.cast::<I8F8>();
+        assert_eq!(v4.floor(), 111);
     }
 }
