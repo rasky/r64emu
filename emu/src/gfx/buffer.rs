@@ -8,7 +8,7 @@ use self::typenum::{
     U26, U27, U28, U29, U3, U30, U31, U4, U5, U6, U7, U8, U9, Unsigned,
 };
 use super::super::bus::MemInt;
-use super::{Color, ColorFormat};
+use super::{Color, ColorFormat, Rgb888};
 use std::marker::PhantomData;
 
 pub struct GfxBuffer<'a, CF: ColorFormat + Sized> {
@@ -143,22 +143,123 @@ impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBufferMut<'a, CF> {
     }
 }
 
-impl<'a, CF: ColorFormat + Sized> GfxLine<'a, CF> {
-    pub fn get(&self, x: usize) -> Color<CF> {
+pub trait BufferLineGetter<CF: ColorFormat> {
+    #[inline(always)]
+    fn get(&self, x: usize) -> Color<CF>;
+    #[inline(always)]
+    fn get2(&self, x: usize) -> (Color<CF>, Color<CF>) {
+        let c1 = self.get(x);
+        let c2 = self.get(x + 1);
+        (c1, c2)
+    }
+    #[inline(always)]
+    fn get4(&self, x: usize) -> (Color<CF>, Color<CF>, Color<CF>, Color<CF>) {
+        let (c1, c2) = self.get2(x);
+        let (c3, c4) = self.get2(x + 2);
+        (c1, c2, c3, c4)
+    }
+}
+
+pub trait BufferLineSetter<CF: ColorFormat> {
+    #[inline(always)]
+    fn set(&mut self, x: usize, c: Color<CF>);
+    #[inline(always)]
+    fn set2(&mut self, x: usize, c1: Color<CF>, c2: Color<CF>) {
+        self.set(x, c1);
+        self.set(x + 1, c2);
+    }
+    #[inline(always)]
+    fn set4(&mut self, x: usize, c1: Color<CF>, c2: Color<CF>, c3: Color<CF>, c4: Color<CF>) {
+        self.set2(x, c1, c2);
+        self.set2(x + 2, c3, c4);
+    }
+}
+
+impl<'a, CF> BufferLineGetter<CF> for GfxLine<'a, CF>
+where
+    CF: ColorFormat + Sized,
+{
+    #[inline(always)]
+    default fn get(&self, x: usize) -> Color<CF> {
         Color::from_bits(CF::U::endian_read_from::<LittleEndian>(
             &self.mem[x * CF::U::SIZE..],
         ))
     }
 }
 
-impl<'a, CF: ColorFormat + Sized> GfxLineMut<'a, CF> {
-    pub fn get(&self, x: usize) -> Color<CF> {
+impl<'a, CF> BufferLineGetter<CF> for GfxLine<'a, CF>
+where
+    CF: ColorFormat<BITS = U4> + Sized,
+{
+    #[inline(always)]
+    fn get(&self, x: usize) -> Color<CF> {
+        let val = self.mem[x / 2] >> ((x & 1) * 4);
+        Color::from_bits(CF::U::truncate_from(val.into()))
+    }
+    #[inline(always)]
+    fn get2(&self, x: usize) -> (Color<CF>, Color<CF>) {
+        let val = self.mem[x / 2];
+        (
+            Color::from_bits(CF::U::truncate_from((val & 0xF).into())),
+            Color::from_bits(CF::U::truncate_from((val >> 4).into())),
+        )
+    }
+}
+
+impl<'a, CF> BufferLineGetter<CF> for GfxLineMut<'a, CF>
+where
+    CF: ColorFormat + Sized,
+{
+    #[inline(always)]
+    default fn get(&self, x: usize) -> Color<CF> {
         Color::from_bits(CF::U::endian_read_from::<LittleEndian>(
             &self.mem[x * CF::U::SIZE..],
         ))
     }
-    pub fn set(&mut self, x: usize, c: Color<CF>) {
+}
+
+impl<'a, CF> BufferLineGetter<CF> for GfxLineMut<'a, CF>
+where
+    CF: ColorFormat<BITS = U4> + Sized,
+{
+    #[inline(always)]
+    fn get(&self, x: usize) -> Color<CF> {
+        let val = self.mem[x / 2] >> ((x & 1) * 4);
+        Color::from_bits(CF::U::truncate_from(val.into()))
+    }
+}
+
+impl<'a, CF> BufferLineSetter<CF> for GfxLineMut<'a, CF>
+where
+    CF: ColorFormat + Sized,
+{
+    #[inline(always)]
+    default fn set(&mut self, x: usize, c: Color<CF>) {
         CF::U::endian_write_to::<LittleEndian>(&mut self.mem[x * CF::U::SIZE..], c.to_bits());
+    }
+}
+
+impl<'a, CF> BufferLineSetter<CF> for GfxLineMut<'a, CF>
+where
+    CF: ColorFormat<BITS = U4> + Sized,
+{
+    #[inline(always)]
+    fn set(&mut self, x: usize, c: Color<CF>) {
+        let val = self.mem[x / 2];
+        let mask = 0xF0 >> ((x & 1) * 4);
+        let val = (val & mask) | (c.to_bits().into() << ((x & 1) * 4)) as u8;
+        CF::U::endian_write_to::<LittleEndian>(
+            &mut self.mem[x * CF::U::SIZE..],
+            CF::U::truncate_from(val.into()),
+        );
+    }
+    #[inline(always)]
+    fn set2(&mut self, x: usize, c1: Color<CF>, c2: Color<CF>) {
+        let val = c1.to_bits().into() | (c2.to_bits().into() << 4);
+        CF::U::endian_write_to::<LittleEndian>(
+            &mut self.mem[x * CF::U::SIZE..],
+            CF::U::truncate_from(val),
+        );
     }
 }
 
@@ -212,7 +313,7 @@ mod tests {
 
         {
             let mut buf1 = GfxBufferMut::<Rgb565>::new(&mut v1, 128, 128, 256).unwrap();
-            let c1 = Color::<Rgb565>::new_clamped(0x13, 0x24, 0x14);
+            let c1 = Color::<Rgb565>::new_clamped(0x13, 0x24, 0x14, 0);
             for y in 0..128 {
                 let mut line = buf1.line(y);
                 for x in 0..128 {
