@@ -20,10 +20,17 @@ fn int_draw_rect<'a, 'b, CF1, CF2, FP1, FP2>(
     let sx = st.x;
     let mut sy = st.y;
 
+    let w = (dr.c1.x.floor() - dr.c0.x.floor()).to_usize().unwrap();
+    if (w + 1) % 4 != 0 {
+        println!("{:?}", w + 1);
+        panic!("cannot unroll loop");
+    }
+
     for dy in dr.c0.y.floor()..=dr.c1.y.floor() {
         let mut dst = dst.line(dy.to_usize().unwrap());
         let src = src.line(sy.floor().to_usize().unwrap());
 
+        // FIXME: Do 4 pixels at a time (manual unroll). Not sure if it's OK.
         let mut sx = sx;
         for dx in (dr.c0.x.floor()..=dr.c1.x.floor()).step_by(4) {
             let sidx = sx.floor().to_usize().unwrap();
@@ -72,4 +79,19 @@ pub fn draw_rect_scaled<'a, 'b, CF1, CF2, FP1, FP2>(
     let dsdy = (sr.height() + 1) / (dr.height() + 1);
     let dsdt = Point::new(dsdx, dsdy);
     int_draw_rect(dst, dr, src, sr.c0, dsdt);
+}
+
+pub fn draw_rect_slopes<'a, 'b, CF1, CF2, FP1, FP2>(
+    dst: &mut GfxBufferMut<'a, CF1>,
+    dr: Rect<FP1>,
+    src: &GfxBuffer<'b, CF2>,
+    st: Point<FP2>,
+    dsdt: Point<FP2>,
+) where
+    CF1: ColorFormat,
+    CF2: ColorFormat,
+    FP1: FixedPoint,
+    FP2: FixedPoint,
+{
+    int_draw_rect(dst, dr, src, st, dsdt);
 }

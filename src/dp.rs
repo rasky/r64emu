@@ -2,11 +2,11 @@ extern crate bit_field;
 extern crate emu;
 extern crate slog;
 use self::bit_field::BitField;
-use super::gfx::draw_rect;
+use super::gfx::{draw_rect, draw_rect_slopes};
 use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
 use emu::fp::formats::*;
 use emu::fp::Q;
-use emu::gfx::{GfxBuffer, GfxBufferMut, Point, Rect, Rgb555, Rgb888};
+use emu::gfx::{GfxBuffer, GfxBufferMut, I4, Point, Rect, Rgb555, Rgb888};
 use emu::int::Numerics;
 use emu::sync;
 use std::cell::RefCell;
@@ -208,6 +208,8 @@ struct TileDescriptor {
     mirror: [bool; 2],
     mask: [u32; 2],
     shift: [u32; 2],
+
+    rect: Rect<U30F2>,
 }
 
 impl Default for ColorFormat {
@@ -222,6 +224,12 @@ struct ImageFormat {
     bpp: usize,
     width: usize,
     dram_addr: u32,
+}
+
+impl ImageFormat {
+    fn pitch(&self) -> usize {
+        self.width * self.bpp / 8
+    }
 }
 
 pub struct DpGfx {
@@ -315,11 +323,11 @@ impl DpGfx {
                 }
 
                 let tile = self.cmdbuf[0].get_bits(24..27) as usize;
-                let x0 = self.cmdbuf[0].get_bits(44..56) as u32;
-                let y0 = self.cmdbuf[0].get_bits(32..44) as u32;
-                let x1 = self.cmdbuf[0].get_bits(12..24) as u32;
-                let y1 = self.cmdbuf[0].get_bits(0..12) as u32;
-                let rect = Rect::<U30F2>::from_bits(x0, y0, x1, y1);
+                let x1 = self.cmdbuf[0].get_bits(44..56) as u32;
+                let y1 = self.cmdbuf[0].get_bits(32..44) as u32;
+                let x0 = self.cmdbuf[0].get_bits(12..24) as u32;
+                let y0 = self.cmdbuf[0].get_bits(0..12) as u32;
+                let mut rect = Rect::<U30F2>::from_bits(x0, y0, x1, y1);
 
                 let s = Q::<I6F10>::from_bits(self.cmdbuf[1].get_bits(48..64) as i16);
                 let t = Q::<I6F10>::from_bits(self.cmdbuf[1].get_bits(32..48) as i16);
@@ -328,8 +336,31 @@ impl DpGfx {
 
                 let ptex = Point::new(s, t);
                 let slope = Point::new(dsdx, dtdy);
-
                 info!(self.logger, "DP: Textured Rectangle"; "idx" => tile, "screen" => ?rect, "ptex" => ?ptex, "slope" => ?slope);
+
+                let tmem_addr = self.tiles[tile].tmem_addr as usize;
+                let tmem_pitch = self.tiles[tile].pitch;
+                let tex_rect = self.tiles[tile].rect;
+                let tmem = GfxBuffer::<I4>::new(
+                    &self.tmem[tmem_addr..],
+                    tex_rect.width().floor() as usize + 1,
+                    tex_rect.height().floor() as usize + 1,
+                    tmem_pitch,
+                ).unwrap();
+
+                let fb_writer = self.main_bus.borrow().fetch_write::<u8>(self.fb.dram_addr);
+                let mut fb_mem = fb_writer.mem().unwrap();
+                let mut fb =
+                    GfxBufferMut::<Rgb555>::new(&mut fb_mem, 640, 480, self.fb.pitch()).unwrap();
+
+                // FIXME: draw_rect_slopes() use inclusive rectangles... maybe we need clipping?
+                let w = rect.width() - 1;
+                let h = rect.height() - 1;
+                rect.set_width(w);
+                rect.set_height(h);
+
+                draw_rect_slopes(&mut fb, rect, &tmem, ptex.cast::<I22F10>(), slope.cast());
+
                 self.cmdlen = 0;
             }
             0x34 => {
@@ -341,6 +372,9 @@ impl DpGfx {
                 let t1 = cmd.get_bits(0..12) as u32;
                 let mut rect = Rect::<U30F2>::from_bits(s0, t0, s1, t1);
                 info!(self.logger, "DP: Load Tile"; "idx" => tile, "rect" => ?rect);
+
+                // Load_Tile also updates the internal tile rect
+                self.tiles[tile].rect = rect;
 
                 let tmem_addr = self.tiles[tile].tmem_addr as usize;
                 let tmem_pitch = self.tiles[tile].pitch;
@@ -359,12 +393,8 @@ impl DpGfx {
                     tmem_pitch,
                 ).unwrap();
 
-                let tex = GfxBuffer::<Rgb555>::new(
-                    &tex_mem,
-                    copy_width,
-                    height,
-                    self.tex.width * self.tex.bpp / 8,
-                ).unwrap();
+                let tex = GfxBuffer::<Rgb555>::new(&tex_mem, copy_width, height, self.tex.pitch())
+                    .unwrap();
 
                 info!(self.logger, "DP: Load Tile: draw_rect"; "rect" => ?rect);
                 draw_rect(
@@ -373,6 +403,7 @@ impl DpGfx {
                     &tex,
                     rect.cast::<U27F5>(),
                 );
+
                 self.cmdlen = 0;
             }
             0x35 => {
