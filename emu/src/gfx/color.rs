@@ -275,10 +275,12 @@ pub type Rgba5551 = cf<u16, U16, U5, U0, U5, U5, U5, U10, U1, U15>;
 pub type Rgba8888 = cf<u32, U32, U8, U0, U8, U8, U8, U16, U8, U24>;
 
 pub trait ColorConverter<CF2: ColorFormat>: Sized {
+    #[inline(always)]
     fn cconv(self) -> Color<CF2>;
 }
 
 impl<CF1: ColorFormat, CF2: ColorFormat> ColorConverter<CF2> for Color<CF1> {
+    #[inline(always)]
     default fn cconv(self) -> Color<CF2> {
         Color {
             r: self.r.into(),
@@ -293,6 +295,7 @@ macro_rules! define_greyscale_conversions {
     ($cfgrey:ident, $($cf2:ident),+) => {
         $(
             impl ColorConverter<$cf2> for Color<$cfgrey> {
+                #[inline(always)]
                 fn cconv(self) -> Color<$cf2> {
                     Color {
                         r: self.r.into(),
@@ -303,6 +306,7 @@ macro_rules! define_greyscale_conversions {
                 }
             }
             impl ColorConverter<$cfgrey> for Color<$cf2> {
+                #[inline(always)]
                 fn cconv(self) -> Color<$cfgrey> {
                     let i = self.r.as_f32() * 0.30 + self.g.as_f32() * 0.59 + self.b.as_f32() * 0.11;
                     Color::from_f32_clamped(i, 0.0, 0.0, 0.0)
