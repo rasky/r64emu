@@ -3,7 +3,6 @@ use emu::gfx::{GfxBufferMut, Rgb888};
 use emu::hw;
 use emu::sync;
 use slog;
-use slog::Drain;
 use std::cell::RefCell;
 use std::rc::Rc;
 
