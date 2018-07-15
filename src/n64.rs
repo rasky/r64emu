@@ -1,5 +1,5 @@
 use emu::bus::be::{Bus, DevPtr, Mem};
-use emu::gfx::{GfxBufferMut, Rgb888};
+use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
 use emu::sync;
 use slog;
@@ -129,7 +129,7 @@ impl N64 {
 }
 
 impl hw::OutputProducer for N64 {
-    fn render_frame(&mut self, screen: &mut GfxBufferMut<Rgb888>) {
+    fn render_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>) {
         let mut vi = self.vi.clone();
         self.sync.run_frame(move |evt| match evt {
             sync::Event::HSync(x, y) if x == 0 => {

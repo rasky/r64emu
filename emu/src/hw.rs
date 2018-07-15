@@ -1,3 +1,4 @@
+extern crate byteorder;
 extern crate sdl2;
 
 use self::sdl2::event::Event;
@@ -5,7 +6,7 @@ use self::sdl2::keyboard::Keycode;
 use self::sdl2::pixels::PixelFormatEnum;
 use self::sdl2::render::{TextureCreator, WindowCanvas};
 use self::sdl2::video::WindowContext;
-use super::gfx::{GfxBuffer, GfxBufferMut, OwnedGfxBuffer, Rgb888};
+use super::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
@@ -58,12 +59,12 @@ impl Video {
         })
     }
 
-    fn render_frame(&mut self, frame: &GfxBuffer<Rgb888>) {
+    fn render_frame(&mut self, frame: &GfxBufferLE<Rgb888>) {
         self.draw(frame);
         self.update_fps();
     }
 
-    fn draw(&mut self, frame: &GfxBuffer<Rgb888>) {
+    fn draw(&mut self, frame: &GfxBufferLE<Rgb888>) {
         let mut tex = self
             .creator
             .create_texture_target(
@@ -96,7 +97,7 @@ impl Video {
 }
 
 pub trait OutputProducer {
-    fn render_frame(&mut self, screen: &mut GfxBufferMut<Rgb888>);
+    fn render_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>);
     fn finish(&mut self);
 }
 
@@ -131,7 +132,7 @@ impl Output {
         thread::spawn(move || {
             let mut producer = create().unwrap();
             loop {
-                let mut screen = OwnedGfxBuffer::<Rgb888>::new(width, height);
+                let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
                 producer.render_frame(&mut screen.buf_mut());
 
                 tx.send(screen).unwrap();
@@ -155,7 +156,7 @@ impl Output {
         }
     }
 
-    pub fn render_frame(&mut self, video: &GfxBuffer<Rgb888>) {
+    pub fn render_frame(&mut self, video: &GfxBufferLE<Rgb888>) {
         self.video.as_mut().map(|v| v.render_frame(video));
     }
 }

@@ -45,7 +45,7 @@ impl Vi {
         error!(self.logger, "write VI current line"; o!("val" => new.hex()));
     }
 
-    pub fn draw_frame(&self, screen: &mut GfxBufferMut<Rgb888>) {
+    pub fn draw_frame(&self, screen: &mut GfxBufferMutLE<Rgb888>) {
         let bpp = self.status.get() & 3;
 
         // display disable -> clear screen
@@ -66,7 +66,7 @@ impl Vi {
 
         match self.width.get() {
             640 => {
-                let src = GfxBuffer::<Rgb888>::new(src, 640, 480, 640 * 4).unwrap();
+                let src = GfxBufferLE::<Rgb888>::new(src, 640, 480, 640 * 4).unwrap();
                 for y in 0..480 {
                     let mut dst = screen.line(y);
                     let src = src.line(y);
@@ -80,7 +80,7 @@ impl Vi {
                 match bpp {
                     // 32-bit
                     3 => {
-                        let src = GfxBuffer::new(src, 320, 240, 320 * 4).unwrap();
+                        let src = GfxBufferLE::<Rgb888>::new(src, 320, 240, 320 * 4).unwrap();
                         for y in 0..240 {
                             let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
                             let src = src.line(y);
@@ -95,7 +95,7 @@ impl Vi {
                     }
                     // 16-bit
                     2 => {
-                        let src = GfxBuffer::<Rgb565>::new(src, 320, 240, 320 * 2).unwrap();
+                        let src = GfxBufferLE::<Rgb565>::new(src, 320, 240, 320 * 2).unwrap();
                         for y in 0..240 {
                             let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
                             let src = src.line(y);

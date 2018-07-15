@@ -1,13 +1,15 @@
+extern crate byteorder;
 extern crate num;
+use self::byteorder::ByteOrder;
 use self::num::ToPrimitive;
 use super::emu::fp::FixedPoint;
 use super::emu::gfx::*;
 
 #[inline(always)]
-fn int_draw_rect<'a, 'b, CF1, CF2, FP1, FP2>(
-    dst: &mut GfxBufferMut<'a, CF1>,
+fn int_draw_rect<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
+    dst: &mut GfxBufferMut<'a, CF1, O1>,
     dr: Rect<FP1>,
-    src: &GfxBuffer<'b, CF2>,
+    src: &GfxBuffer<'b, CF2, O2>,
     st: Point<FP2>,
     dsdt: Point<FP2>,
 ) where
@@ -15,6 +17,8 @@ fn int_draw_rect<'a, 'b, CF1, CF2, FP1, FP2>(
     CF2: ColorFormat,
     FP1: FixedPoint,
     FP2: FixedPoint,
+    O1: ByteOrder,
+    O2: ByteOrder,
 {
     let dr = dr.truncate();
     let sx = st.x;
@@ -53,16 +57,18 @@ fn int_draw_rect<'a, 'b, CF1, CF2, FP1, FP2>(
     }
 }
 
-pub fn draw_rect<'a, 'b, CF1, CF2, FP1, FP2>(
-    dst: &mut GfxBufferMut<'a, CF1>,
+pub fn draw_rect<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
+    dst: &mut GfxBufferMut<'a, CF1, O1>,
     dp: Point<FP1>,
-    src: &GfxBuffer<'b, CF2>,
+    src: &GfxBuffer<'b, CF2, O2>,
     sr: Rect<FP2>,
 ) where
     CF1: ColorFormat,
     CF2: ColorFormat,
     FP1: FixedPoint,
     FP2: FixedPoint,
+    O1: ByteOrder,
+    O2: ByteOrder,
 {
     let dp = dp.truncate();
     let dr = Rect::new(dp, dp + Point::new(sr.width().cast(), sr.height().cast()));
@@ -71,16 +77,18 @@ pub fn draw_rect<'a, 'b, CF1, CF2, FP1, FP2>(
     int_draw_rect(dst, dr, src, sr.c0, dsdt);
 }
 
-pub fn draw_rect_scaled<'a, 'b, CF1, CF2, FP1, FP2>(
-    dst: &mut GfxBufferMut<'a, CF1>,
+pub fn draw_rect_scaled<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
+    dst: &mut GfxBufferMut<'a, CF1, O1>,
     dr: Rect<FP1>,
-    src: &GfxBuffer<'b, CF2>,
+    src: &GfxBuffer<'b, CF2, O2>,
     sr: Rect<FP2>,
 ) where
     CF1: ColorFormat,
     CF2: ColorFormat,
     FP1: FixedPoint,
     FP2: FixedPoint,
+    O1: ByteOrder,
+    O2: ByteOrder,
 {
     let dsdx = (sr.width() + 1) / (dr.width() + 1);
     let dsdy = (sr.height() + 1) / (dr.height() + 1);
@@ -88,10 +96,10 @@ pub fn draw_rect_scaled<'a, 'b, CF1, CF2, FP1, FP2>(
     int_draw_rect(dst, dr, src, sr.c0, dsdt);
 }
 
-pub fn draw_rect_slopes<'a, 'b, CF1, CF2, FP1, FP2>(
-    dst: &mut GfxBufferMut<'a, CF1>,
+pub fn draw_rect_slopes<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
+    dst: &mut GfxBufferMut<'a, CF1, O1>,
     dr: Rect<FP1>,
-    src: &GfxBuffer<'b, CF2>,
+    src: &GfxBuffer<'b, CF2, O2>,
     st: Point<FP2>,
     dsdt: Point<FP2>,
 ) where
@@ -99,6 +107,8 @@ pub fn draw_rect_slopes<'a, 'b, CF1, CF2, FP1, FP2>(
     CF2: ColorFormat,
     FP1: FixedPoint,
     FP2: FixedPoint,
+    O1: ByteOrder,
+    O2: ByteOrder,
 {
     int_draw_rect(dst, dr, src, st, dsdt);
 }

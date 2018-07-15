@@ -273,6 +273,7 @@ pub type Rgb565 = cf<u16, U16, U5, U0, U6, U5, U5, U11, U0, U0>;
 pub type Rgb888 = cf<u32, U32, U8, U0, U8, U8, U8, U16, U0, U0>;
 pub type Rgba5551 = cf<u16, U16, U5, U0, U5, U5, U5, U10, U1, U15>;
 pub type Rgba8888 = cf<u32, U32, U8, U0, U8, U8, U8, U16, U8, U24>;
+pub type Abgr8888 = cf<u32, U32, U8, U24, U8, U16, U8, U8, U8, U0>;
 
 pub trait ColorConverter<CF2: ColorFormat>: Sized {
     #[inline(always)]

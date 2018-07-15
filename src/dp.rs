@@ -6,10 +6,13 @@ use super::gfx::{draw_rect, draw_rect_slopes};
 use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
 use emu::fp::formats::*;
 use emu::fp::Q;
-use emu::gfx::{GfxBuffer, GfxBufferMut, I4, Point, Rect, Rgb555, Rgb888};
+use emu::gfx::*;
 use emu::int::Numerics;
 use emu::sync;
+use errors::*;
 use std::cell::RefCell;
+use std::fs::File;
+use std::io::Write;
 use std::rc::Rc;
 
 bitflags! {
@@ -243,6 +246,7 @@ pub struct DpGfx {
 
     cmdbuf: [u64; 16],
     cmdlen: usize,
+    dump: usize,
 }
 
 impl DpGfx {
@@ -259,7 +263,14 @@ impl DpGfx {
             tiles: [TileDescriptor::default(); 8],
             cmdbuf: [0u64; 16],
             cmdlen: 0,
+            dump: 0,
         }
+    }
+
+    fn dump_tmem(&self, filename: &str) -> Result<()> {
+        let mut f = File::create(filename)?;
+        f.write_all(&self.tmem)?;
+        Ok(())
     }
 
     fn parse_color_format(&self, bits: u64) -> ColorFormat {
@@ -341,7 +352,7 @@ impl DpGfx {
                 let tmem_addr = self.tiles[tile].tmem_addr as usize;
                 let tmem_pitch = self.tiles[tile].pitch;
                 let tex_rect = self.tiles[tile].rect;
-                let tmem = GfxBuffer::<I4>::new(
+                let tmem = GfxBufferBE::<I4>::new(
                     &self.tmem[tmem_addr..],
                     tex_rect.width().floor() as usize + 1,
                     tex_rect.height().floor() as usize + 1,
@@ -351,7 +362,8 @@ impl DpGfx {
                 let fb_writer = self.main_bus.borrow().fetch_write::<u8>(self.fb.dram_addr);
                 let mut fb_mem = fb_writer.mem().unwrap();
                 let mut fb =
-                    GfxBufferMut::<Rgb555>::new(&mut fb_mem, 640, 480, self.fb.pitch()).unwrap();
+                    GfxBufferMutLE::<Rgba8888>::new(&mut fb_mem, 320, 240, self.fb.pitch())
+                        .unwrap();
 
                 // FIXME: draw_rect_slopes() use inclusive rectangles... maybe we need clipping?
                 let w = rect.width() - 1;
@@ -386,24 +398,32 @@ impl DpGfx {
                 let copy_width = width.min(self.tex.width); // FIXME: is this correct? See RDPI4Decode
                 rect.set_width(Q::from_int(copy_width as u32 - 1));
 
-                let mut tmem = GfxBufferMut::<Rgb555>::new(
-                    &mut self.tmem[tmem_addr..],
-                    copy_width,
-                    height,
-                    tmem_pitch,
-                ).unwrap();
+                {
+                    let mut tmem = GfxBufferMutLE::<Rgba5551>::new(
+                        &mut self.tmem[tmem_addr..],
+                        copy_width,
+                        height,
+                        tmem_pitch,
+                    ).unwrap();
 
-                let tex = GfxBuffer::<Rgb555>::new(&tex_mem, copy_width, height, self.tex.pitch())
-                    .unwrap();
+                    let tex = GfxBufferLE::<Rgba5551>::new(
+                        &tex_mem,
+                        copy_width,
+                        height,
+                        self.tex.pitch(),
+                    ).unwrap();
 
-                info!(self.logger, "DP: Load Tile: draw_rect"; "rect" => ?rect);
-                draw_rect(
-                    &mut tmem,
-                    Point::<U30F2>::from_int(0, 0),
-                    &tex,
-                    rect.cast::<U27F5>(),
-                );
+                    info!(self.logger, "DP: Load Tile: draw_rect"; "rect" => ?rect, "copy_width" => copy_width);
+                    draw_rect(
+                        &mut tmem,
+                        Point::<U30F2>::from_int(0, 0),
+                        &tex,
+                        rect.cast::<U27F5>(),
+                    );
+                }
 
+                self.dump_tmem(&format!("tmem{}.dump", self.dump)).unwrap();
+                self.dump += 1;
                 self.cmdlen = 0;
             }
             0x35 => {
