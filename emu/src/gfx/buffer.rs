@@ -49,12 +49,12 @@ impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBuffer<'a, CF> {
         height: usize,
         pitch: usize,
     ) -> Result<GfxBuffer<'a, CF>, String> {
-        if pitch < width * CF::U::SIZE {
+        if pitch < width * CF::BITS::to_usize() / 8 {
             return Err(format!(
                 "pitch ({}) too small for buffer (width: {}, bpp: {})",
                 pitch,
                 width,
-                CF::U::SIZE
+                CF::BITS::to_usize(),
             ));
         }
         if mem.len() < height * pitch {
@@ -79,7 +79,7 @@ impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBuffer<'a, CF> {
 
     pub fn line(&'s self, y: usize) -> GfxLine<'s, CF> {
         GfxLine {
-            mem: &self.mem[y * self.pitch..][..self.width * CF::U::SIZE],
+            mem: &self.mem[y * self.pitch..][..self.width * CF::BITS::to_usize() / 8],
             phantom: PhantomData,
         }
     }
@@ -92,12 +92,12 @@ impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBufferMut<'a, CF> {
         height: usize,
         pitch: usize,
     ) -> Result<GfxBufferMut<'a, CF>, String> {
-        if pitch < width * CF::U::SIZE {
+        if pitch < width * CF::BITS::to_usize() / 8 {
             return Err(format!(
                 "pitch ({}) too small for buffer (width: {}, bpp: {})",
                 pitch,
                 width,
-                CF::U::SIZE
+                CF::BITS::to_usize(),
             ));
         }
         if mem.len() < height * pitch {
@@ -122,7 +122,7 @@ impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBufferMut<'a, CF> {
 
     pub fn line(&'s mut self, y: usize) -> GfxLineMut<'s, CF> {
         GfxLineMut {
-            mem: &mut self.mem[y * self.pitch..][..self.width * CF::U::SIZE],
+            mem: &mut self.mem[y * self.pitch..][..self.width * CF::BITS::to_usize() / 8],
             phantom: PhantomData,
         }
     }
@@ -132,11 +132,11 @@ impl<'a: 's, 's, CF: ColorFormat + Sized> GfxBufferMut<'a, CF> {
 
         (
             GfxLineMut {
-                mem: &mut mem1[y1 * self.pitch..][..self.width * CF::U::SIZE],
+                mem: &mut mem1[y1 * self.pitch..][..self.width * CF::BITS::to_usize() / 8],
                 phantom: PhantomData,
             },
             GfxLineMut {
-                mem: &mut mem2[..self.width * CF::U::SIZE],
+                mem: &mut mem2[..self.width * CF::BITS::to_usize() / 8],
                 phantom: PhantomData,
             },
         )
@@ -249,17 +249,14 @@ where
         let mask = 0xF0 >> ((x & 1) * 4);
         let val = (val & mask) | (c.to_bits().into() << ((x & 1) * 4)) as u8;
         CF::U::endian_write_to::<LittleEndian>(
-            &mut self.mem[x * CF::U::SIZE..],
+            &mut self.mem[x / 2..],
             CF::U::truncate_from(val.into()),
         );
     }
     #[inline(always)]
     fn set2(&mut self, x: usize, c1: Color<CF>, c2: Color<CF>) {
         let val = c1.to_bits().into() | (c2.to_bits().into() << 4);
-        CF::U::endian_write_to::<LittleEndian>(
-            &mut self.mem[x * CF::U::SIZE..],
-            CF::U::truncate_from(val),
-        );
+        CF::U::endian_write_to::<LittleEndian>(&mut self.mem[x / 2..], CF::U::truncate_from(val));
     }
 }
 
@@ -291,7 +288,7 @@ impl<CF: ColorFormat + Sized> OwnedGfxBuffer<CF> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Rgb565, Rgb888};
+    use super::super::{I4, Rgb565, Rgb888};
     use super::byteorder::ByteOrder;
     use super::*;
 
@@ -340,5 +337,46 @@ mod tests {
                 | (((0x24 << 2) | (0x24 >> 4)) << 8)
                 | (((0x14 << 3) | (0x14 >> 2)) << 16)
         );
+    }
+
+    #[test]
+    fn bpp4() {
+        let mut v1 = Vec::<u8>::new();
+        let mut v2 = Vec::<u8>::new();
+        v1.resize(128 * 128 / 2, 0);
+        v2.resize(128 * 128 / 2, 0);
+
+        {
+            let mut buf1 = GfxBufferMut::<I4>::new(&mut v1, 128, 128, 64).unwrap();
+            let c0 = Color::<I4>::new_clamped(0x2, 0, 0, 0);
+            let c1 = Color::<I4>::new_clamped(0xA, 0, 0, 0);
+            for y in 0..128 {
+                let mut line = buf1.line(y);
+                for x in 0..128 {
+                    if x & 1 == 0 {
+                        line.set(x, c0);
+                    } else {
+                        line.set(x, c1);
+                    }
+                }
+            }
+        }
+        assert_eq!(v1[128], 0xA2);
+
+        {
+            let mut buf1 = GfxBufferMut::<I4>::new(&mut v2, 128, 128, 64).unwrap();
+            let buf2 = GfxBuffer::<I4>::new(&mut v1, 128, 128, 64).unwrap();
+            for y in 0..128 {
+                let mut dst = buf1.line(y);
+                let src = buf2.line(y);
+                for x in (0..128).step_by(4) {
+                    let (c1, c2, c3, c4) = src.get4(x);
+                    dst.set4(x, c1, c3, c2, c4);
+                }
+            }
+        }
+
+        assert_eq!(v2[128], 0x22);
+        assert_eq!(v2[129], 0xAA);
     }
 }
