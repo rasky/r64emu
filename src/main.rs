@@ -47,7 +47,7 @@ fn run() -> Result<()> {
     }
 
     let mut out = hw::Output::new(hw::OutputConfig {
-        window_title: "Rust - Nintendo 64 Emulator".into(),
+        window_title: "R64EMU - Nintendo 64 Emulator".into(),
         width: 640,
         height: 480,
         fps: 60,
