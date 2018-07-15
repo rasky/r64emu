@@ -214,7 +214,7 @@ impl<CF: ColorFormat> Color<CF> {
     }
 
     pub fn to_bits(&self) -> CF::U {
-        self.r.to_bits() | self.g.to_bits() | self.b.to_bits()
+        self.r.to_bits() | self.g.to_bits() | self.b.to_bits() | self.a.to_bits()
     }
 
     pub fn from<CF2: ColorFormat>(c: Color<CF2>) -> Self {
@@ -334,7 +334,16 @@ mod tests {
 
         // Final conversion test
         let c1 = Color::<Rgba5551>::new_clamped(0x13, 0x8, 0x14, 1);
+        assert_eq!(c1.to_bits(), 0x13 | (0x8 << 5) | (0x14 << 10) | (1 << 15));
+
         let c2 = c1.into();
+        assert_eq!(
+            c2.to_bits(),
+            ((0x13 << 3) | (0x13 >> 2))
+                | (((0x8 << 3) | (0x8 >> 2)) << 8)
+                | (((0x14 << 3) | (0x14 >> 2)) << 16)
+                | (255 << 24)
+        );
         assert_eq!(
             c2,
             Color::<Rgba8888>::new(
@@ -344,6 +353,7 @@ mod tests {
                 255,
             ).unwrap(),
         );
+
         let c3 = c2.into();
         assert_eq!(c1, c3);
     }
