@@ -100,7 +100,7 @@ impl Vi {
                             let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
                             let src = src.line(y);
                             for x in 0..320 {
-                                let px = src.get(x).into();
+                                let px = src.get(x).cconv();
                                 dst1.set(x * 2, px);
                                 dst1.set(x * 2 + 1, px);
                                 dst2.set(x * 2, px);

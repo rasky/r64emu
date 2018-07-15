@@ -3,8 +3,9 @@ extern crate typenum;
 
 #[allow(unused_imports)]
 use self::typenum::{
-    IsEqual, True, U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2, U20, U21, U22,
-    U23, U24, U25, U26, U27, U28, U29, U3, U30, U31, U32, U4, U5, U6, U7, U8, U9, Unsigned,
+    IsEqual, IsGreaterOrEqual, True, U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2,
+    U20, U21, U22, U23, U24, U25, U26, U27, U28, U29, U3, U30, U31, U32, U4, U5, U6, U7, U8, U9,
+    Unsigned,
 };
 use super::super::bus::MemInt;
 use std::fmt;
@@ -55,8 +56,22 @@ impl<U: MemInt, N: Unsigned, S: Unsigned> Value<U, N, S> {
         }
     }
 
+    fn from_f32_clamped(mut val: f32) -> Self {
+        if val > 1.0 {
+            val = 1.0;
+        } else if val < 0.0 {
+            val = 0.0;
+        }
+        let max = Self::max() as f32;
+        Self {
+            val: (val * max) as i32,
+            phantom: PhantomData,
+        }
+    }
+
     #[inline(always)]
     fn from<U1: MemInt, N1: Unsigned, S1: Unsigned>(v: Value<U1, N1, S1>) -> Self {
+        let max = (1 << N::to_usize()) - 1;
         Self {
             phantom: PhantomData,
             val: match (N1::to_usize(), N::to_usize()) {
@@ -64,7 +79,7 @@ impl<U: MemInt, N: Unsigned, S: Unsigned> Value<U, N, S> {
                 (1, _) => if v.val == 0 {
                     0
                 } else {
-                    (1 << N::to_usize()) - 1
+                    max
                 },
 
                 // Special case for alpha 1-bit conversion.
@@ -73,6 +88,10 @@ impl<U: MemInt, N: Unsigned, S: Unsigned> Value<U, N, S> {
                 } else {
                     0
                 },
+
+                // Special case for alpha elision.
+                (0, _) => max,
+                (_, 0) => 0,
 
                 // Normal cases
                 (f, t) if f == t => v.val,
@@ -89,6 +108,10 @@ impl<U: MemInt, N: Unsigned, S: Unsigned> Value<U, N, S> {
 
     fn into<U1: MemInt, N1: Unsigned, S1: Unsigned>(self) -> Value<U1, N1, S1> {
         Value::from(self)
+    }
+
+    fn as_f32(self) -> f32 {
+        (self.val as f32) / (Self::max() as f32)
     }
 }
 
@@ -204,6 +227,15 @@ impl<CF: ColorFormat> Color<CF> {
         }
     }
 
+    pub fn from_f32_clamped(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self {
+            r: Value::from_f32_clamped(r),
+            g: Value::from_f32_clamped(g),
+            b: Value::from_f32_clamped(b),
+            a: Value::from_f32_clamped(a),
+        }
+    }
+
     pub fn from_bits(val: CF::U) -> Self {
         Self {
             r: Component::from_bits(val),
@@ -215,19 +247,6 @@ impl<CF: ColorFormat> Color<CF> {
 
     pub fn to_bits(&self) -> CF::U {
         self.r.to_bits() | self.g.to_bits() | self.b.to_bits() | self.a.to_bits()
-    }
-
-    pub fn from<CF2: ColorFormat>(c: Color<CF2>) -> Self {
-        Self {
-            r: c.r.into(),
-            g: c.g.into(),
-            b: c.b.into(),
-            a: c.a.into(),
-        }
-    }
-
-    pub fn into<CF2: ColorFormat>(self) -> Color<CF2> {
-        Color::from(self)
     }
 }
 
@@ -255,6 +274,47 @@ pub type Rgb888 = cf<u32, U32, U8, U0, U8, U8, U8, U16, U0, U0>;
 pub type Rgba5551 = cf<u16, U16, U5, U0, U5, U5, U5, U10, U1, U15>;
 pub type Rgba8888 = cf<u32, U32, U8, U0, U8, U8, U8, U16, U8, U24>;
 
+pub trait ColorConverter<CF2: ColorFormat>: Sized {
+    fn cconv(self) -> Color<CF2>;
+}
+
+impl<CF1: ColorFormat, CF2: ColorFormat> ColorConverter<CF2> for Color<CF1> {
+    default fn cconv(self) -> Color<CF2> {
+        Color {
+            r: self.r.into(),
+            g: self.g.into(),
+            b: self.b.into(),
+            a: self.a.into(),
+        }
+    }
+}
+
+macro_rules! define_greyscale_conversions {
+    ($cfgrey:ident, $($cf2:ident),+) => {
+        $(
+            impl ColorConverter<$cf2> for Color<$cfgrey> {
+                fn cconv(self) -> Color<$cf2> {
+                    Color {
+                        r: self.r.into(),
+                        g: self.r.into(),
+                        b: self.r.into(),
+                        a: Value::new_clamped(255),
+                    }
+                }
+            }
+            impl ColorConverter<$cfgrey> for Color<$cf2> {
+                fn cconv(self) -> Color<$cfgrey> {
+                    let i = self.r.as_f32() * 0.30 + self.g.as_f32() * 0.59 + self.b.as_f32() * 0.11;
+                    Color::from_f32_clamped(i, 0.0, 0.0, 0.0)
+                }
+            }
+        )+
+    };
+}
+
+define_greyscale_conversions!(I4, Rgba8888, Rgba5551, Rgb888, Rgb565, Rgb555);
+define_greyscale_conversions!(I8, Rgba8888, Rgba5551, Rgb888, Rgb565, Rgb555);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,14 +326,14 @@ mod tests {
         assert_eq!(Color::<Rgb565>::new(0x1F, 0x40, 0x1F, 0).is_some(), false);
 
         let c1 = Color::<Rgb888>::new_clamped(0xAA, 0x77, 0x33, 0);
-        let c2: Color<Rgb555> = c1.into();
+        let c2: Color<Rgb555> = c1.cconv();
         assert_eq!(
             Color::<Rgb555>::new(0xAA >> 3, 0x77 >> 3, 0x33 >> 3, 0).unwrap(),
             c2
         );
 
         let c1 = Color::<Rgb565>::new_clamped(0x13, 0x24, 0x14, 0);
-        let c2: Color<Rgb888> = c1.into();
+        let c2: Color<Rgb888> = c1.cconv();
         assert_eq!(
             Color::<Rgb888>::new(
                 (0x13 << 3) | (0x13 >> 2),
@@ -298,45 +358,67 @@ mod tests {
             true
         );
 
-        // Check conversions semantics for alpha
+        // Check conversions semantics for 1-bit alpha
         assert_eq!(
-            Color::<Rgba5551>::new_clamped(0, 0, 0, 1).into(),
+            Color::<Rgba5551>::new_clamped(0, 0, 0, 1).cconv(),
             Color::<Rgba8888>::new_clamped(0, 0, 0, 255)
         );
         assert_eq!(
-            Color::<Rgba5551>::new_clamped(0, 0, 0, 0).into(),
+            Color::<Rgba5551>::new_clamped(0, 0, 0, 0).cconv(),
             Color::<Rgba8888>::new_clamped(0, 0, 0, 0)
         );
         assert_eq!(
-            Color::<Rgba8888>::new_clamped(0, 0, 0, 255).into(),
+            Color::<Rgba8888>::new_clamped(0, 0, 0, 255).cconv(),
             Color::<Rgba5551>::new_clamped(0, 0, 0, 1),
         );
         assert_eq!(
-            Color::<Rgba8888>::new_clamped(0, 0, 0, 254).into(),
+            Color::<Rgba8888>::new_clamped(0, 0, 0, 254).cconv(),
             Color::<Rgba5551>::new_clamped(0, 0, 0, 1),
         );
         assert_eq!(
-            Color::<Rgba8888>::new_clamped(0, 0, 0, 128).into(),
+            Color::<Rgba8888>::new_clamped(0, 0, 0, 128).cconv(),
             Color::<Rgba5551>::new_clamped(0, 0, 0, 1),
         );
         assert_eq!(
-            Color::<Rgba8888>::new_clamped(0, 0, 0, 127).into(),
+            Color::<Rgba8888>::new_clamped(0, 0, 0, 127).cconv(),
             Color::<Rgba5551>::new_clamped(0, 0, 0, 1),
         );
         assert_eq!(
-            Color::<Rgba8888>::new_clamped(0, 0, 0, 1).into(),
+            Color::<Rgba8888>::new_clamped(0, 0, 0, 1).cconv(),
             Color::<Rgba5551>::new_clamped(0, 0, 0, 1),
         );
         assert_eq!(
-            Color::<Rgba8888>::new_clamped(0, 0, 0, 0).into(),
+            Color::<Rgba8888>::new_clamped(0, 0, 0, 0).cconv(),
             Color::<Rgba5551>::new_clamped(0, 0, 0, 0),
+        );
+
+        // Check conversions semantics for multi-bit alpha
+        assert_eq!(
+            Color::<Rgb888>::new_clamped(0x20, 0x30, 0x40, 0).cconv(),
+            Color::<Rgba8888>::new_clamped(0x20, 0x30, 0x40, 255)
+        );
+        assert_eq!(
+            Color::<Rgba8888>::new_clamped(0x20, 0x30, 0x40, 255).cconv(),
+            Color::<Rgb888>::new_clamped(0x20, 0x30, 0x40, 0),
+        );
+        assert_eq!(
+            Color::<Rgba8888>::new_clamped(0x20, 0x30, 0x40, 128).cconv(),
+            Color::<Rgb888>::new_clamped(0x20, 0x30, 0x40, 0),
+        );
+        assert_eq!(
+            Color::<Rgba8888>::new_clamped(0x20, 0x30, 0x40, 127).cconv(),
+            Color::<Rgb888>::new_clamped(0x20, 0x30, 0x40, 0),
+        );
+        assert_eq!(
+            Color::<Rgba8888>::new_clamped(0x20, 0x30, 0x40, 0).cconv(),
+            Color::<Rgb888>::new_clamped(0x20, 0x30, 0x40, 0),
         );
 
         // Final conversion test
         let c1 = Color::<Rgba5551>::new_clamped(0x13, 0x8, 0x14, 1);
         assert_eq!(c1.to_bits(), 0x13 | (0x8 << 5) | (0x14 << 10) | (1 << 15));
 
-        let c2 = c1.into();
+        let c2 = c1.cconv();
         assert_eq!(
             c2.to_bits(),
             ((0x13 << 3) | (0x13 >> 2))
@@ -354,7 +436,23 @@ mod tests {
             ).unwrap(),
         );
 
-        let c3 = c2.into();
+        let c3 = c2.cconv();
         assert_eq!(c1, c3);
+    }
+
+    #[test]
+    fn intensity() {
+        assert_eq!(Color::<I8>::new(0x80, 0x0, 0x0, 0x0).is_some(), true);
+        assert_eq!(Color::<I8>::new(0x80, 0x0, 0x1, 0x0).is_some(), false);
+        assert_eq!(Color::<I8>::new(0x80, 0x1, 0x0, 0x0).is_some(), false);
+        assert_eq!(Color::<I8>::new(0x80, 0x0, 0x0, 0x1).is_some(), false);
+
+        let v1 = Color::<I8>::new(0x80, 0x0, 0x0, 0x0).unwrap();
+        let v2: Color<Rgb888> = v1.cconv();
+        assert_eq!(v2, Color::<Rgb888>::new_clamped(0x80, 0x80, 0x80, 0));
+
+        let v1 = Color::<I4>::new(0x08, 0x0, 0x0, 0x0).unwrap();
+        let v2: Color<Rgb888> = v1.cconv();
+        assert_eq!(v2, Color::<Rgb888>::new_clamped(0x88, 0x88, 0x88, 0));
     }
 }

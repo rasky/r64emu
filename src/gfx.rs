@@ -30,7 +30,7 @@ fn int_draw_rect<'a, 'b, CF1, CF2, FP1, FP2>(
             let didx = dx.to_usize().unwrap();
 
             let (c1, c2, c3, c4) = src.get4(sidx);
-            dst.set4(didx, c1.into(), c2.into(), c3.into(), c4.into());
+            dst.set4(didx, c1.cconv(), c2.cconv(), c3.cconv(), c4.cconv());
 
             sx = sx + dsdt.x;
         }

@@ -8,7 +8,7 @@ use self::typenum::{
     U26, U27, U28, U29, U3, U30, U31, U4, U5, U6, U7, U8, U9, Unsigned,
 };
 use super::super::bus::MemInt;
-use super::{Color, ColorFormat, Rgb888};
+use super::{Color, ColorConverter, ColorFormat, Rgb888};
 use std::marker::PhantomData;
 
 pub struct GfxBuffer<'a, CF: ColorFormat + Sized> {
@@ -329,7 +329,7 @@ mod tests {
                 let src = buf1.line(y);
                 let mut dst = buf2.line(y);
                 for x in 0..128 {
-                    dst.set(x, src.get(x).into());
+                    dst.set(x, src.get(x).cconv());
                 }
             }
         }
