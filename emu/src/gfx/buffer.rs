@@ -8,7 +8,7 @@ use self::typenum::{
     U26, U27, U28, U29, U3, U30, U31, U4, U5, U6, U7, U8, U9, Unsigned,
 };
 use super::super::bus::MemInt;
-use super::{Color, ColorConverter, ColorFormat, Rgb888};
+use super::{Color, ColorFormat};
 use std::marker::PhantomData;
 
 pub struct GfxBuffer<'a, CF: ColorFormat + Sized> {
@@ -288,7 +288,7 @@ impl<CF: ColorFormat + Sized> OwnedGfxBuffer<CF> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{I4, Rgb565, Rgb888};
+    use super::super::{ColorConverter, I4, Rgb565, Rgb888};
     use super::byteorder::ByteOrder;
     use super::*;
 
@@ -345,6 +345,9 @@ mod tests {
         let mut v2 = Vec::<u8>::new();
         v1.resize(128 * 128 / 2, 0);
         v2.resize(128 * 128 / 2, 0);
+
+        assert_eq!(GfxBuffer::<I4>::new(&mut v1, 128, 128, 63).is_ok(), false);
+        assert_eq!(GfxBuffer::<I4>::new(&mut v1, 128, 128, 64).is_ok(), true);
 
         {
             let mut buf1 = GfxBufferMut::<I4>::new(&mut v1, 128, 128, 64).unwrap();
