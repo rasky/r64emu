@@ -123,7 +123,9 @@ impl DpColorFormat {
 
 pub struct RenderState<FPXY, FPST> {
     pub dst_cf: DpColorFormat,
+    pub dst_bpp: usize,
     pub src_cf: DpColorFormat,
+    pub src_bpp: usize,
     pub phantom: PhantomData<(FPXY, FPST)>,
 }
 
@@ -154,10 +156,16 @@ impl<FPXY: FixedPoint, FPST: FixedPoint> RenderState<FPXY, FPST> {
         dsdt: Point<FPST>,
     ) {
         match self.src_cf {
-            DpColorFormat::INTENSITY => {
+            DpColorFormat::INTENSITY if self.src_bpp == 4 => {
                 self.draw_rect_slopes2::<CF1, I4, BigEndian>(dst, dr, src, st, dsdt)
             }
-            _ => panic!("unimplemented src color format: {:?}", self.src_cf),
+            DpColorFormat::INTENSITY if self.src_bpp == 8 => {
+                self.draw_rect_slopes2::<CF1, I8, BigEndian>(dst, dr, src, st, dsdt)
+            }
+            _ => panic!(
+                "unimplemented src color format: {:?}/{}",
+                self.src_cf, self.src_bpp
+            ),
         }
     }
 
@@ -170,8 +178,13 @@ impl<FPXY: FixedPoint, FPST: FixedPoint> RenderState<FPXY, FPST> {
         dsdt: Point<FPST>,
     ) {
         match self.dst_cf {
-            DpColorFormat::RGBA => self.draw_rect_slopes1::<Rgb888>(dst, dr, src, st, dsdt),
-            _ => panic!("unimplemented dst color format: {:?}", self.dst_cf),
+            DpColorFormat::RGBA if self.dst_bpp == 32 => {
+                self.draw_rect_slopes1::<Rgb888>(dst, dr, src, st, dsdt)
+            }
+            _ => panic!(
+                "unimplemented dst color format: {:?}/{}",
+                self.dst_cf, self.dst_bpp
+            ),
         }
     }
 }

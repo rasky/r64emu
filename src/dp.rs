@@ -326,12 +326,11 @@ impl DpGfx {
 
                 let ptex = Point::new(s, t);
                 let slope = Point::new(dsdx, dtdy);
-                info!(self.logger, "DP: Textured Rectangle"; "idx" => tile, "screen" => ?rect, "ptex" => ?ptex, "slope" => ?slope);
+                info!(self.logger, "DP: Textured Rectangle"; "idx" => tile, "tile" => ?self.tiles[tile], "screen" => ?rect, "ptex" => ?ptex, "slope" => ?slope);
 
                 let tmem_addr = self.tiles[tile].tmem_addr as usize;
                 let tmem_pitch = self.tiles[tile].pitch;
                 let tex_rect = self.tiles[tile].rect;
-                let src_cf = self.tiles[tile].color_format;
                 let src = (
                     &self.tmem[tmem_addr..],
                     tex_rect.width().floor() as usize + 1,
@@ -342,7 +341,6 @@ impl DpGfx {
                 let fb_writer = self.main_bus.borrow().fetch_write::<u8>(self.fb.dram_addr);
                 let mut fb_mem = fb_writer.mem().unwrap();
                 let dst = (fb_mem, 320, 240, self.fb.pitch());
-                let dst_cf = self.fb.color_format;
 
                 // FIXME: draw_rect_slopes() use inclusive rectangles... maybe we need clipping?
                 let w = rect.width() - 1;
@@ -351,8 +349,10 @@ impl DpGfx {
                 rect.set_height(h);
 
                 let state = DpRenderState {
-                    dst_cf: dst_cf,
-                    src_cf: src_cf,
+                    dst_cf: self.fb.color_format,
+                    dst_bpp: self.fb.bpp,
+                    src_cf: self.tiles[tile].color_format,
+                    src_bpp: self.tiles[tile].bpp,
                     phantom: PhantomData,
                 };
                 state.draw_rect_slopes(dst, rect, src, ptex.cast(), slope.cast());
@@ -382,7 +382,8 @@ impl DpGfx {
                 let copy_width = width.min(self.tex.width); // FIXME: is this correct? See RDPI4Decode
                 rect.set_width(Q::from_int(copy_width as u32 - 1));
 
-                {
+                info!(self.logger, "DP: Load Tile: draw_rect"; "rect" => ?rect, "copy_width" => copy_width);
+                if self.tiles[tile].bpp == 16 && self.tex.bpp == 16 {
                     let mut tmem = GfxBufferMutLE::<Rgba5551>::new(
                         &mut self.tmem[tmem_addr..],
                         copy_width,
@@ -397,12 +398,34 @@ impl DpGfx {
                         self.tex.pitch(),
                     ).unwrap();
 
-                    info!(self.logger, "DP: Load Tile: draw_rect"; "rect" => ?rect, "copy_width" => copy_width);
                     draw_rect(
                         &mut tmem,
                         Point::<U30F2>::from_int(0, 0),
                         &tex,
                         rect.cast::<U27F5>(),
+                    );
+                } else if self.tiles[tile].bpp == 8 && self.tex.bpp == 8 {
+                    let mut tmem = GfxBufferMutLE::<I8>::new(
+                        &mut self.tmem[tmem_addr..],
+                        copy_width,
+                        height,
+                        tmem_pitch,
+                    ).unwrap();
+
+                    let tex =
+                        GfxBufferLE::<I8>::new(&tex_mem, copy_width, height, self.tex.pitch())
+                            .unwrap();
+
+                    draw_rect(
+                        &mut tmem,
+                        Point::<U30F2>::from_int(0, 0),
+                        &tex,
+                        rect.cast::<U27F5>(),
+                    );
+                } else {
+                    panic!(
+                        "unknown src/dst bpp combination in load tile: dst={} src={}",
+                        self.tiles[tile].bpp, self.tex.bpp,
                     );
                 }
 
