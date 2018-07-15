@@ -100,7 +100,8 @@ pub struct Q<FP: FixedPoint> {
 
 impl<FP: FixedPoint> Q<FP> {
     #[inline(always)]
-    pub fn from_int(v: FP::BITS) -> Self {
+    pub fn from_int<N: PrimInt>(v: N) -> Self {
+        let v = <FP::BITS as NumCast>::from(v).unwrap();
         let bits = v << FP::shift();
         if bits >> FP::shift() != v {
             panic!("fixed point overflow")

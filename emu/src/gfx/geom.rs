@@ -1,3 +1,5 @@
+extern crate num;
+use self::num::PrimInt;
 use super::super::fp::{FixedPoint, Q};
 use std::fmt;
 use std::ops;
@@ -14,7 +16,7 @@ impl<FP: FixedPoint> Point<FP> {
         Point { x, y }
     }
     #[inline(always)]
-    pub fn from_int(x: FP::BITS, y: FP::BITS) -> Self {
+    pub fn from_int<N: PrimInt>(x: N, y: N) -> Self {
         Self::new(Q::from_int(x), Q::from_int(y))
     }
     #[inline(always)]
