@@ -314,7 +314,7 @@ impl Cop for SpVector {
     fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         let sp = self.sp.borrow();
         let dmem = sp.dmem.buf();
-        let (base, vt, op, element, offset) = SpVector::oploadstore(op, ctx);
+        let (base, vt, op, _element, offset) = SpVector::oploadstore(op, ctx);
         match op {
             0x04 => {
                 // LQV
@@ -333,7 +333,7 @@ impl Cop for SpVector {
     fn swc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         let sp = self.sp.borrow();
         let mut dmem = sp.dmem.buf();
-        let (base, vt, op, element, offset) = SpVector::oploadstore(op, ctx);
+        let (base, vt, op, _element, offset) = SpVector::oploadstore(op, ctx);
         match op {
             0x04 => {
                 // SQV
