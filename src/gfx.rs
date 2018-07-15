@@ -33,13 +33,20 @@ fn int_draw_rect<'a, 'b, CF1, CF2, FP1, FP2>(
         // FIXME: Do 4 pixels at a time (manual unroll). Not sure if it's OK.
         let mut sx = sx;
         for dx in (dr.c0.x.floor()..=dr.c1.x.floor()).step_by(4) {
-            let sidx = sx.floor().to_usize().unwrap();
-            let didx = dx.to_usize().unwrap();
-
-            let (c1, c2, c3, c4) = src.get4(sidx);
-            dst.set4(didx, c1.cconv(), c2.cconv(), c3.cconv(), c4.cconv());
-
+            let c1 = src.get(sx.floor().to_usize().unwrap());
             sx = sx + dsdt.x;
+
+            let c2 = src.get(sx.floor().to_usize().unwrap());
+            sx = sx + dsdt.x;
+
+            let c3 = src.get(sx.floor().to_usize().unwrap());
+            sx = sx + dsdt.x;
+
+            let c4 = src.get(sx.floor().to_usize().unwrap());
+            sx = sx + dsdt.x;
+
+            let didx = dx.to_usize().unwrap();
+            dst.set4(didx, c1.cconv(), c2.cconv(), c3.cconv(), c4.cconv());
         }
 
         sy = sy + dsdt.y;
