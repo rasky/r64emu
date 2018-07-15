@@ -1,9 +1,12 @@
 extern crate byteorder;
+extern crate emu;
 extern crate num;
-use self::byteorder::ByteOrder;
+use self::byteorder::{BigEndian, ByteOrder, LittleEndian};
+use self::emu::fp::formats::*;
+use self::emu::fp::FixedPoint;
+use self::emu::gfx::*;
 use self::num::ToPrimitive;
-use super::emu::fp::FixedPoint;
-use super::emu::gfx::*;
+use std::marker::PhantomData;
 
 #[inline(always)]
 fn int_draw_rect<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
@@ -96,19 +99,79 @@ pub fn draw_rect_scaled<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
     int_draw_rect(dst, dr, src, sr.c0, dsdt);
 }
 
-pub fn draw_rect_slopes<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
-    dst: &mut GfxBufferMut<'a, CF1, O1>,
-    dr: Rect<FP1>,
-    src: &GfxBuffer<'b, CF2, O2>,
-    st: Point<FP2>,
-    dsdt: Point<FP2>,
-) where
-    CF1: ColorFormat,
-    CF2: ColorFormat,
-    FP1: FixedPoint,
-    FP2: FixedPoint,
-    O1: ByteOrder,
-    O2: ByteOrder,
-{
-    int_draw_rect(dst, dr, src, st, dsdt);
+#[derive(Copy, Clone, Debug)]
+pub enum DpColorFormat {
+    RGBA,
+    YUV,
+    COLOR_INDEX,
+    INTENSITY_ALPHA,
+    INTENSITY,
+}
+
+impl DpColorFormat {
+    pub fn from_bits(bits: usize) -> Option<DpColorFormat> {
+        match bits {
+            0 => Some(DpColorFormat::RGBA),
+            1 => Some(DpColorFormat::YUV),
+            2 => Some(DpColorFormat::COLOR_INDEX),
+            3 => Some(DpColorFormat::INTENSITY_ALPHA),
+            4 => Some(DpColorFormat::INTENSITY),
+            _ => None,
+        }
+    }
+}
+
+pub struct RenderState<FPXY, FPST> {
+    pub dst_cf: DpColorFormat,
+    pub src_cf: DpColorFormat,
+    pub phantom: PhantomData<(FPXY, FPST)>,
+}
+
+pub type DpRenderState = RenderState<U30F2, I22F10>;
+
+impl<FPXY: FixedPoint, FPST: FixedPoint> RenderState<FPXY, FPST> {
+    #[inline]
+    fn draw_rect_slopes2<CF1: ColorFormat, CF2: ColorFormat, O: ByteOrder>(
+        &self,
+        dst: (&mut [u8], usize, usize, usize),
+        dr: Rect<FPXY>,
+        src: (&[u8], usize, usize, usize),
+        st: Point<FPST>,
+        dsdt: Point<FPST>,
+    ) {
+        let mut dst = GfxBufferMut::<CF1, LittleEndian>::new(dst.0, dst.1, dst.2, dst.3).unwrap();
+        let src = GfxBuffer::<CF2, O>::new(src.0, src.1, src.2, src.3).unwrap();
+        int_draw_rect(&mut dst, dr, &src, st, dsdt);
+    }
+
+    #[inline]
+    fn draw_rect_slopes1<CF1: ColorFormat>(
+        &self,
+        dst: (&mut [u8], usize, usize, usize),
+        dr: Rect<FPXY>,
+        src: (&[u8], usize, usize, usize),
+        st: Point<FPST>,
+        dsdt: Point<FPST>,
+    ) {
+        match self.src_cf {
+            DpColorFormat::INTENSITY => {
+                self.draw_rect_slopes2::<CF1, I4, BigEndian>(dst, dr, src, st, dsdt)
+            }
+            _ => panic!("unimplemented src color format: {:?}", self.src_cf),
+        }
+    }
+
+    pub fn draw_rect_slopes(
+        &self,
+        dst: (&mut [u8], usize, usize, usize),
+        dr: Rect<FPXY>,
+        src: (&[u8], usize, usize, usize),
+        st: Point<FPST>,
+        dsdt: Point<FPST>,
+    ) {
+        match self.dst_cf {
+            DpColorFormat::RGBA => self.draw_rect_slopes1::<Rgb888>(dst, dr, src, st, dsdt),
+            _ => panic!("unimplemented dst color format: {:?}", self.dst_cf),
+        }
+    }
 }

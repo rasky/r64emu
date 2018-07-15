@@ -2,7 +2,7 @@ extern crate bit_field;
 extern crate emu;
 extern crate slog;
 use self::bit_field::BitField;
-use super::gfx::{draw_rect, draw_rect_slopes};
+use super::gfx::{draw_rect, DpColorFormat, DpRenderState};
 use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
 use emu::fp::formats::*;
 use emu::fp::Q;
@@ -13,6 +13,7 @@ use errors::*;
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::Write;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 bitflags! {
@@ -178,31 +179,9 @@ impl sync::Subsystem for Dp {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-enum ColorFormat {
-    RGBA,
-    YUV,
-    COLOR_INDEX,
-    INTENSITY_ALPHA,
-    INTENSITY,
-}
-
-impl ColorFormat {
-    fn from_bits(bits: usize) -> Option<ColorFormat> {
-        match bits {
-            0 => Some(ColorFormat::RGBA),
-            1 => Some(ColorFormat::YUV),
-            2 => Some(ColorFormat::COLOR_INDEX),
-            3 => Some(ColorFormat::INTENSITY_ALPHA),
-            4 => Some(ColorFormat::INTENSITY),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Default, Debug)]
 struct TileDescriptor {
-    color_format: ColorFormat,
+    color_format: DpColorFormat,
     bpp: usize,
     pitch: usize,
     tmem_addr: u32,
@@ -215,15 +194,15 @@ struct TileDescriptor {
     rect: Rect<U30F2>,
 }
 
-impl Default for ColorFormat {
-    fn default() -> ColorFormat {
-        ColorFormat::RGBA
+impl Default for DpColorFormat {
+    fn default() -> DpColorFormat {
+        DpColorFormat::RGBA
     }
 }
 
 #[derive(Copy, Clone, Default, Debug)]
 struct ImageFormat {
-    color_format: ColorFormat,
+    color_format: DpColorFormat,
     bpp: usize,
     width: usize,
     dram_addr: u32,
@@ -273,11 +252,11 @@ impl DpGfx {
         Ok(())
     }
 
-    fn parse_color_format(&self, bits: u64) -> ColorFormat {
-        ColorFormat::from_bits(bits as usize)
+    fn parse_color_format(&self, bits: u64) -> DpColorFormat {
+        DpColorFormat::from_bits(bits as usize)
             .or_else(|| {
                 error!(self.logger, "invalid color format"; "format" => bits);
-                Some(ColorFormat::RGBA)
+                Some(DpColorFormat::RGBA)
             })
             .unwrap()
     }
@@ -352,18 +331,18 @@ impl DpGfx {
                 let tmem_addr = self.tiles[tile].tmem_addr as usize;
                 let tmem_pitch = self.tiles[tile].pitch;
                 let tex_rect = self.tiles[tile].rect;
-                let tmem = GfxBufferBE::<I4>::new(
+                let src_cf = self.tiles[tile].color_format;
+                let src = (
                     &self.tmem[tmem_addr..],
                     tex_rect.width().floor() as usize + 1,
                     tex_rect.height().floor() as usize + 1,
                     tmem_pitch,
-                ).unwrap();
+                );
 
                 let fb_writer = self.main_bus.borrow().fetch_write::<u8>(self.fb.dram_addr);
                 let mut fb_mem = fb_writer.mem().unwrap();
-                let mut fb =
-                    GfxBufferMutLE::<Rgba8888>::new(&mut fb_mem, 320, 240, self.fb.pitch())
-                        .unwrap();
+                let dst = (fb_mem, 320, 240, self.fb.pitch());
+                let dst_cf = self.fb.color_format;
 
                 // FIXME: draw_rect_slopes() use inclusive rectangles... maybe we need clipping?
                 let w = rect.width() - 1;
@@ -371,7 +350,12 @@ impl DpGfx {
                 rect.set_width(w);
                 rect.set_height(h);
 
-                draw_rect_slopes(&mut fb, rect, &tmem, ptex.cast::<I22F10>(), slope.cast());
+                let state = DpRenderState {
+                    dst_cf: dst_cf,
+                    src_cf: src_cf,
+                    phantom: PhantomData,
+                };
+                state.draw_rect_slopes(dst, rect, src, ptex.cast(), slope.cast());
 
                 self.cmdlen = 0;
             }
