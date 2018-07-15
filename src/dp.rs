@@ -225,7 +225,6 @@ pub struct DpGfx {
 
     cmdbuf: [u64; 16],
     cmdlen: usize,
-    dump: usize,
 }
 
 impl DpGfx {
@@ -242,7 +241,6 @@ impl DpGfx {
             tiles: [TileDescriptor::default(); 8],
             cmdbuf: [0u64; 16],
             cmdlen: 0,
-            dump: 0,
         }
     }
 
@@ -429,8 +427,6 @@ impl DpGfx {
                     );
                 }
 
-                self.dump_tmem(&format!("tmem{}.dump", self.dump)).unwrap();
-                self.dump += 1;
                 self.cmdlen = 0;
             }
             0x35 => {
