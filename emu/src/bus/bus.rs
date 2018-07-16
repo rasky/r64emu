@@ -89,7 +89,7 @@ impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
         self.hwio.read::<O, U>(self.addr)
     }
 
-    pub fn mem(&self) -> Option<&[u8]> {
+    pub fn mem<'s, 'r: 's>(&'s self) -> Option<&'r [u8]> {
         match self.hwio {
             HwIoR::Mem(ref buf, mask) => {
                 // Use unsafe here for performance: we don't want
@@ -141,7 +141,7 @@ impl<O: ByteOrder, U: MemInt> MemIoW<O, U> {
         self.hwio.write::<O, U>(self.addr, val);
     }
 
-    pub fn mem(&self) -> Option<&mut [u8]> {
+    pub fn mem<'s, 'r: 's>(&'s self) -> Option<&'r mut [u8]> {
         match self.hwio {
             HwIoW::Mem(ref buf, mask) => {
                 // Use unsafe here for performance: we don't want
