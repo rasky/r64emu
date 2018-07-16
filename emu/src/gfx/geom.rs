@@ -4,7 +4,7 @@ use super::super::fp::{FixedPoint, Q};
 use std::fmt;
 use std::ops;
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Eq, PartialEq)]
 pub struct Point<FP: FixedPoint> {
     pub x: Q<FP>,
     pub y: Q<FP>,
@@ -59,7 +59,7 @@ impl<FP: FixedPoint> fmt::Debug for Point<FP> {
     }
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Eq, PartialEq)]
 pub struct Rect<FP: FixedPoint> {
     pub c0: Point<FP>,
     pub c1: Point<FP>,

@@ -79,7 +79,7 @@ pub trait FixedPoint: Copy + Clone {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct q<BITS, FRAC> {
     phantom: PhantomData<(BITS, FRAC)>,
 }
@@ -93,7 +93,7 @@ where
     type FRAC = FRAC;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Q<FP: FixedPoint> {
     bits: FP::BITS,
 }
