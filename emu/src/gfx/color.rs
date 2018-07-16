@@ -133,27 +133,27 @@ impl<U: MemInt, N: Unsigned, S: Unsigned> Component for Value<U, N, S> {
     }
 }
 
-pub trait ColorFormat {
+pub trait ColorFormat: Copy {
     /// unsigned integer word (eg: u16)
     type U: MemInt;
     /// actually used bits in word
-    type BITS: Unsigned;
+    type BITS: Unsigned + Copy;
     /// numer of red bits
-    type RN: Unsigned;
+    type RN: Unsigned + Copy;
     /// shift amount for red bits
-    type RS: Unsigned;
+    type RS: Unsigned + Copy;
     /// number of green bits
-    type GN: Unsigned;
+    type GN: Unsigned + Copy;
     /// shift amount for green bits
-    type GS: Unsigned;
+    type GS: Unsigned + Copy;
     /// number of blue bits
-    type BN: Unsigned;
+    type BN: Unsigned + Copy;
     /// shift amount for blue bits
-    type BS: Unsigned;
+    type BS: Unsigned + Copy;
     /// number of alpha bits
-    type AN: Unsigned;
+    type AN: Unsigned + Copy;
     /// shift amount for alpha bits
-    type AS: Unsigned;
+    type AS: Unsigned + Copy;
 }
 
 #[allow(non_camel_case_types)]
@@ -166,15 +166,15 @@ impl<U, BITS, RN, RS, GN, GS, BN, BS, AN, AS> ColorFormat
     for cf<U, BITS, RN, RS, GN, GS, BN, BS, AN, AS>
 where
     U: MemInt,
-    BITS: Unsigned,
-    RN: Unsigned,
-    RS: Unsigned,
-    GN: Unsigned,
-    GS: Unsigned,
-    BN: Unsigned,
-    BS: Unsigned,
-    AN: Unsigned,
-    AS: Unsigned,
+    BITS: Unsigned + Copy,
+    RN: Unsigned + Copy,
+    RS: Unsigned + Copy,
+    GN: Unsigned + Copy,
+    GS: Unsigned + Copy,
+    BN: Unsigned + Copy,
+    BS: Unsigned + Copy,
+    AN: Unsigned + Copy,
+    AS: Unsigned + Copy,
 {
     type U = U;
     type BITS = BITS;
