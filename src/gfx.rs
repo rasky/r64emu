@@ -99,6 +99,23 @@ pub fn draw_rect_scaled<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
     int_draw_rect(dst, dr, src, sr.c0, dsdt);
 }
 
+fn draw_rect_slopes<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
+    dst: &mut GfxBufferMut<'a, CF1, O1>,
+    dr: Rect<FP1>,
+    src: &GfxBuffer<'b, CF2, O2>,
+    st: Point<FP2>,
+    dsdt: Point<FP2>,
+) where
+    CF1: ColorFormat,
+    CF2: ColorFormat,
+    FP1: FixedPoint,
+    FP2: FixedPoint,
+    O1: ByteOrder,
+    O2: ByteOrder,
+{
+    int_draw_rect(dst, dr, src, st, dsdt);
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum DpColorFormat {
     RGBA,
@@ -143,7 +160,7 @@ impl<FPXY: FixedPoint, FPST: FixedPoint> RenderState<FPXY, FPST> {
     ) {
         let mut dst = GfxBufferMut::<CF1, LittleEndian>::new(dst.0, dst.1, dst.2, dst.3).unwrap();
         let src = GfxBuffer::<CF2, O>::new(src.0, src.1, src.2, src.3).unwrap();
-        int_draw_rect(&mut dst, dr, &src, st, dsdt);
+        draw_rect_slopes(&mut dst, dr, &src, st, dsdt);
     }
 
     #[inline]
