@@ -304,6 +304,23 @@ impl<FP: FixedPoint, BITS: FixedPointInt> ops::Div<BITS> for Q<FP> {
     }
 }
 
+impl<FP: FixedPoint, RHS: FixedPoint> ops::DivAssign<Q<RHS>> for Q<FP> {
+    #[inline(always)]
+    fn div_assign(&mut self, other: Q<RHS>) {
+        let b1 = self.bits.cast_widen();
+        let b2 = other.bits.cast();
+        self.bits = ((b1 << RHS::shift()) / b2).cast();
+    }
+}
+
+impl<FP: FixedPoint, BITS: FixedPointInt> ops::DivAssign<BITS> for Q<FP> {
+    #[inline(always)]
+    fn div_assign(&mut self, other: BITS) {
+        let other = <FP::BITS as NumCast>::from(other).unwrap();
+        self.bits = self.bits / other;
+    }
+}
+
 pub mod formats {
     use super::q;
     use super::typenum::{
