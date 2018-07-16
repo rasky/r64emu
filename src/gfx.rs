@@ -9,6 +9,29 @@ use self::num::ToPrimitive;
 use std::marker::PhantomData;
 
 #[inline(always)]
+pub fn fill_rect<'a, 'b, CF1, CF2, FP1, O1>(
+    dst: &mut GfxBufferMut<'a, CF1, O1>,
+    dr: Rect<FP1>,
+    color: Color<CF2>,
+) where
+    CF1: ColorFormat,
+    CF2: ColorFormat,
+    FP1: FixedPoint,
+    O1: ByteOrder,
+{
+    let dr = dr.truncate();
+
+    for dy in dr.c0.y.floor()..=dr.c1.y.floor() {
+        let mut dst = dst.line(dy.to_usize().unwrap());
+
+        for dx in dr.c0.x.floor()..=dr.c1.x.floor() {
+            let didx = dx.to_usize().unwrap();
+            dst.set(didx, color.cconv());
+        }
+    }
+}
+
+#[inline(always)]
 fn int_draw_rect<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
     dst: &mut GfxBufferMut<'a, CF1, O1>,
     dr: Rect<FP1>,

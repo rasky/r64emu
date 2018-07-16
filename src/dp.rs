@@ -1,8 +1,10 @@
 extern crate bit_field;
+extern crate byteorder;
 extern crate emu;
 extern crate slog;
 use self::bit_field::BitField;
-use super::gfx::{draw_rect, DpColorFormat, DpRenderState};
+use self::byteorder::BigEndian;
+use super::gfx::{draw_rect, fill_rect, DpColorFormat, DpRenderState};
 use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
 use emu::fp::formats::*;
 use emu::fp::Q;
@@ -222,6 +224,7 @@ pub struct DpGfx {
     fb: ImageFormat,
     tex: ImageFormat,
     tiles: [TileDescriptor; 8],
+    fill_color: u32,
 
     cmdbuf: [u64; 16],
     cmdlen: usize,
@@ -239,6 +242,7 @@ impl DpGfx {
             fb: ImageFormat::default(),
             tex: ImageFormat::default(),
             tiles: [TileDescriptor::default(); 8],
+            fill_color: 0,
             cmdbuf: [0u64; 16],
             cmdlen: 0,
         }
@@ -257,6 +261,16 @@ impl DpGfx {
                 Some(DpColorFormat::RGBA)
             })
             .unwrap()
+    }
+
+    fn framebuffer<'s, 'r: 's>(&'s self) -> (&'r mut [u8], usize, usize, usize) {
+        let fb_mem = self
+            .main_bus
+            .borrow()
+            .fetch_write::<u8>(self.fb.dram_addr)
+            .mem()
+            .unwrap();
+        (fb_mem, 320, 240, self.fb.pitch())
     }
 
     fn op(&mut self, cmd: u64) {
@@ -448,6 +462,45 @@ impl DpGfx {
                 tile.shift[0] = cmd.get_bits(0..4) as u32;
                 tile.shift[1] = cmd.get_bits(10..14) as u32;
                 info!(self.logger, "DP: Set Tile"; "idx" => idx, "format" => ?tile);
+                self.cmdlen = 0;
+            }
+            0x36 => {
+                // Fill rectangle works with 32-bit packed words. Thus, we treat everything
+                // as RGBA8888, but we need to convert the rect coordinates to adjust them
+                // to a fake 32-bit resolution.
+                let bppconv = 32 / self.fb.bpp as u32;
+
+                let x1 = cmd.get_bits(44..56) as u32;
+                let y1 = cmd.get_bits(32..44) as u32;
+                let x0 = cmd.get_bits(12..24) as u32;
+                let y0 = cmd.get_bits(0..12) as u32;
+                let mut rect = Rect::<U30F2>::from_bits(x0, y0, x1, y1);
+                info!(self.logger, "DP: Fill Rectangle"; "rect" => ?rect);
+
+                rect.c0.x /= bppconv;
+                rect.c0.y /= bppconv;
+                rect.c1.x = ((rect.c1.x + 1) / bppconv) - 1;
+                rect.c1.y = ((rect.c1.y + 1) / bppconv) - 1;
+
+                if rect.truncate().cast::<U30F2>() != rect {
+                    panic!("Coordinates in DP Fill Rectangle were not 32-bit aligned");
+                }
+
+                let fb = self.framebuffer();
+                let mut dst = GfxBufferMut::<Rgba8888, BigEndian>::new(
+                    fb.0,
+                    fb.1 / bppconv as usize,
+                    fb.2,
+                    fb.3,
+                ).unwrap();
+                let color = Color::<Rgba8888>::from_bits(self.fill_color);
+                fill_rect(&mut dst, rect, color);
+                self.cmdlen = 0;
+            }
+            0x37 => {
+                let color = cmd.get_bits(0..32) as u32;
+                info!(self.logger, "DP: Set Fill Color"; "color" => color.hex());
+                self.fill_color = color;
                 self.cmdlen = 0;
             }
             0x3C => {
