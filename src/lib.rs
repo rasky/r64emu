@@ -14,6 +14,9 @@ extern crate bitflags;
 #[macro_use]
 extern crate error_chain;
 
+#[macro_use]
+extern crate enum_map;
+
 pub mod errors {
     error_chain!{
         foreign_links {
@@ -22,6 +25,7 @@ pub mod errors {
     }
 }
 
+mod rdp;
 mod vops;
 
 pub mod ai;

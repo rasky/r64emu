@@ -16,7 +16,11 @@ crc = "^1.0.0"
 lazy_static = "1.0"
 bitflags = "1.0"
 bit_field = "0.9.0"
+enum-map = "0.4.0"
 
 [dependencies.byteorder]
 version = "1"
 features = ["i128"]
+
+[profile.dev]
+overflow-checks = false
