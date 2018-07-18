@@ -165,103 +165,97 @@ impl SpVector {
     #[target_feature(enable = "sse4.1")]
     unsafe fn uop(&mut self, cpu: &mut CpuContext, op: u32) {
         let mut op = Vectorop { op, spv: self };
-        let vzero = unsafe { _mm_setzero_si128() };
+        let vzero = _mm_setzero_si128();
         if op.op & (1 << 25) != 0 {
-            unsafe {
-                match op.func() {
-                    0x00 => op_vmul!(op, vmulf), // VMULF
-                    0x01 => op_vmul!(op, vmulu), // VMULU
-                    0x08 => op_vmul!(op, vmacf), // VMACF
-                    0x09 => op_vmul!(op, vmacu), // VMACU
-                    0x06 => op_vmul!(op, vmudn), // VMUDN
-                    0x07 => op_vmul!(op, vmudh), // VMUDH
-                    0x0E => op_vmul!(op, vmadn), // VMADN
-                    0x0F => op_vmul!(op, vmadh), // VMADH
-                    0x10 => {
-                        // VADD
-                        let vs = op.vs();
-                        let vt = op.vte();
-                        let carry = op.carry();
-                        op.setvd(_mm_adds_epi16(_mm_adds_epi16(vs, vt), carry));
-                        op.setaccum(0, _mm_add_epi16(_mm_add_epi16(vs, vt), carry));
-                        op.setcarry(vzero);
-                        op.setne(vzero);
-                    }
-                    0x14 => {
-                        // VADDC
-                        let vs = op.vs();
-                        let vt = op.vte();
-                        let res = _mm_add_epi16(vs, vt);
-                        op.setvd(res);
-                        op.setaccum(0, res);
-                        op.setne(vzero);
-
-                        // We need to compute the carry bit. To do so, we use signed
-                        // comparison of 16-bit integers, xoring with 0x8000 to obtain
-                        // the unsigned result.
-                        #[allow(overflowing_literals)]
-                        let mask = _mm_set1_epi16(0x8000);
-                        let carry =
-                            _mm_cmpgt_epi16(_mm_xor_si128(mask, vs), _mm_xor_si128(mask, res));
-                        op.setcarry(_mm_srli_epi16(carry, 15));
-                    }
-                    0x1D => {
-                        // VSAR
-                        let e = op.e();
-                        match e {
-                            0..=2 => {
-                                op.setvd(vzero);
-                            }
-                            8..=10 => {
-                                let sar = op.accum(2 - (e - 8));
-                                op.setvd(sar);
-                                let new = op.vs();
-                                op.setaccum(2 - (e - 8), new);
-                            }
-                            _ => unimplemented!(),
-                        }
-                    }
-                    0x28 => {
-                        // VAND
-                        let res = _mm_and_si128(op.vs(), op.vte());
-                        op.setvd(res);
-                        op.setaccum(0, res);
-                    }
-                    0x29 => {
-                        // VNAND
-                        let res =
-                            _mm_xor_si128(_mm_and_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
-                        op.setvd(res);
-                        op.setaccum(0, res);
-                    }
-                    0x2A => {
-                        // VOR
-                        let res = _mm_or_si128(op.vs(), op.vte());
-                        op.setvd(res);
-                        op.setaccum(0, res);
-                    }
-                    0x2B => {
-                        // VNOR
-                        let res =
-                            _mm_xor_si128(_mm_or_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
-                        op.setvd(res);
-                        op.setaccum(0, res);
-                    }
-                    0x2C => {
-                        // VXOR
-                        let res = _mm_xor_si128(op.vs(), op.vte());
-                        op.setvd(res);
-                        op.setaccum(0, res);
-                    }
-                    0x2D => {
-                        // VNXOR
-                        let res =
-                            _mm_xor_si128(_mm_xor_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
-                        op.setvd(res);
-                        op.setaccum(0, res);
-                    }
-                    _ => panic!("unimplemented COP2 VU opcode={}", op.func().hex()),
+            match op.func() {
+                0x00 => op_vmul!(op, vmulf), // VMULF
+                0x01 => op_vmul!(op, vmulu), // VMULU
+                0x08 => op_vmul!(op, vmacf), // VMACF
+                0x09 => op_vmul!(op, vmacu), // VMACU
+                0x06 => op_vmul!(op, vmudn), // VMUDN
+                0x07 => op_vmul!(op, vmudh), // VMUDH
+                0x0E => op_vmul!(op, vmadn), // VMADN
+                0x0F => op_vmul!(op, vmadh), // VMADH
+                0x10 => {
+                    // VADD
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let carry = op.carry();
+                    op.setvd(_mm_adds_epi16(_mm_adds_epi16(vs, vt), carry));
+                    op.setaccum(0, _mm_add_epi16(_mm_add_epi16(vs, vt), carry));
+                    op.setcarry(vzero);
+                    op.setne(vzero);
                 }
+                0x14 => {
+                    // VADDC
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let res = _mm_add_epi16(vs, vt);
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                    op.setne(vzero);
+
+                    // We need to compute the carry bit. To do so, we use signed
+                    // comparison of 16-bit integers, xoring with 0x8000 to obtain
+                    // the unsigned result.
+                    #[allow(overflowing_literals)]
+                    let mask = _mm_set1_epi16(0x8000);
+                    let carry = _mm_cmpgt_epi16(_mm_xor_si128(mask, vs), _mm_xor_si128(mask, res));
+                    op.setcarry(_mm_srli_epi16(carry, 15));
+                }
+                0x1D => {
+                    // VSAR
+                    let e = op.e();
+                    match e {
+                        0..=2 => {
+                            op.setvd(vzero);
+                        }
+                        8..=10 => {
+                            let sar = op.accum(2 - (e - 8));
+                            op.setvd(sar);
+                            let new = op.vs();
+                            op.setaccum(2 - (e - 8), new);
+                        }
+                        _ => unimplemented!(),
+                    }
+                }
+                0x28 => {
+                    // VAND
+                    let res = _mm_and_si128(op.vs(), op.vte());
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                }
+                0x29 => {
+                    // VNAND
+                    let res = _mm_xor_si128(_mm_and_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                }
+                0x2A => {
+                    // VOR
+                    let res = _mm_or_si128(op.vs(), op.vte());
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                }
+                0x2B => {
+                    // VNOR
+                    let res = _mm_xor_si128(_mm_or_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                }
+                0x2C => {
+                    // VXOR
+                    let res = _mm_xor_si128(op.vs(), op.vte());
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                }
+                0x2D => {
+                    // VNXOR
+                    let res = _mm_xor_si128(_mm_xor_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                }
+                _ => panic!("unimplemented COP2 VU opcode={}", op.func().hex()),
             }
         } else {
             match op.e() {
