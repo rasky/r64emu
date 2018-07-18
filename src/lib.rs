@@ -1,4 +1,5 @@
 #![feature(attr_literals)]
+#![feature(stdsimd)]
 
 #[macro_use]
 extern crate slog;
@@ -13,9 +14,6 @@ extern crate bitflags;
 
 #[macro_use]
 extern crate error_chain;
-
-#[macro_use]
-extern crate enum_map;
 
 pub mod errors {
     error_chain!{

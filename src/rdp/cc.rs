@@ -1,88 +1,66 @@
-// Color Combiner
+// Color combiner
+
+// TODO:
+//   * 2-cycle mode
+//   * chroma key
+//   * coverage alpha
+//   * alpha dithering
 
 extern crate bit_field;
-extern crate emu;
-extern crate enum_map;
 
 use self::bit_field::BitField;
-use self::emu::fp::formats::*;
-use self::emu::fp::Q;
-use self::enum_map::{Enum, EnumMap};
+use super::{Color, MColor, MultiColor};
+use std::ptr;
+use std::simd::*;
 
-type Component = Q<U8F8>;
-type Color = [Component; 4];
-
-#[derive(Debug, Enum, Copy, Clone)]
-enum Input {
-    CombinedR,
-    CombinedG,
-    CombinedB,
-    CombinedA,
-
-    Texel0R,
-    Texel0G,
-    Texel0B,
-    Texel0A,
-
-    Texel1R,
-    Texel1G,
-    Texel1B,
-    Texel1A,
-
-    PrimR,
-    PrimG,
-    PrimB,
-    PrimA,
-
-    ShadeR,
-    ShadeG,
-    ShadeB,
-    ShadeA,
-
-    EnvR,
-    EnvG,
-    EnvB,
-    EnvA,
-
-    KeyCenter,
-    KeyScale,
-
-    LodFraction,
-    PrimLodFraction,
-    Noise,
-    ConvK4,
-    ConvK5,
-
-    One,
-    Zero,
-}
-
-struct CombinerMode(u64);
 struct CombinerCycle {
-    suba: Input,
-    subb: Input,
-    mul: Input,
-    add: Input,
+    suba: *const MultiColor,
+    subb: *const MultiColor,
+    mul: *const MultiColor,
+    add: *const MultiColor,
 }
 
-struct InputTable {
-    suba: [Input; 16],
-    subb: [Input; 16],
-    mul: [Input; 32],
-    add: [Input; 16],
-}
-
-impl InputTable {
-    fn as_combiner_cycle(&self, (suba, subb, mul, add): (u32, u32, u32, u32)) -> CombinerCycle {
+impl Default for CombinerCycle {
+    fn default() -> CombinerCycle {
         CombinerCycle {
-            suba: self.suba[suba as usize],
-            subb: self.subb[subb as usize],
-            mul: self.mul[mul as usize],
-            add: self.add[add as usize],
+            suba: ptr::null(),
+            subb: ptr::null(),
+            mul: ptr::null(),
+            add: ptr::null(),
         }
     }
 }
 
+#[derive(Default)]
+pub(crate) struct Combiner {
+    combined: MultiColor,
+    texel0: MultiColor,
+    texel1: MultiColor,
+    prim: MultiColor,
+    shade: MultiColor,
+    env: MultiColor,
+    key_center: MultiColor,
+    key_scale: MultiColor,
+    lod_fraction: MultiColor,
+    prim_lod_fraction: MultiColor,
+    noise: MultiColor,
+    conv_k4: MultiColor,
+    conv_k5: MultiColor,
+    one: MultiColor,
+    zero: MultiColor,
+
+    combined_alpha: MultiColor,
+    texel0_alpha: MultiColor,
+    texel1_alpha: MultiColor,
+    prim_alpha: MultiColor,
+    shade_alpha: MultiColor,
+    env_alpha: MultiColor,
+
+    cycle_rgb: [CombinerCycle; 2],
+    cycle_alpha: [CombinerCycle; 2],
+}
+
+struct CombinerMode(u64);
 impl CombinerMode {
     #[inline]
     fn cyc0_rgb(&self) -> (u32, u32, u32, u32) {
@@ -125,142 +103,163 @@ impl CombinerMode {
     }
 }
 
-pub struct Combiner {
-    inputs: EnumMap<Input, Component>,
-    tables: [InputTable; 4],
-
-    cyc0: [CombinerCycle; 4], // cyc0[RGBA][SUB/mul/add]
-    cyc1: [CombinerCycle; 4], // cyc1[RGBA][SUB/mul/add]
-}
-
 impl Combiner {
-    fn fill_input_tables(&mut self) {
-        for tidx in 0..4 {
-            let t = &mut self.tables[tidx];
-            for idx in 0..=5 {
-                let input = Enum::<Input>::from_usize((idx * 4 + tidx) as usize);
-                t.suba[idx] = input;
-                t.subb[idx] = input;
-                t.mul[idx] = input;
-                t.add[idx] = input;
-            }
-            for idx in 8..16 {
-                t.suba[idx] = Input::Zero;
-                t.subb[idx] = Input::Zero;
-                t.mul[idx] = Input::Zero;
-                t.add[idx] = Input::Zero;
-            }
-            for idx in 16..32 {
-                t.mul[idx] = Input::Zero;
-            }
+    pub(crate) fn new() -> Combiner {
+        Combiner {
+            one: MultiColor::splat(1),
+            ..Default::default()
         }
-
-        for tidx in 0..3 {
-            let t = &mut self.tables[tidx];
-
-            t.suba[6] = Input::One;
-            t.suba[7] = Input::Noise;
-
-            t.subb[6] = Input::KeyCenter;
-            t.subb[7] = Input::ConvK4;
-
-            t.mul[6] = Input::KeyScale;
-            t.mul[7] = Input::CombinedA;
-            t.mul[8] = Input::Texel0A;
-            t.mul[9] = Input::Texel1A;
-            t.mul[10] = Input::PrimA;
-            t.mul[11] = Input::ShadeA;
-            t.mul[12] = Input::EnvA;
-            t.mul[13] = Input::LodFraction;
-            t.mul[14] = Input::PrimLodFraction;
-            t.mul[15] = Input::ConvK5;
-
-            t.add[6] = Input::One;
-            t.add[7] = Input::Zero;
-        }
-
-        let t = &mut self.tables[3];
-
-        t.suba[6] = Input::One;
-        t.suba[7] = Input::Zero;
-
-        t.subb[6] = Input::One;
-        t.subb[7] = Input::Zero;
-
-        t.mul[0] = Input::LodFraction;
-        t.mul[6] = Input::PrimLodFraction;
-        t.mul[7] = Input::Zero;
-
-        t.add[6] = Input::One;
-        t.add[7] = Input::Zero;
     }
 
     #[inline(always)]
-    fn combine_cyc0_rgb(&self, idx: usize) -> Component {
-        let suba = self.inputs[self.cyc0[idx].suba];
-        let subb = self.inputs[self.cyc0[idx].subb];
-        let mul = self.inputs[self.cyc0[idx].mul];
-        let add = self.inputs[self.cyc0[idx].add];
-        (suba - subb) * mul + add
+    fn combine_cycle(&mut self, cyc: usize) -> MultiColor {
+        let (suba, subb, mul, add) = unsafe {
+            (
+                *self.cycle_rgb[cyc].suba,
+                *self.cycle_rgb[cyc].subb,
+                *self.cycle_rgb[cyc].mul,
+                *self.cycle_rgb[cyc].add,
+            )
+        };
+        let rgb: MultiColor = (suba - subb) * mul + (add << 8) + MultiColor::splat(0x80);
+
+        let (suba, subb, mul, add) = unsafe {
+            (
+                *self.cycle_alpha[cyc].suba,
+                *self.cycle_alpha[cyc].subb,
+                *self.cycle_alpha[cyc].mul,
+                *self.cycle_alpha[cyc].add,
+            )
+        };
+        let alpha: MultiColor = (suba - subb) * mul + (add << 8) + MultiColor::splat(0x80);
+        rgb.replace_alpha(alpha) >> 8
     }
 
     #[inline(always)]
-    fn combine_cyc1_rgb(&self, idx: usize) -> Component {
-        let suba = self.inputs[self.cyc1[idx].suba];
-        let subb = self.inputs[self.cyc1[idx].subb];
-        let mul = self.inputs[self.cyc1[idx].mul];
-        let add = self.inputs[self.cyc1[idx].add];
-        (suba - subb) * mul + add
+    pub(crate) fn combine_1cycle(&mut self, shade: MultiColor) -> MultiColor {
+        self.shade = shade;
+        let c = self.combine_cycle(1);
+
+        // Save as combined color (FIXME: this is not correct with parallel pixels)
+        self.combined = c;
+
+        return c;
     }
 
-    pub fn set_mode(&mut self, mode: u64) {
+    unsafe fn setup_cycle_basic(&self, v: u32) -> *const MultiColor {
+        match v {
+            0 => &self.combined,
+            1 => &self.texel0,
+            2 => &self.texel1,
+            3 => &self.prim,
+            4 => &self.shade,
+            5 => &self.env,
+            _ => unreachable!(),
+        }
+    }
+
+    unsafe fn setup_cycle_rgb(
+        &self,
+        (suba, subb, mul, add): (u32, u32, u32, u32),
+    ) -> CombinerCycle {
+        CombinerCycle {
+            suba: match suba {
+                0...5 => self.setup_cycle_basic(suba),
+                6 => &self.one,
+                7 => &self.noise,
+                8...15 => &self.zero,
+                _ => unreachable!(),
+            },
+            subb: match subb {
+                0...5 => self.setup_cycle_basic(subb),
+                6 => &self.key_center,
+                7 => &self.conv_k4,
+                8...15 => &self.zero,
+                _ => unreachable!(),
+            },
+            mul: match mul {
+                0...5 => self.setup_cycle_basic(mul),
+                6 => &self.key_scale,
+                7 => &self.combined_alpha,
+                8 => &self.texel0_alpha,
+                9 => &self.texel1_alpha,
+                10 => &self.prim_alpha,
+                11 => &self.shade_alpha,
+                12 => &self.env_alpha,
+                13 => &self.lod_fraction,
+                14 => &self.prim_lod_fraction,
+                15 => &self.conv_k5,
+                16...31 => &self.zero,
+                _ => unreachable!(),
+            },
+            add: match add {
+                0...5 => self.setup_cycle_basic(add),
+                6 => &self.one,
+                _ => &self.zero,
+            },
+        }
+    }
+
+    unsafe fn setup_cycle_alpha(
+        &self,
+        (suba, subb, mul, add): (u32, u32, u32, u32),
+    ) -> CombinerCycle {
+        CombinerCycle {
+            suba: match suba {
+                0...5 => self.setup_cycle_basic(suba),
+                6 => &self.one,
+                7...15 => &self.zero,
+                _ => unreachable!(),
+            },
+            subb: match subb {
+                0...5 => self.setup_cycle_basic(subb),
+                6 => &self.one,
+                7...15 => &self.zero,
+                _ => unreachable!(),
+            },
+            mul: match mul {
+                0 => &self.lod_fraction,
+                1...5 => self.setup_cycle_basic(mul),
+                6 => &self.prim_lod_fraction,
+                7...31 => &self.zero,
+                _ => unreachable!(),
+            },
+            add: match add {
+                0...5 => self.setup_cycle_basic(add),
+                6 => &self.one,
+                7...15 => &self.zero,
+                _ => unreachable!(),
+            },
+        }
+    }
+    pub(crate) fn set_mode(&mut self, mode: u64) {
         let mode = CombinerMode(mode);
 
-        let cyc0_rgb = mode.cyc0_rgb();
-        let cyc1_rgb = mode.cyc1_rgb();
-        for i in 0..3 {
-            self.cyc0[i] = self.tables[i].as_combiner_cycle(cyc0_rgb);
-            self.cyc1[i] = self.tables[i].as_combiner_cycle(cyc1_rgb);
-        }
+        self.cycle_rgb[0] = unsafe { self.setup_cycle_rgb(mode.cyc0_rgb()) };
+        self.cycle_rgb[1] = unsafe { self.setup_cycle_rgb(mode.cyc1_rgb()) };
 
-        let cyc0_alpha = mode.cyc0_alpha();
-        let cyc1_alpha = mode.cyc1_alpha();
-        self.cyc0[3] = self.tables[3].as_combiner_cycle(cyc0_alpha);
-        self.cyc1[3] = self.tables[3].as_combiner_cycle(cyc1_alpha);
+        self.cycle_alpha[0] = unsafe { self.setup_cycle_alpha(mode.cyc0_alpha()) };
+        self.cycle_alpha[1] = unsafe { self.setup_cycle_alpha(mode.cyc1_alpha()) };
     }
 
-    pub fn set_tex0(&mut self, c: Color) {
-        self.inputs[Input::Texel0R] = c[0];
-        self.inputs[Input::Texel0G] = c[1];
-        self.inputs[Input::Texel0B] = c[2];
-        self.inputs[Input::Texel0A] = c[3];
+    pub(crate) fn set_tex0(&mut self, c: MultiColor) {
+        self.texel0_alpha = MultiColor::splat(c.extract(3));
+        self.texel0 = c;
     }
-
-    pub fn set_tex1(&mut self, c: Color) {
-        self.inputs[Input::Texel1R] = c[0];
-        self.inputs[Input::Texel1G] = c[1];
-        self.inputs[Input::Texel1B] = c[2];
-        self.inputs[Input::Texel1A] = c[3];
+    pub(crate) fn set_tex1(&mut self, c: MultiColor) {
+        self.texel1_alpha = MultiColor::splat(c.extract(3));
+        self.texel1 = c;
     }
-
-    pub fn set_prim(&mut self, c: Color) {
-        self.inputs[Input::PrimR] = c[0];
-        self.inputs[Input::PrimG] = c[1];
-        self.inputs[Input::PrimB] = c[2];
-        self.inputs[Input::PrimA] = c[3];
+    pub(crate) fn set_prim(&mut self, c: Color) {
+        self.prim_alpha = MultiColor::splat(c.3 as u16);
+        self.prim = u16x8::from_color(c);
     }
-
-    pub fn set_shade(&mut self, c: Color) {
-        self.inputs[Input::ShadeR] = c[0];
-        self.inputs[Input::ShadeG] = c[1];
-        self.inputs[Input::ShadeB] = c[2];
-        self.inputs[Input::ShadeA] = c[3];
+    pub(crate) fn set_shade(&mut self, c: Color) {
+        self.shade_alpha = MultiColor::splat(c.3 as u16);
+        self.shade = u16x8::from_color(c);
     }
-
-    pub fn set_env(&mut self, c: Color) {
-        self.inputs[Input::EnvR] = c[0];
-        self.inputs[Input::EnvG] = c[1];
-        self.inputs[Input::EnvB] = c[2];
-        self.inputs[Input::EnvA] = c[3];
+    pub(crate) fn set_env(&mut self, c: Color) {
+        self.env_alpha = MultiColor::splat(c.3 as u16);
+        self.env = u16x8::from_color(c);
     }
 }
