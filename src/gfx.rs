@@ -222,7 +222,7 @@ impl<FPXY: FixedPoint, FPST: FixedPoint> RenderState<FPXY, FPST> {
                 self.draw_rect_slopes1::<Rgb888>(dst, dr, src, st, dsdt)
             }
             DpColorFormat::RGBA if self.dst_bpp == 16 => {
-                self.draw_rect_slopes1::<Rgb565>(dst, dr, src, st, dsdt)
+                self.draw_rect_slopes1::<Rgb555>(dst, dr, src, st, dsdt)
             }
             _ => panic!(
                 "unimplemented dst color format: {:?}/{}",
