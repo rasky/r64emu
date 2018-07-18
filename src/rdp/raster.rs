@@ -6,6 +6,7 @@ use self::emu::fp::formats::*;
 use self::emu::fp::FixedPoint;
 use self::emu::gfx::*;
 use self::num::ToPrimitive;
+use super::DpColorFormat;
 use std::marker::PhantomData;
 
 #[inline(always)]
@@ -137,28 +138,6 @@ fn draw_rect_slopes<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
     O2: ByteOrder,
 {
     int_draw_rect(dst, dr, src, st, dsdt);
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum DpColorFormat {
-    RGBA,
-    YUV,
-    COLOR_INDEX,
-    INTENSITY_ALPHA,
-    INTENSITY,
-}
-
-impl DpColorFormat {
-    pub fn from_bits(bits: usize) -> Option<DpColorFormat> {
-        match bits {
-            0 => Some(DpColorFormat::RGBA),
-            1 => Some(DpColorFormat::YUV),
-            2 => Some(DpColorFormat::COLOR_INDEX),
-            3 => Some(DpColorFormat::INTENSITY_ALPHA),
-            4 => Some(DpColorFormat::INTENSITY),
-            _ => None,
-        }
-    }
 }
 
 pub struct RenderState<FPXY, FPST> {

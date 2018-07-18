@@ -32,8 +32,33 @@ impl MColor for MultiColor {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum DpColorFormat {
+    RGBA,
+    YUV,
+    COLOR_INDEX,
+    INTENSITY_ALPHA,
+    INTENSITY,
+}
+
+impl DpColorFormat {
+    pub fn from_bits(bits: usize) -> Option<DpColorFormat> {
+        match bits {
+            0 => Some(DpColorFormat::RGBA),
+            1 => Some(DpColorFormat::YUV),
+            2 => Some(DpColorFormat::COLOR_INDEX),
+            3 => Some(DpColorFormat::INTENSITY_ALPHA),
+            4 => Some(DpColorFormat::INTENSITY),
+            _ => None,
+        }
+    }
+}
+
 mod bl;
 mod cc;
+mod pipeline;
 mod raster;
+mod rdp;
 
-pub use self::raster::RdpRasterizer;
+pub use self::pipeline::PixelPipeline;
+pub use self::rdp::Rdp;
