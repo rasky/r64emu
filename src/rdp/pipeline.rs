@@ -2,14 +2,14 @@ use super::bl::Blender;
 use super::cc::Combiner;
 use super::{Color, MultiColor};
 
-pub struct RdpRasterizer {
+pub struct PixelPipeline {
     cc: Combiner,
     bl: Blender,
 }
 
-impl RdpRasterizer {
-    pub fn new() -> RdpRasterizer {
-        RdpRasterizer {
+impl PixelPipeline {
+    pub fn new() -> PixelPipeline {
+        PixelPipeline {
             cc: Combiner::new(),
             bl: Blender::new(),
         }
