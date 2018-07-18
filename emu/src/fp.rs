@@ -48,6 +48,16 @@ impl FixedPointInt for i128 {
     type Len = U128;
 }
 
+impl FixedPointInt for u8 {
+    type DoubleInt = u16;
+    type Len = U8;
+}
+
+impl FixedPointInt for u16 {
+    type DoubleInt = u32;
+    type Len = U16;
+}
+
 impl FixedPointInt for u32 {
     type DoubleInt = u64;
     type Len = U32;
