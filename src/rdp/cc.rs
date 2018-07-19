@@ -7,9 +7,11 @@
 //   * alpha dithering
 
 extern crate bit_field;
+extern crate emu;
 
 use self::bit_field::BitField;
-use super::{Color, MColor, MultiColor};
+use super::{MColor, MultiColor};
+use emu::gfx::{Color, Rgba8888};
 use std::ptr;
 use std::simd::*;
 
@@ -250,16 +252,16 @@ impl Combiner {
         self.texel1_alpha = MultiColor::splat(c.extract(3));
         self.texel1 = c;
     }
-    pub(crate) fn set_prim(&mut self, c: Color) {
-        self.prim_alpha = MultiColor::splat(c.3 as u16);
-        self.prim = u16x8::from_color(c);
+    pub(crate) fn set_prim(&mut self, c: Color<Rgba8888>) {
+        self.prim_alpha = MultiColor::splat(c.components().3 as u16);
+        self.prim = MultiColor::from_color(c);
     }
-    pub(crate) fn set_shade(&mut self, c: Color) {
-        self.shade_alpha = MultiColor::splat(c.3 as u16);
-        self.shade = u16x8::from_color(c);
+    pub(crate) fn set_shade(&mut self, c: Color<Rgba8888>) {
+        self.shade_alpha = MultiColor::splat(c.components().3 as u16);
+        self.shade = MultiColor::from_color(c);
     }
-    pub(crate) fn set_env(&mut self, c: Color) {
-        self.env_alpha = MultiColor::splat(c.3 as u16);
-        self.env = u16x8::from_color(c);
+    pub(crate) fn set_env(&mut self, c: Color<Rgba8888>) {
+        self.env_alpha = MultiColor::splat(c.components().3 as u16);
+        self.env = MultiColor::from_color(c);
     }
 }

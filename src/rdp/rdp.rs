@@ -3,10 +3,11 @@ extern crate byteorder;
 extern crate emu;
 extern crate slog;
 use self::bit_field::BitField;
-use self::byteorder::BigEndian;
+use self::byteorder::{BigEndian, LittleEndian};
 use self::emu::bus::be::Bus;
-use super::raster::{draw_rect, fill_rect, DpRenderState};
-use super::DpColorFormat;
+use super::pipeline::PixelPipeline;
+use super::raster::{draw_rect, fill_rect, fill_rect_pp, DpRenderState};
+use super::{CycleMode, DpColorFormat};
 use emu::fp::formats::*;
 use emu::fp::Q;
 use emu::gfx::*;
@@ -28,12 +29,6 @@ struct TileDescriptor {
     shift: [u32; 2],
 
     rect: Rect<U30F2>,
-}
-
-impl Default for DpColorFormat {
-    fn default() -> DpColorFormat {
-        DpColorFormat::RGBA
-    }
 }
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -59,6 +54,9 @@ pub struct Rdp {
     tex: ImageFormat,
     tiles: [TileDescriptor; 8],
     fill_color: u32,
+    cycle_mode: CycleMode,
+
+    pipeline: PixelPipeline,
 
     cmdbuf: [u64; 16],
     cmdlen: usize,
@@ -77,6 +75,8 @@ impl Rdp {
             tex: ImageFormat::default(),
             tiles: [TileDescriptor::default(); 8],
             fill_color: 0,
+            cycle_mode: CycleMode::One,
+            pipeline: PixelPipeline::new(),
             cmdbuf: [0u64; 16],
             cmdlen: 0,
         }
@@ -86,7 +86,7 @@ impl Rdp {
         DpColorFormat::from_bits(bits as usize)
             .or_else(|| {
                 error!(self.logger, "invalid color format"; "format" => bits);
-                Some(DpColorFormat::RGBA)
+                Some(DpColorFormat::Rgba)
             })
             .unwrap()
     }
@@ -143,6 +143,14 @@ impl Rdp {
             }
             0x2F => {
                 // Set Other Modes
+                self.cycle_mode = match cmd.get_bits(52..54) {
+                    0 => CycleMode::One,
+                    1 => CycleMode::Two,
+                    2 => CycleMode::Copy,
+                    3 => CycleMode::Fill,
+                    _ => unreachable!(),
+                };
+                self.pipeline.set_other_modes(op);
                 warn!(self.logger, "DP: Set Other Modes");
                 self.cmdlen = 0;
             }
@@ -293,11 +301,6 @@ impl Rdp {
                 self.cmdlen = 0;
             }
             0x36 => {
-                // Fill rectangle works with 32-bit packed words. Thus, we treat everything
-                // as RGBA8888, but we need to convert the rect coordinates to adjust them
-                // to a fake 32-bit resolution.
-                let bppconv = 32 / self.fb.bpp as u32;
-
                 let x1 = cmd.get_bits(44..56) as u32;
                 let y1 = cmd.get_bits(32..44) as u32;
                 let x0 = cmd.get_bits(12..24) as u32;
@@ -305,24 +308,47 @@ impl Rdp {
                 let mut rect = Rect::<U30F2>::from_bits(x0, y0, x1, y1);
                 info!(self.logger, "DP: Fill Rectangle"; "rect" => ?rect);
 
-                rect.c0.x /= bppconv;
-                rect.c0.y /= bppconv;
-                rect.c1.x = ((rect.c1.x + 1) / bppconv) - 1;
-                rect.c1.y = ((rect.c1.y + 1) / bppconv) - 1;
+                match self.cycle_mode {
+                    CycleMode::Fill => {
+                        // Fill rectangle works with 32-bit packed words. Thus, we treat everything
+                        // as RGBA8888, but we need to convert the rect coordinates to adjust them
+                        // to a fake 32-bit resolution.
+                        let bppconv = 32 / self.fb.bpp as u32;
 
-                if rect.truncate().cast::<U30F2>() != rect {
-                    panic!("Coordinates in DP Fill Rectangle were not 32-bit aligned");
+                        rect.c0.x /= bppconv;
+                        rect.c0.y /= bppconv;
+                        rect.c1.x = ((rect.c1.x + 1) / bppconv) - 1;
+                        rect.c1.y = ((rect.c1.y + 1) / bppconv) - 1;
+
+                        if rect.truncate().cast::<U30F2>() != rect {
+                            panic!("Coordinates in DP Fill Rectangle were not 32-bit aligned");
+                        }
+
+                        let fb = self.framebuffer();
+                        let mut dst = GfxBufferMut::<Rgba8888, BigEndian>::new(
+                            fb.0,
+                            fb.1 / bppconv as usize,
+                            fb.2,
+                            fb.3,
+                        ).unwrap();
+                        let color = Color::<Rgba8888>::from_bits(self.fill_color);
+                        fill_rect(&mut dst, rect, color);
+                    }
+                    CycleMode::One => {
+                        let fb = self.framebuffer();
+                        let mut dst = GfxBufferMut::<Rgba8888, LittleEndian>::new(
+                            fb.0, fb.1, fb.2, fb.3,
+                        ).unwrap();
+
+                        if rect.truncate().cast::<U30F2>() != rect {
+                            panic!("Coordinates in DP Fill Rectangle were not 32-bit aligned");
+                        }
+
+                        let color = Color::<Rgba5551>::from_bits(self.fill_color as u16); // FIXME: this is probably not correct
+                        fill_rect_pp(&mut dst, rect, color, &mut self.pipeline);
+                    }
+                    _ => unimplemented!(),
                 }
-
-                let fb = self.framebuffer();
-                let mut dst = GfxBufferMut::<Rgba8888, BigEndian>::new(
-                    fb.0,
-                    fb.1 / bppconv as usize,
-                    fb.2,
-                    fb.3,
-                ).unwrap();
-                let color = Color::<Rgba8888>::from_bits(self.fill_color);
-                fill_rect(&mut dst, rect, color);
                 self.cmdlen = 0;
             }
             0x37 => {

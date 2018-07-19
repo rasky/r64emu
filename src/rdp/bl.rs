@@ -4,9 +4,11 @@
 //   * alpha compare
 
 extern crate bit_field;
+extern crate emu;
 
 use self::bit_field::BitField;
-use super::{Color, MColor, MultiColor};
+use super::{MColor, MultiColor};
+use emu::gfx::{Color, Rgba8888};
 use std::ptr;
 
 struct BlenderCycle {
@@ -124,10 +126,10 @@ impl Blender {
         self.cycles[1] = unsafe { self.setup_cycle(1, (p, m, a, b)) };
     }
 
-    pub(crate) fn set_fog_color(&mut self, c: Color) {
+    pub(crate) fn set_fog_color(&mut self, c: Color<Rgba8888>) {
         self.reg_fog = MultiColor::from_color(c);
     }
-    pub(crate) fn set_blend_color(&mut self, c: Color) {
+    pub(crate) fn set_blend_color(&mut self, c: Color<Rgba8888>) {
         self.reg_blend = MultiColor::from_color(c);
     }
 }

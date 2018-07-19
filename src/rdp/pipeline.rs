@@ -1,6 +1,8 @@
+extern crate emu;
 use super::bl::Blender;
 use super::cc::Combiner;
-use super::{Color, MultiColor};
+use super::MultiColor;
+use emu::gfx::{Color, Rgba8888};
 
 pub struct PixelPipeline {
     cc: Combiner,
@@ -21,10 +23,10 @@ impl PixelPipeline {
         return blended;
     }
 
-    pub fn set_prim_color(&mut self, c: Color) {
+    pub fn set_prim_color(&mut self, c: Color<Rgba8888>) {
         self.cc.set_prim(c);
     }
-    pub fn set_env_color(&mut self, c: Color) {
+    pub fn set_env_color(&mut self, c: Color<Rgba8888>) {
         self.cc.set_env(c);
     }
     pub fn set_other_modes(&mut self, modes: u64) {

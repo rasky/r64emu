@@ -6,7 +6,8 @@ use self::emu::fp::formats::*;
 use self::emu::fp::FixedPoint;
 use self::emu::gfx::*;
 use self::num::ToPrimitive;
-use super::DpColorFormat;
+use super::pipeline::PixelPipeline;
+use super::{DpColorFormat, MColor, MultiColor};
 use std::marker::PhantomData;
 
 #[inline(always)]
@@ -28,6 +29,34 @@ pub fn fill_rect<'a, 'b, CF1, CF2, FP1, O1>(
         for dx in dr.c0.x.floor()..=dr.c1.x.floor() {
             let didx = dx.to_usize().unwrap();
             dst.set(didx, color.cconv());
+        }
+    }
+}
+
+#[inline(always)]
+pub fn fill_rect_pp<'a, 'b, CF1, CF2, FP1, O1>(
+    dst: &mut GfxBufferMut<'a, CF1, O1>,
+    dr: Rect<FP1>,
+    color: Color<CF2>,
+    pp: &mut PixelPipeline,
+) where
+    CF1: ColorFormat,
+    CF2: ColorFormat,
+    FP1: FixedPoint,
+    O1: ByteOrder,
+{
+    let dr = dr.truncate();
+    let color = MultiColor::from_color(color);
+    let black = MultiColor::from_color(Color::<Rgba8888>::new_clamped(0, 0, 0, 0xff));
+
+    for dy in dr.c0.y.floor()..=dr.c1.y.floor() {
+        let mut dst = dst.line(dy.to_usize().unwrap());
+
+        for dx in dr.c0.x.floor()..=dr.c1.x.floor() {
+            let didx = dx.to_usize().unwrap();
+
+            let cres = pp.calc_pixels(color, black);
+            dst.set(didx, cres.get_color(0));
         }
     }
 }
@@ -140,15 +169,15 @@ fn draw_rect_slopes<'a, 'b, CF1, CF2, FP1, FP2, O1, O2>(
     int_draw_rect(dst, dr, src, st, dsdt);
 }
 
-pub struct RenderState<FPXY, FPST> {
-    pub dst_cf: DpColorFormat,
-    pub dst_bpp: usize,
-    pub src_cf: DpColorFormat,
-    pub src_bpp: usize,
-    pub phantom: PhantomData<(FPXY, FPST)>,
+pub(crate) struct RenderState<FPXY, FPST> {
+    pub(crate) dst_cf: DpColorFormat,
+    pub(crate) dst_bpp: usize,
+    pub(crate) src_cf: DpColorFormat,
+    pub(crate) src_bpp: usize,
+    pub(crate) phantom: PhantomData<(FPXY, FPST)>,
 }
 
-pub type DpRenderState = RenderState<U30F2, I22F10>;
+pub(crate) type DpRenderState = RenderState<U30F2, I22F10>;
 
 impl<FPXY: FixedPoint, FPST: FixedPoint> RenderState<FPXY, FPST> {
     #[inline]
@@ -175,10 +204,10 @@ impl<FPXY: FixedPoint, FPST: FixedPoint> RenderState<FPXY, FPST> {
         dsdt: Point<FPST>,
     ) {
         match self.src_cf {
-            DpColorFormat::INTENSITY if self.src_bpp == 4 => {
+            DpColorFormat::Intensity if self.src_bpp == 4 => {
                 self.draw_rect_slopes2::<CF1, I4, BigEndian>(dst, dr, src, st, dsdt)
             }
-            DpColorFormat::INTENSITY if self.src_bpp == 8 => {
+            DpColorFormat::Intensity if self.src_bpp == 8 => {
                 self.draw_rect_slopes2::<CF1, I8, BigEndian>(dst, dr, src, st, dsdt)
             }
             _ => panic!(
@@ -197,10 +226,10 @@ impl<FPXY: FixedPoint, FPST: FixedPoint> RenderState<FPXY, FPST> {
         dsdt: Point<FPST>,
     ) {
         match self.dst_cf {
-            DpColorFormat::RGBA if self.dst_bpp == 32 => {
+            DpColorFormat::Rgba if self.dst_bpp == 32 => {
                 self.draw_rect_slopes1::<Rgb888>(dst, dr, src, st, dsdt)
             }
-            DpColorFormat::RGBA if self.dst_bpp == 16 => {
+            DpColorFormat::Rgba if self.dst_bpp == 16 => {
                 self.draw_rect_slopes1::<Rgb555>(dst, dr, src, st, dsdt)
             }
             _ => panic!(

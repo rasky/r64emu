@@ -1,21 +1,42 @@
+extern crate emu;
+use emu::gfx::{Color, ColorConverter, ColorFormat, Rgba8888};
 use std::simd::*;
 
-pub struct Color(u8, u8, u8, u8);
 type MultiColor = u16x8;
 
 pub(crate) trait MColor {
-    fn from_color(c: Color) -> Self;
+    fn from_color<CF: ColorFormat>(c: Color<CF>) -> Self;
+    fn get_color<CF: ColorFormat>(&self, idx: usize) -> Color<CF>;
     fn replace_alpha(self, alpha: Self) -> Self;
     fn replicate_alpha(self) -> Self;
 }
 
 impl MColor for MultiColor {
-    fn from_color(c: Color) -> Self {
+    fn from_color<CF: ColorFormat>(c: Color<CF>) -> Self {
+        let (r, g, b, a) = c.components();
         u16x8::new(
-            c.0 as u16, c.1 as u16, c.2 as u16, c.3 as u16, c.0 as u16, c.1 as u16, c.2 as u16,
-            c.3 as u16,
+            r as u16, g as u16, b as u16, a as u16, r as u16, g as u16, b as u16, a as u16,
         )
     }
+
+    fn get_color<CF: ColorFormat>(&self, idx: usize) -> Color<CF> {
+        match idx {
+            0 => Color::<Rgba8888>::new_clamped(
+                self.extract(0),
+                self.extract(1),
+                self.extract(2),
+                self.extract(3),
+            ).cconv(),
+            1 => Color::<Rgba8888>::new_clamped(
+                self.extract(4),
+                self.extract(5),
+                self.extract(6),
+                self.extract(7),
+            ).cconv(),
+            _ => panic!("invalid MultiColor index"),
+        }
+    }
+
     fn replace_alpha(self, alpha: Self) -> Self {
         self.replace(3, alpha.extract(3))
             .replace(7, alpha.extract(7))
@@ -33,22 +54,36 @@ impl MColor for MultiColor {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum DpColorFormat {
-    RGBA,
-    YUV,
-    COLOR_INDEX,
-    INTENSITY_ALPHA,
-    INTENSITY,
+pub(crate) enum CycleMode {
+    One,
+    Two,
+    Copy,
+    Fill,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum DpColorFormat {
+    Rgba,
+    Yuv,
+    ColorIndex,
+    IntensityAlpha,
+    Intensity,
+}
+
+impl Default for DpColorFormat {
+    fn default() -> DpColorFormat {
+        DpColorFormat::Rgba
+    }
 }
 
 impl DpColorFormat {
     pub fn from_bits(bits: usize) -> Option<DpColorFormat> {
         match bits {
-            0 => Some(DpColorFormat::RGBA),
-            1 => Some(DpColorFormat::YUV),
-            2 => Some(DpColorFormat::COLOR_INDEX),
-            3 => Some(DpColorFormat::INTENSITY_ALPHA),
-            4 => Some(DpColorFormat::INTENSITY),
+            0 => Some(DpColorFormat::Rgba),
+            1 => Some(DpColorFormat::Yuv),
+            2 => Some(DpColorFormat::ColorIndex),
+            3 => Some(DpColorFormat::IntensityAlpha),
+            4 => Some(DpColorFormat::Intensity),
             _ => None,
         }
     }
