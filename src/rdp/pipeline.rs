@@ -17,19 +17,30 @@ impl PixelPipeline {
         }
     }
 
+    #[inline(always)]
     pub fn calc_pixels(&mut self, shade: MultiColor, fb: MultiColor) -> MultiColor {
         let combined = self.cc.combine_1cycle(shade);
         let blended = self.bl.blend_1cycle(shade, combined, fb);
         return blended;
     }
 
+    pub fn set_combine_mode(&mut self, mode: u64) {
+        self.cc.set_mode(mode);
+    }
     pub fn set_prim_color(&mut self, c: Color<Rgba8888>) {
         self.cc.set_prim(c);
     }
     pub fn set_env_color(&mut self, c: Color<Rgba8888>) {
         self.cc.set_env(c);
     }
+    pub fn set_blend_color(&mut self, c: Color<Rgba8888>) {
+        self.bl.set_blend_color(c);
+    }
     pub fn set_other_modes(&mut self, modes: u64) {
         self.bl.set_other_modes(modes);
+    }
+
+    pub fn fmt_combiner(&self) -> String {
+        self.cc.fmt_1cycle()
     }
 }

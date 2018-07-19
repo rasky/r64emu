@@ -33,7 +33,6 @@ pub fn fill_rect<'a, 'b, CF1, CF2, FP1, O1>(
     }
 }
 
-#[inline(always)]
 pub fn fill_rect_pp<'a, 'b, CF1, CF2, FP1, O1>(
     dst: &mut GfxBufferMut<'a, CF1, O1>,
     dr: Rect<FP1>,
@@ -54,7 +53,6 @@ pub fn fill_rect_pp<'a, 'b, CF1, CF2, FP1, O1>(
 
         for dx in dr.c0.x.floor()..=dr.c1.x.floor() {
             let didx = dx.to_usize().unwrap();
-
             let cres = pp.calc_pixels(color, black);
             dst.set(didx, cres.get_color(0));
         }

@@ -12,8 +12,8 @@ extern crate emu;
 use self::bit_field::BitField;
 use super::{MColor, MultiColor};
 use emu::gfx::{Color, Rgba8888};
+use std::fmt;
 use std::ptr;
-use std::simd::*;
 
 struct CombinerCycle {
     suba: *const MultiColor,
@@ -263,5 +263,55 @@ impl Combiner {
     pub(crate) fn set_env(&mut self, c: Color<Rgba8888>) {
         self.env_alpha = MultiColor::splat(c.components().3 as u16);
         self.env = MultiColor::from_color(c);
+    }
+
+    fn repr_comb_ptr(&self, ptr: *const MultiColor) -> String {
+        if ptr == &self.combined || ptr == &self.combined_alpha {
+            "combined".into()
+        } else if ptr == &self.texel0 || ptr == &self.texel0_alpha {
+            "tex0".into()
+        } else if ptr == &self.texel1 || ptr == &self.texel1_alpha {
+            "tex1".into()
+        } else if ptr == &self.prim || ptr == &self.prim_alpha {
+            "prim".into()
+        } else if ptr == &self.shade || ptr == &self.shade_alpha {
+            "shade".into()
+        } else if ptr == &self.env || ptr == &self.env_alpha {
+            "env".into()
+        } else if ptr == &self.key_center {
+            "key_center".into()
+        } else if ptr == &self.key_scale {
+            "key_scale".into()
+        } else if ptr == &self.lod_fraction {
+            "lod_fraction".into()
+        } else if ptr == &self.prim_lod_fraction {
+            "prim_lod_fraction".into()
+        } else if ptr == &self.noise {
+            "noise".into()
+        } else if ptr == &self.conv_k4 {
+            "K4".into()
+        } else if ptr == &self.conv_k5 {
+            "K5".into()
+        } else if ptr == &self.one {
+            "1.0".into()
+        } else if ptr == &self.zero {
+            "0.0".into()
+        } else {
+            "?".into()
+        }
+    }
+
+    pub(crate) fn fmt_1cycle(&self) -> String {
+        format!(
+            "Combiner {{ rgb: ({}-{})*{}+{}, alpha: ({}-{})*{}+{} }}",
+            self.repr_comb_ptr(self.cycle_rgb[1].suba),
+            self.repr_comb_ptr(self.cycle_rgb[1].subb),
+            self.repr_comb_ptr(self.cycle_rgb[1].mul),
+            self.repr_comb_ptr(self.cycle_rgb[1].add),
+            self.repr_comb_ptr(self.cycle_alpha[1].suba),
+            self.repr_comb_ptr(self.cycle_alpha[1].subb),
+            self.repr_comb_ptr(self.cycle_alpha[1].mul),
+            self.repr_comb_ptr(self.cycle_alpha[1].add),
+        )
     }
 }

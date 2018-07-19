@@ -150,7 +150,7 @@ impl Rdp {
                     3 => CycleMode::Fill,
                     _ => unreachable!(),
                 };
-                self.pipeline.set_other_modes(op);
+                self.pipeline.set_other_modes(cmd);
                 warn!(self.logger, "DP: Set Other Modes");
                 self.cmdlen = 0;
             }
@@ -359,7 +359,15 @@ impl Rdp {
             }
             0x3C => {
                 // Set Combine Mode
-                warn!(self.logger, "DP: Set Combine Mode");
+                self.pipeline.set_combine_mode(cmd);
+                info!(self.logger, "DP: Set Combine Mode"; "cmd" => cmd.hex(), "cc" => self.pipeline.fmt_combiner());
+                self.cmdlen = 0;
+            }
+            0x39 => {
+                // Set Blend Color
+                let c = Color::<Abgr8888>::from_bits(cmd as u32);
+                self.pipeline.set_blend_color(c.cconv());
+                info!(self.logger, "DP: Set Blend Color"; "c" => ?c);
                 self.cmdlen = 0;
             }
 
