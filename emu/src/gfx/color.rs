@@ -248,6 +248,10 @@ impl<CF: ColorFormat> Color<CF> {
     pub fn to_bits(&self) -> CF::U {
         self.r.to_bits() | self.g.to_bits() | self.b.to_bits() | self.a.to_bits()
     }
+
+    pub fn components(&self) -> (i32, i32, i32, i32) {
+        (self.r.val, self.g.val, self.b.val, self.a.val)
+    }
 }
 
 impl<CF: ColorFormat> fmt::Debug for Color<CF> {
