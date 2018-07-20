@@ -7,6 +7,7 @@ type MultiColor = u16x8;
 pub(crate) trait MColor {
     fn from_color<CF: ColorFormat>(c: Color<CF>) -> Self;
     fn get_color<CF: ColorFormat>(&self, idx: usize) -> Color<CF>;
+    fn map_alpha(self, f: fn(u16) -> u16) -> Self;
     fn replace_alpha(self, alpha: Self) -> Self;
     fn replicate_alpha(self) -> Self;
 }
@@ -37,6 +38,11 @@ impl MColor for MultiColor {
         }
     }
 
+    fn map_alpha(self, f: fn(u16) -> u16) -> Self {
+        let a1 = self.extract(3);
+        let a2 = self.extract(7);
+        self.replace(3, f(a1)).replace(7, f(a2))
+    }
     fn replace_alpha(self, alpha: Self) -> Self {
         self.replace(3, alpha.extract(3))
             .replace(7, alpha.extract(7))

@@ -19,8 +19,9 @@ impl PixelPipeline {
 
     #[inline(always)]
     pub fn calc_pixels(&mut self, shade: MultiColor, fb: MultiColor) -> MultiColor {
+        self.cc.set_tex0(shade);
         let combined = self.cc.combine_1cycle(shade);
-        let blended = self.bl.blend_1cycle(shade, combined, fb);
+        let blended = self.bl.blend_1cycle(combined, shade, fb);
         return blended;
     }
 
@@ -42,5 +43,8 @@ impl PixelPipeline {
 
     pub fn fmt_combiner(&self) -> String {
         self.cc.fmt_1cycle()
+    }
+    pub fn fmt_blender(&self) -> String {
+        self.bl.fmt_1cycle()
     }
 }

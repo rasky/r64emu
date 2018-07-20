@@ -39,7 +39,7 @@ impl Default for BlenderCycle {
 pub(crate) struct Blender {
     combined: MultiColor,
     shade: MultiColor,
-    inv_muxa: MultiColor,
+    inv_combined: MultiColor,
     partial_blended: MultiColor,
     framebuffer: MultiColor,
     reg_blend: MultiColor,
@@ -67,7 +67,7 @@ impl Blender {
         fb: MultiColor,
     ) -> MultiColor {
         self.combined = combined;
-        self.shade = shade;
+        self.inv_combined = combined.map_alpha(|a| 0xFF - a);
         self.framebuffer = fb;
 
         let (p, m, a, b) = self.cycles[0].fetch();
@@ -103,7 +103,7 @@ impl Blender {
                 _ => unreachable!(),
             },
             b: match b {
-                0 => &self.inv_muxa,
+                0 => &self.inv_combined,
                 1 => &self.framebuffer,
                 2 => &self.ff,
                 3 => &self.zero,
@@ -131,5 +131,41 @@ impl Blender {
     }
     pub(crate) fn set_blend_color(&mut self, c: Color<Rgba8888>) {
         self.reg_blend = MultiColor::from_color(c);
+    }
+
+    pub(crate) fn repr_comb_ptr(&self, ptr: *const MultiColor, alpha: bool) -> String {
+        if ptr == &self.combined {
+            (if alpha { "input.a" } else { "input" }).into()
+        } else if ptr == &self.inv_combined {
+            "(1.0 - input.a)".into()
+        } else if ptr == &self.reg_fog {
+            (if alpha { "reg_fog.a" } else { "reg_fog" }).into()
+        } else if ptr == &self.framebuffer {
+            (if alpha { "fb.a" } else { "fb" }).into()
+        } else if ptr == &self.reg_blend {
+            "reg_blend".into()
+        } else if ptr == &self.shade {
+            "shade".into()
+        } else if ptr == &self.zero {
+            "0.0".into()
+        } else if ptr == &self.ff {
+            "1.0".into()
+        } else {
+            "?".into()
+        }
+    }
+
+    pub(crate) fn fmt_1cycle(&self) -> String {
+        let a = self.repr_comb_ptr(self.cycles[0].a, true);
+        let b = self.repr_comb_ptr(self.cycles[0].b, true);
+        format!(
+            "Blender {{ ({}*{} + {}*{}) / ({}+{}) }}",
+            self.repr_comb_ptr(self.cycles[0].p, false),
+            a,
+            self.repr_comb_ptr(self.cycles[0].m, false),
+            b,
+            a,
+            b,
+        )
     }
 }

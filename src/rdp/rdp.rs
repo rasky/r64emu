@@ -151,7 +151,7 @@ impl Rdp {
                     _ => unreachable!(),
                 };
                 self.pipeline.set_other_modes(cmd);
-                warn!(self.logger, "DP: Set Other Modes");
+                warn!(self.logger, "DP: Set Other Modes"; "blender" => self.pipeline.fmt_blender());
                 self.cmdlen = 0;
             }
             0x24 => {
@@ -344,7 +344,7 @@ impl Rdp {
                             panic!("Coordinates in DP Fill Rectangle were not 32-bit aligned");
                         }
 
-                        let color = Color::<Rgba5551>::from_bits(self.fill_color as u16); // FIXME: this is probably not correct
+                        let color = Color::<Abgr8888>::from_bits(self.fill_color); // FIXME: this is probably not correct
                         fill_rect_pp(&mut dst, rect, color, &mut self.pipeline);
                     }
                     _ => unimplemented!(),

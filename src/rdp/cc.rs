@@ -51,13 +51,6 @@ pub(crate) struct Combiner {
     one: MultiColor,
     zero: MultiColor,
 
-    combined_alpha: MultiColor,
-    texel0_alpha: MultiColor,
-    texel1_alpha: MultiColor,
-    prim_alpha: MultiColor,
-    shade_alpha: MultiColor,
-    env_alpha: MultiColor,
-
     cycle_rgb: [CombinerCycle; 2],
     cycle_alpha: [CombinerCycle; 2],
 }
@@ -108,7 +101,8 @@ impl CombinerMode {
 impl Combiner {
     pub(crate) fn new() -> Combiner {
         Combiner {
-            one: MultiColor::splat(1),
+            one: MultiColor::splat(0x100),
+            lod_fraction: MultiColor::splat(0xFF),
             ..Default::default()
         }
     }
@@ -182,12 +176,12 @@ impl Combiner {
             mul: match mul {
                 0...5 => self.setup_cycle_basic(mul),
                 6 => &self.key_scale,
-                7 => &self.combined_alpha,
-                8 => &self.texel0_alpha,
-                9 => &self.texel1_alpha,
-                10 => &self.prim_alpha,
-                11 => &self.shade_alpha,
-                12 => &self.env_alpha,
+                7 => &self.combined,
+                8 => &self.texel0,
+                9 => &self.texel1,
+                10 => &self.prim,
+                11 => &self.shade,
+                12 => &self.env,
                 13 => &self.lod_fraction,
                 14 => &self.prim_lod_fraction,
                 15 => &self.conv_k5,
@@ -245,38 +239,33 @@ impl Combiner {
     }
 
     pub(crate) fn set_tex0(&mut self, c: MultiColor) {
-        self.texel0_alpha = MultiColor::splat(c.extract(3));
         self.texel0 = c;
     }
     pub(crate) fn set_tex1(&mut self, c: MultiColor) {
-        self.texel1_alpha = MultiColor::splat(c.extract(3));
         self.texel1 = c;
     }
     pub(crate) fn set_prim(&mut self, c: Color<Rgba8888>) {
-        self.prim_alpha = MultiColor::splat(c.components().3 as u16);
         self.prim = MultiColor::from_color(c);
     }
     pub(crate) fn set_shade(&mut self, c: Color<Rgba8888>) {
-        self.shade_alpha = MultiColor::splat(c.components().3 as u16);
         self.shade = MultiColor::from_color(c);
     }
     pub(crate) fn set_env(&mut self, c: Color<Rgba8888>) {
-        self.env_alpha = MultiColor::splat(c.components().3 as u16);
         self.env = MultiColor::from_color(c);
     }
 
     fn repr_comb_ptr(&self, ptr: *const MultiColor) -> String {
-        if ptr == &self.combined || ptr == &self.combined_alpha {
+        if ptr == &self.combined {
             "combined".into()
-        } else if ptr == &self.texel0 || ptr == &self.texel0_alpha {
+        } else if ptr == &self.texel0 {
             "tex0".into()
-        } else if ptr == &self.texel1 || ptr == &self.texel1_alpha {
+        } else if ptr == &self.texel1 {
             "tex1".into()
-        } else if ptr == &self.prim || ptr == &self.prim_alpha {
+        } else if ptr == &self.prim {
             "prim".into()
-        } else if ptr == &self.shade || ptr == &self.shade_alpha {
+        } else if ptr == &self.shade {
             "shade".into()
-        } else if ptr == &self.env || ptr == &self.env_alpha {
+        } else if ptr == &self.env {
             "env".into()
         } else if ptr == &self.key_center {
             "key_center".into()
