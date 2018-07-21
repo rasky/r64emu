@@ -27,6 +27,7 @@ const FIX_L40: u32 = 0x1;
 const FIX_L120: u32 = 0x2;
 const FIX_L360: u32 = 0x4;
 const FIX_LINES: u32 = FIX_L40 | FIX_L120 | FIX_L360;
+const FPS10: u32 = 0x8;
 
 fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let logger = slog::Logger::root(Discard, o!());
@@ -35,7 +36,9 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let mut n64 = N64::new(logger, romfn).unwrap();
     n64.setup_cic().unwrap();
     let mut screen1 = OwnedGfxBufferLE::<Rgb888>::new(640, 480);
-    for _ in 0..5 {
+
+    let numfps = if flags & FPS10 != 0 { 10 } else { 5 };
+    for _ in 0..numfps {
         n64.render_frame(&mut screen1.buf_mut());
     }
 
@@ -181,6 +184,11 @@ macro_rules! krom_rspcpu {
         krom!($test_name, concat!("RSPTest/CPU/", $romfn), $flags);
     };
 }
+macro_rules! krom_rsp {
+    ($test_name:ident, $romfn:expr, $flags:expr) => {
+        krom!($test_name, concat!("RSPTest/CP2/", $romfn), $flags | FPS10);
+    };
+}
 
 krom_cpu!(cpu_xor, "XOR/CPUXOR.N64", FIX_LINES);
 krom_cpu!(cpu_ddivu, "DDIVU/CPUDDIVU.N64", FIX_LINES);
@@ -256,3 +264,97 @@ krom_fpu!(fpu_cf, "C/F/CP1CF.N64", FIX_LINES);
 // krom_fpu!(fpu_cule, "C/ULE/CP1CULE.N64", 0);
 // krom_fpu!(fpu_cueq, "C/UEQ/CP1CUEQ.N64", 0);
 // krom_fpu!(fpu_cvt, "CVT/CP1CVT.N64", FIX_L40 | FIX_L120);
+
+krom_rspcpu!(rspcpu_xor, "XOR/RSPCPUXOR.N64", FIX_L120);
+krom_rspcpu!(rspcpu_nor, "NOR/RSPCPUNOR.N64", FIX_L120);
+krom_rspcpu!(rspcpu_subu, "SUBU/RSPCPUSUBU.N64", FIX_LINES);
+krom_rspcpu!(rspcpu_sllv, "SHIFT/SLLV/RSPCPUSLLV.N64", 0);
+krom_rspcpu!(rspcpu_sll, "SHIFT/SLL/RSPCPUSLL.N64", 0);
+krom_rspcpu!(rspcpu_sra, "SHIFT/SRA/RSPCPUSRA.N64", 0);
+krom_rspcpu!(rspcpu_srav, "SHIFT/SRAV/RSPCPUSRAV.N64", 0);
+krom_rspcpu!(rspcpu_srl, "SHIFT/SRL/RSPCPUSRL.N64", 0);
+krom_rspcpu!(rspcpu_srlv, "SHIFT/SRLV/RSPCPUSRLV.N64", 0);
+krom_rspcpu!(rspcpu_sub, "SUB/RSPCPUSUB.N64", FIX_LINES);
+krom_rspcpu!(rspcpu_and, "AND/RSPCPUAND.N64", FIX_LINES);
+krom_rspcpu!(rspcpu_add, "ADD/RSPCPUADD.N64", FIX_LINES);
+krom_rspcpu!(rspcpu_or, "OR/RSPCPUOR.N64", FIX_L120);
+krom_rspcpu!(rspcpu_addu, "ADDU/RSPCPUADDU.N64", FIX_LINES);
+
+krom_rsp!(rsp_vor, "VOR/RSPCP2VOR.N64", FIX_L40 | FIX_L120);
+krom_rsp!(rsp_vand, "VAND/RSPCP2VAND.N64", FIX_L40 | FIX_L120);
+krom_rsp!(rsp_vmulf, "VMULF/RSPCP2VMULF.N64", FIX_L40 | FIX_L120);
+krom_rsp!(rsp_vmudn, "VMUDN/RSPCP2VMUDN.N64", FIX_L40 | FIX_L120);
+krom_rsp!(rsp_vxor, "VXOR/RSPCP2VXOR.N64", FIX_L40 | FIX_L120);
+krom_rsp!(rsp_vmacf, "VMACF/RSPCP2VMACF.N64", FIX_L40 | FIX_L120);
+krom_rsp!(rsp_vmadn, "VMADN/RSPCP2VMADN.N64", FIX_L40 | FIX_L120);
+krom_rsp!(rsp_vadd, "VADD/RSPCP2VADD.N64", FIX_L40 | FIX_L120);
+
+// ******************************************************************
+// NOT IMPLEMENTED
+// ******************************************************************
+// krom_rsp!(rsp_vlt, "VLT/RSPCP2VLT.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_lwv, "LOADSTORE/LWV/RSPCP2LWV.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_ltv, "LOADSTORE/LTV/RSPCP2LTV.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_sort, "SORT/RSPSORT.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vmudl, "VMUDL/RSPCP2VMUDL.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vcl, "VCL/RSPCP2VCL.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vrcp, "VRCP/RSPCP2VRCP.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(
+//     rsp_vextq,
+//     "RESERVED/VEXTQ/RSPCP2VEXTQ.N64",
+//     FIX_L40 | FIX_L120
+// );
+// krom_rsp!(
+//     rsp_vsubb,
+//     "RESERVED/VSUBB/RSPCP2VSUBB.N64",
+//     FIX_L40 | FIX_L120
+// );
+// krom_rsp!(rsp_vsut, "RESERVED/VSUT/RSPCP2VSUT.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vsac, "RESERVED/VSAC/RSPCP2VSAC.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(
+//     rsp_vextt,
+//     "RESERVED/VEXTT/RSPCP2VEXTT.N64",
+//     FIX_L40 | FIX_L120
+// );
+// krom_rsp!(
+//     rsp_vrndp,
+//     "RESERVED/VRNDP/RSPCP2VRNDP.N64",
+//     FIX_L40 | FIX_L120
+// );
+// krom_rsp!(
+//     rsp_vextn,
+//     "RESERVED/VEXTN/RSPCP2VEXTN.N64",
+//     FIX_L40 | FIX_L120
+// );
+// krom_rsp!(
+//     rsp_vmulq,
+//     "RESERVED/VMULQ/RSPCP2VMULQ.N64",
+//     FIX_L40 | FIX_L120
+// );
+// krom_rsp!(
+//     rsp_vaddb,
+//     "RESERVED/VADDB/RSPCP2VADDB.N64",
+//     FIX_L40 | FIX_L120
+// );
+// krom_rsp!(rsp_vrcpl, "VRCPL/RSPCP2VRCPL.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vcr, "VCR/RSPCP2VCR.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_veq, "VEQ/RSPCP2VEQ.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vmadl, "VMADL/RSPCP2VMADL.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vsub, "VSUB/RSPCP2VSUB.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(
+//     rsp_tmat,
+//     "LOADSTORE/TransposeMatrix/RSPTransposeMatrix.N64",
+//     FIX_L40 | FIX_L120
+// );
+// krom_rsp!(
+//     rsp_tmatvmov,
+//     "LOADSTORE/TransposeMatrixVMOV/RSPTransposeMatrixVMOV.N64",
+//     FIX_L40 | FIX_L120
+// );
+// krom_rsp!(rsp_vnop, "VNOP/RSPCP2VNOP.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vrcph, "VRCPH/RSPCP2VRCPH.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vsar, "VSAR/RSPCP2VSAR.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vabs, "VABS/RSPCP2VABS.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_vacc, "RESERVED/VACC/RSPCP2VACC.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_v056, "RESERVED/V056/RSPCP2V056.N64", FIX_L40 | FIX_L120);
+// krom_rsp!(rsp_v073, "RESERVED/V073/RSPCP2V073.N64", FIX_L40 | FIX_L120);
