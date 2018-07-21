@@ -8,12 +8,13 @@ use self::typenum::{
     U26, U27, U28, U29, U3, U30, U31, U4, U5, U6, U7, U8, U9, Unsigned,
 };
 use super::super::bus::MemInt;
-use super::{Color, ColorFormat};
+use super::{Color, ColorConverter, ColorFormat};
 use std::marker::PhantomData;
 
 pub struct GfxBuffer<'a, CF: ColorFormat + Sized, O: ByteOrder> {
     mem: &'a [u8],
     width: usize,
+    height: usize,
     pitch: usize,
     phantom: PhantomData<(CF, O)>,
 }
@@ -21,6 +22,7 @@ pub struct GfxBuffer<'a, CF: ColorFormat + Sized, O: ByteOrder> {
 pub struct GfxBufferMut<'a, CF: ColorFormat + Sized, O: ByteOrder> {
     mem: &'a mut [u8],
     width: usize,
+    height: usize,
     pitch: usize,
     phantom: PhantomData<(CF, O)>,
 }
@@ -68,16 +70,17 @@ impl<'a: 's, 's, CF: ColorFormat + Sized, O: ByteOrder> GfxBuffer<'a, CF, O> {
         Ok(Self {
             mem: &mem[..height * pitch],
             width,
+            height,
             pitch,
             phantom: PhantomData,
         })
     }
 
-    pub fn raw(&'s self) -> (&'s [u8], usize) {
+    pub fn raw(&'s self) -> (&'a [u8], usize) {
         (self.mem, self.pitch)
     }
 
-    pub fn line(&'s self, y: usize) -> GfxLine<'s, CF, O> {
+    pub fn line(&'s self, y: usize) -> GfxLine<'a, CF, O> {
         GfxLine {
             mem: &self.mem[y * self.pitch..][..self.width * CF::BITS::to_usize() / 8],
             phantom: PhantomData,
@@ -111,6 +114,7 @@ impl<'a: 's, 's, CF: ColorFormat + Sized, O: ByteOrder> GfxBufferMut<'a, CF, O> 
         Ok(Self {
             mem: &mut mem[..height * pitch],
             width,
+            height,
             pitch,
             phantom: PhantomData,
         })
@@ -313,6 +317,30 @@ where
 }
 
 impl<CF: ColorFormat + Sized, O: ByteOrder> OwnedGfxBuffer<CF, O> {
+    pub fn from_buf<CF2: ColorFormat + Sized, O2: ByteOrder>(
+        buf: &GfxBuffer<CF2, O2>,
+    ) -> OwnedGfxBuffer<CF, O> {
+        let (w, h) = (buf.width, buf.height);
+        let mut dst = OwnedGfxBuffer::<CF, O>::new(w, h);
+        for y in 0..h {
+            let src = buf.line(y);
+            let mut dstbuf = dst.buf_mut();
+            let mut dst = dstbuf.line(y);
+            for x in 0..w {
+                dst.set(x, src.get(x).cconv());
+            }
+        }
+        dst
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
     pub fn new(width: usize, height: usize) -> OwnedGfxBuffer<CF, O> {
         let mut v = Vec::new();
         v.resize(width * height * CF::BITS::to_usize() / 8, 0);

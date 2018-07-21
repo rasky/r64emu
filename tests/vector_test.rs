@@ -4,25 +4,18 @@ extern crate slog;
 extern crate byteorder;
 extern crate emu;
 extern crate r64emu;
-extern crate slog_term;
 
 use byteorder::BigEndian;
 use emu::bus::be::{Bus, DevPtr};
 use emu::sync::Subsystem;
 use r64emu::sp::{Sp, SpCop0};
 use r64emu::spvector::SpVector;
-use slog::Drain;
+use slog::Discard;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-fn logger() -> slog::Logger {
-    let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    slog::Logger::root(drain, o!())
-}
-
 fn make_sp() -> (DevPtr<Sp>, Rc<RefCell<Box<Bus>>>) {
-    let logger = logger();
+    let logger = slog::Logger::root(Discard, o!());
     let main_bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
     let sp = Sp::new(logger.new(o!()), main_bus.clone()).unwrap();
     {
