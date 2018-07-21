@@ -23,8 +23,10 @@ use std::io;
 
 static KROM_PATH: &'static str = "roms/tests";
 
-const ARTIFACT_L40: u32 = 0x1;
-const ARTIFACT_L120: u32 = 0x2;
+const FIX_L40: u32 = 0x1;
+const FIX_L120: u32 = 0x2;
+const FIX_L360: u32 = 0x4;
+const FIX_LINES: u32 = FIX_L40 | FIX_L120 | FIX_L360;
 
 fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let logger = slog::Logger::root(Discard, o!());
@@ -42,10 +44,13 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let mut screen = OwnedGfxBufferLE::<Rgb888>::new(640, 480);
     let mut y1 = 0;
     for y in 0..480 {
-        if (flags & ARTIFACT_L40) != 0 && y == 40 {
+        if (flags & FIX_L40) != 0 && y == 40 {
             y1 -= 1;
         }
-        if (flags & ARTIFACT_L120) != 0 && y == 120 {
+        if (flags & FIX_L120) != 0 && y == 120 {
+            y1 -= 1;
+        }
+        if (flags & FIX_L360) != 0 && y == 360 {
             y1 -= 1;
         }
 
@@ -149,7 +154,7 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
         }
     }
 
-    assert!(success);
+    assert!(success, "difference in output image");
     Ok(())
 }
 
@@ -166,33 +171,27 @@ macro_rules! krom_cpu {
         krom!($test_name, concat!("CPUTest/CPU/", $romfn), $flags);
     };
 }
+macro_rules! krom_fpu {
+    ($test_name:ident, $romfn:expr, $flags:expr) => {
+        krom!($test_name, concat!("CPUTest/CP1/", $romfn), $flags);
+    };
+}
+macro_rules! krom_rspcpu {
+    ($test_name:ident, $romfn:expr, $flags:expr) => {
+        krom!($test_name, concat!("RSPTest/CPU/", $romfn), $flags);
+    };
+}
 
-krom_cpu!(cpu_xor, "XOR/CPUXOR.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(
-    cpu_ddivu,
-    "DDIVU/CPUDDIVU.N64",
-    ARTIFACT_L40 | ARTIFACT_L120
-);
+krom_cpu!(cpu_xor, "XOR/CPUXOR.N64", FIX_LINES);
+krom_cpu!(cpu_ddivu, "DDIVU/CPUDDIVU.N64", FIX_LINES);
 krom_cpu!(cpu_dmultu, "DMULTU/CPUDMULTU.N64", 0);
-krom_cpu!(cpu_ddiv, "DDIV/CPUDDIV.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(cpu_div, "DIV/CPUDIV.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(cpu_nor, "NOR/CPUNOR.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(
-    cpu_dmult,
-    "DMULT/CPUDMULT.N64",
-    ARTIFACT_L40 | ARTIFACT_L120
-);
-krom_cpu!(
-    cpu_multu,
-    "MULTU/CPUMULTU.N64",
-    ARTIFACT_L40 | ARTIFACT_L120
-);
-krom_cpu!(cpu_subu, "SUBU/CPUSUBU.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(
-    cpu_daddu,
-    "DADDU/CPUDADDU.N64",
-    ARTIFACT_L40 | ARTIFACT_L120
-);
+krom_cpu!(cpu_ddiv, "DDIV/CPUDDIV.N64", FIX_LINES);
+krom_cpu!(cpu_div, "DIV/CPUDIV.N64", FIX_LINES);
+krom_cpu!(cpu_nor, "NOR/CPUNOR.N64", FIX_LINES);
+krom_cpu!(cpu_dmult, "DMULT/CPUDMULT.N64", FIX_LINES);
+krom_cpu!(cpu_multu, "MULTU/CPUMULTU.N64", FIX_LINES);
+krom_cpu!(cpu_subu, "SUBU/CPUSUBU.N64", FIX_LINES);
+krom_cpu!(cpu_daddu, "DADDU/CPUDADDU.N64", FIX_LINES);
 krom_cpu!(cpu_dsll32, "SHIFT/DSLL32/CPUDSLL32.N64", 0);
 krom_cpu!(cpu_dsrav, "SHIFT/DSRAV/CPUDSRAV.N64", 0);
 krom_cpu!(cpu_sllv, "SHIFT/SLLV/CPUSLLV.N64", 0);
@@ -208,23 +207,52 @@ krom_cpu!(cpu_dsrl, "SHIFT/DSRL/CPUDSRL.N64", 0);
 krom_cpu!(cpu_srl, "SHIFT/SRL/CPUSRL.N64", 0);
 krom_cpu!(cpu_dsllv, "SHIFT/DSLLV/CPUDSLLV.N64", 0);
 krom_cpu!(cpu_srlv, "SHIFT/SRLV/CPUSRLV.N64", 0);
-krom_cpu!(cpu_sub, "SUB/CPUSUB.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(cpu_dsub, "DSUB/CPUDSUB.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(cpu_and, "AND/CPUAND.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(cpu_add, "ADD/CPUADD.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(cpu_dadd, "DADD/CPUDADD.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(cpu_divu, "DIVU/CPUDIVU.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(cpu_or, "OR/CPUOR.N64", ARTIFACT_L40 | ARTIFACT_L120);
+krom_cpu!(cpu_sub, "SUB/CPUSUB.N64", FIX_LINES);
+krom_cpu!(cpu_dsub, "DSUB/CPUDSUB.N64", FIX_LINES);
+krom_cpu!(cpu_and, "AND/CPUAND.N64", FIX_LINES);
+krom_cpu!(cpu_add, "ADD/CPUADD.N64", FIX_LINES);
+krom_cpu!(cpu_dadd, "DADD/CPUDADD.N64", FIX_LINES);
+krom_cpu!(cpu_divu, "DIVU/CPUDIVU.N64", FIX_LINES);
+krom_cpu!(cpu_or, "OR/CPUOR.N64", FIX_LINES);
 krom_cpu!(cpu_sb, "LOADSTORE/SB/CPUSB.N64", 0);
 krom_cpu!(cpu_sw, "LOADSTORE/SW/CPUSW.N64", 0);
 krom_cpu!(cpu_lb, "LOADSTORE/LB/CPULB.N64", 0);
-krom_cpu!(cpu_lw, "LOADSTORE/LW/CPULW.N64", ARTIFACT_L120);
+krom_cpu!(cpu_lw, "LOADSTORE/LW/CPULW.N64", FIX_L120);
 krom_cpu!(cpu_sh, "LOADSTORE/SH/CPUSH.N64", 0);
 krom_cpu!(cpu_lh, "LOADSTORE/LH/CPULH.N64", 0);
-krom_cpu!(
-    cpu_dsubu,
-    "DSUBU/CPUDSUBU.N64",
-    ARTIFACT_L40 | ARTIFACT_L120
-);
-krom_cpu!(cpu_addu, "ADDU/CPUADDU.N64", ARTIFACT_L40 | ARTIFACT_L120);
-krom_cpu!(cpu_mult, "MULT/CPUMULT.N64", ARTIFACT_L40 | ARTIFACT_L120);
+krom_cpu!(cpu_dsubu, "DSUBU/CPUDSUBU.N64", FIX_LINES);
+krom_cpu!(cpu_addu, "ADDU/CPUADDU.N64", FIX_LINES);
+krom_cpu!(cpu_mult, "MULT/CPUMULT.N64", FIX_LINES);
+
+krom_fpu!(fpu_ceil, "CEIL/CP1CEIL.N64", FIX_LINES);
+krom_fpu!(fpu_div, "DIV/CP1DIV.N64", FIX_LINES);
+krom_fpu!(fpu_mul, "MUL/CP1MUL.N64", FIX_LINES);
+krom_fpu!(fpu_neg, "NEG/CP1NEG.N64", FIX_LINES);
+krom_fpu!(fpu_sqrt, "SQRT/CP1SQRT.N64", FIX_LINES);
+krom_fpu!(fpu_sub, "SUB/CP1SUB.N64", 0);
+krom_fpu!(fpu_add, "ADD/CP1ADD.N64", FIX_LINES);
+krom_fpu!(fpu_abs, "ABS/CP1ABS.N64", FIX_LINES);
+krom_fpu!(fpu_floor, "FLOOR/CP1FLOOR.N64", FIX_LINES);
+krom_fpu!(fpu_trun, "TRUNC/CP1TRUNC.N64", FIX_LINES);
+krom_fpu!(fpu_round, "ROUND/CP1ROUND.N64", FIX_LINES);
+krom_fpu!(fpu_ceq, "C/EQ/CP1CEQ.N64", FIX_LINES);
+krom_fpu!(fpu_colt, "C/OLT/CP1COLT.N64", FIX_LINES);
+krom_fpu!(fpu_cole, "C/OLE/CP1COLE.N64", FIX_LINES);
+krom_fpu!(fpu_cf, "C/F/CP1CF.N64", FIX_LINES);
+
+// ******************************************************************
+// NOT IMPLEMENTED
+// ******************************************************************
+// krom_fpu!(fpu_cun, "C/UN/CP1CUN.N64", 0);
+// krom_fpu!(fpu_cnge, "C/NGE/CP1CNGE.N64", 0);
+// krom_fpu!(fpu_cngl, "C/NGL/CP1CNGL.N64", 0);
+// krom_fpu!(fpu_cseq, "C/SEQ/CP1CSEQ.N64", 0);
+// krom_fpu!(fpu_cle, "C/LE/CP1CLE.N64", FIX_L40 | FIX_L120 | FIX_L360);
+// krom_fpu!(fpu_cult, "C/ULT/CP1CULT.N64", 0);
+// krom_fpu!(fpu_csf, "C/SF/CP1CSF.N64", 0);
+// krom_fpu!(fpu_cngle, "C/NGLE/CP1CNGLE.N64", 0);
+// krom_fpu!(fpu_cngt, "C/NGT/CP1CNGT.N64", 0);
+// krom_fpu!(fpu_clt, "C/LT/CP1CLT.N64", 0);
+// krom_fpu!(fpu_cule, "C/ULE/CP1CULE.N64", 0);
+// krom_fpu!(fpu_cueq, "C/UEQ/CP1CUEQ.N64", 0);
+// krom_fpu!(fpu_cvt, "CVT/CP1CVT.N64", FIX_L40 | FIX_L120);
