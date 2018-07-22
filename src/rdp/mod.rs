@@ -1,15 +1,19 @@
+extern crate byteorder;
 extern crate emu;
+use byteorder::{ByteOrder, LittleEndian};
 use emu::gfx::{Color, ColorConverter, ColorFormat, Rgba8888};
+use std::arch::x86_64::*;
 use std::simd::*;
 
 type MultiColor = u16x8;
 
-pub(crate) trait MColor {
+pub(crate) trait MColor: Sized + Copy {
     fn from_color<CF: ColorFormat>(c: Color<CF>) -> Self;
     fn get_color<CF: ColorFormat>(&self, idx: usize) -> Color<CF>;
     fn map_alpha(self, f: fn(u16) -> u16) -> Self;
     fn replace_alpha(self, alpha: Self) -> Self;
     fn replicate_alpha(self) -> Self;
+    fn overflown(self) -> bool;
 }
 
 impl MColor for MultiColor {
@@ -20,20 +24,26 @@ impl MColor for MultiColor {
         )
     }
 
+    fn overflown(self) -> bool {
+        (self & MultiColor::splat(0xFF)) != self
+    }
+
     fn get_color<CF: ColorFormat>(&self, idx: usize) -> Color<CF> {
+        // Rust does not expose a _mm_pack* functions through the uAAxBB SIMD
+        // structs, so there is no way to convert from u16x8 to u8x16 without
+        // using scalar code. The following code is able to keep it fully
+        // vectorized, and generate a final "MOVD XMM" instruction to
+        // extract the required color index.
+        let c = unsafe {
+            let c = __m128i::from_bits(*self);
+            let c = _mm_packus_epi16(c, _mm_setzero_si128());
+            u8x16::from_bits(c)
+        };
+        let mut cbuf: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        c.store_unaligned(&mut cbuf);
         match idx {
-            0 => Color::<Rgba8888>::new_clamped(
-                self.extract(0),
-                self.extract(1),
-                self.extract(2),
-                self.extract(3),
-            ).cconv(),
-            1 => Color::<Rgba8888>::new_clamped(
-                self.extract(4),
-                self.extract(5),
-                self.extract(6),
-                self.extract(7),
-            ).cconv(),
+            0 => Color::<Rgba8888>::from_bits(LittleEndian::read_u32(&cbuf[0..4])).cconv(),
+            1 => Color::<Rgba8888>::from_bits(LittleEndian::read_u32(&cbuf[4..8])).cconv(),
             _ => panic!("invalid MultiColor index"),
         }
     }

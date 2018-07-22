@@ -48,12 +48,18 @@ pub fn fill_rect_pp<'a, 'b, CF1, CF2, FP1, O1>(
     let color = MultiColor::from_color(color);
     let black = MultiColor::from_color(Color::<Rgba8888>::new_clamped(0, 0, 0, 0xff));
 
-    for dy in dr.c0.y.floor()..=dr.c1.y.floor() {
+    for dy in dr.c0.y.floor()..dr.c1.y.floor() {
         let mut dst = dst.line(dy.to_usize().unwrap());
 
-        for dx in dr.c0.x.floor()..=dr.c1.x.floor() {
+        for dx in dr.c0.x.floor()..dr.c1.x.floor() {
             let didx = dx.to_usize().unwrap();
             let cres = pp.calc_pixels(color, black);
+            if cres.overflown() {
+                panic!(format!(
+                    "pixel pipeline returned overflown pixel: {:?}",
+                    cres
+                ));
+            }
             dst.set(didx, cres.get_color(0));
         }
     }
