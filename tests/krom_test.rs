@@ -5,7 +5,6 @@ extern crate base64;
 extern crate emu;
 extern crate failure;
 extern crate image;
-extern crate img_hash;
 extern crate r64emu;
 extern crate slog_term;
 
@@ -13,8 +12,7 @@ use emu::gfx::{BufferLineGetter, BufferLineSetter, OwnedGfxBufferLE, Rgb888, Rgb
 use emu::hw::OutputProducer;
 use failure::Error;
 use image::png::PNGEncoder;
-use image::{ColorType, ImageBuffer, Pixel, RgbaImage};
-use img_hash::{HashType, ImageHash};
+use image::{ColorType, Pixel, RgbaImage};
 use r64emu::N64;
 use slog::Discard;
 use std::env;
@@ -25,12 +23,20 @@ static KROM_PATH: &'static str = "roms/tests";
 
 const FIX_L40: u32 = 0x1;
 const FIX_L120: u32 = 0x2;
-const FIX_L360: u32 = 0x4;
+const FIX_L160: u32 = 0x4;
+const FIX_L360: u32 = 0x8;
 const FIX_LINES: u32 = FIX_L40 | FIX_L120 | FIX_L360;
-const FPS10: u32 = 0x8;
+const FPS10: u32 = 0x10;
+const RES_320: u32 = 0x20;
+const APPROX: u32 = 0x40;
 
 fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let logger = slog::Logger::root(Discard, o!());
+    let (scale, resw, resh) = if flags & RES_320 != 0 {
+        (2, 320, 240)
+    } else {
+        (1, 640, 480)
+    };
 
     // Create N64 object and emulate 5 frames
     let mut n64 = N64::new(logger, romfn).unwrap();
@@ -44,13 +50,16 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
 
     // Insert artifacts as present in krom's reference files
     // Line 40 and 120 sometimes are duplicated
-    let mut screen = OwnedGfxBufferLE::<Rgb888>::new(640, 480);
+    let mut screen = OwnedGfxBufferLE::<Rgb888>::new(resw, resh);
     let mut y1 = 0;
-    for y in 0..480 {
+    for y in 0..resh {
         if (flags & FIX_L40) != 0 && y == 40 {
             y1 -= 1;
         }
-        if (flags & FIX_L120) != 0 && y == 120 {
+        if (flags & FIX_L120) != 0 && y == 119 {
+            y1 -= 1;
+        }
+        if (flags & FIX_L160) != 0 && y == 160 {
             y1 -= 1;
         }
         if (flags & FIX_L360) != 0 && y == 360 {
@@ -58,11 +67,11 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
         }
 
         let mut screen1_buf = screen1.buf_mut();
-        let src = screen1_buf.line(y1);
+        let src = screen1_buf.line(y1 * scale);
         let mut screen_buf = screen.buf_mut();
         let mut dst = screen_buf.line(y);
-        for x in 0..640 {
-            dst.set(x, src.get(x));
+        for x in 0..resw {
+            dst.set(x, src.get(x * scale));
         }
 
         y1 += 1;
@@ -72,7 +81,7 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let expfn: String = romfn[..romfn.len() - 4].into();
     let expfn = format!("{}{}", expfn, ".png");
     let expected: RgbaImage = image::open(expfn)?.to_rgba();
-    if expected.dimensions() != (640, 480) {
+    if expected.dimensions() != (resw as u32, resh as u32) {
         panic!("invalid reference image size: {:?}", expected.dimensions());
     }
 
@@ -80,20 +89,26 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
 
     // Measure difference
     {
-        let screen_buf = screen.buf();
-        let (sbuf, _pitch) = screen_buf.raw();
-        let screen: RgbaImage =
-            ImageBuffer::from_raw(screen.width() as u32, screen.height() as u32, sbuf.to_vec())
-                .unwrap();
-
-        let hash_exp = ImageHash::hash(&expected, 32, HashType::DoubleGradient);
-        let hash_fnd = ImageHash::hash(&screen, 32, HashType::DoubleGradient);
-
-        // FIXME: if we keep using 0.0 as ratio, we could as well not use img_hash and simply
-        // go pixel by pixel.
-        if hash_fnd.dist_ratio(&hash_exp) != 0.0 {
+        let mut rmsd = 0f32;
+        for y in 0..resh {
+            let screen = screen.buf();
+            let foundline = screen.line(y);
+            for x in 0..resw {
+                let cf = foundline.get(x).components();
+                let ce = expected.get_pixel(x as u32, y as u32).channels4();
+                let pix1 = (cf.0 as i64, cf.1 as i64, cf.2 as i64);
+                let pix2 = (ce.0 as i64, ce.1 as i64, ce.2 as i64);
+                let diff = (pix1.0 - pix2.0) * (pix1.0 - pix2.0)
+                    + (pix1.1 - pix2.1) * (pix1.1 - pix2.1)
+                    + (pix1.2 - pix2.2) * (pix1.2 - pix2.2);
+                rmsd += (diff as f32).sqrt();
+            }
+        }
+        let rmsd = ((rmsd as f32) / ((resw * resh) as f32)).sqrt();
+        let threshold = if flags & APPROX != 0 { 5.0 } else { 0.0 };
+        if rmsd > threshold {
             success = false;
-            println!("% Difference: {}", hash_fnd.dist_ratio(&hash_exp));
+            println!("Difference (RMSD): {}", rmsd);
         }
     }
 
@@ -103,7 +118,7 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
         let mut screen2_buf = screen2.buf_mut();
         let (raw, _pitch) = screen2_buf.raw();
         let mut pngout = io::Cursor::new(Vec::new());
-        PNGEncoder::new(&mut pngout).encode(&raw, 640, 480, ColorType::RGBA(8))?;
+        PNGEncoder::new(&mut pngout).encode(&raw, resw as u32, resh as u32, ColorType::RGBA(8))?;
         let pngout = pngout.into_inner();
         fs::write("failed-test.png", &pngout)?;
 
@@ -121,7 +136,12 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     // Dump expected image
     if !success {
         let mut pngout = io::Cursor::new(Vec::new());
-        PNGEncoder::new(&mut pngout).encode(&expected, 640, 480, ColorType::RGBA(8))?;
+        PNGEncoder::new(&mut pngout).encode(
+            &expected,
+            resw as u32,
+            resh as u32,
+            ColorType::RGBA(8),
+        )?;
         let pngout = pngout.into_inner();
 
         if env::var_os("TERM_PROGRAM")
@@ -134,26 +154,6 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
                 base64::encode(&pngout)
             );
             println!();
-        }
-    }
-
-    // Pixel by pixel difference
-    if !success && false {
-        for y in 0..480 {
-            let screen = screen.buf();
-            let foundline = screen.line(y);
-            for x in 0..640 {
-                let cf = foundline.get(x).components();
-                let ce = expected.get_pixel(x as u32, y as u32).channels4();
-                let pix1 = (cf.0 as u8, cf.1 as u8, cf.2 as u8);
-                let pix2 = (ce.0, ce.1, ce.2);
-                if pix1 != pix2 {
-                    println!(
-                        "Difference at ({},{}): exp:{:?} found:{:?}",
-                        x, y, pix2, pix1
-                    );
-                }
-            }
         }
     }
 
@@ -187,6 +187,16 @@ macro_rules! krom_rspcpu {
 macro_rules! krom_rsp {
     ($test_name:ident, $romfn:expr, $flags:expr) => {
         krom!($test_name, concat!("RSPTest/CP2/", $romfn), $flags | FPS10);
+    };
+}
+macro_rules! krom_video {
+    ($test_name:ident, $romfn:expr, $flags:expr) => {
+        krom!($test_name, concat!("Video/", $romfn), $flags);
+    };
+}
+macro_rules! krom_rdp {
+    ($test_name:ident, $romfn:expr, $flags:expr) => {
+        krom!($test_name, concat!("RDP/", $romfn), $flags);
     };
 }
 
@@ -358,3 +368,33 @@ krom_rsp!(rsp_vadd, "VADD/RSPCP2VADD.N64", FIX_L40 | FIX_L120);
 // krom_rsp!(rsp_vacc, "RESERVED/VACC/RSPCP2VACC.N64", FIX_L40 | FIX_L120);
 // krom_rsp!(rsp_v056, "RESERVED/V056/RSPCP2V056.N64", FIX_L40 | FIX_L120);
 // krom_rsp!(rsp_v073, "RESERVED/V073/RSPCP2V073.N64", FIX_L40 | FIX_L120);
+
+krom_video!(
+    video_i4cpu,
+    "I4Decode/CPU/CPUI4Decode.N64",
+    RES_320 | APPROX
+);
+
+krom_video!(
+    video_i8cpu,
+    "I8Decode/CPU/CPUI8Decode.N64",
+    RES_320 | APPROX
+);
+
+krom_video!(
+    video_i8rdp,
+    "I8Decode/RDP/RDPI8Decode.N64",
+    RES_320 | APPROX
+);
+
+krom_rdp!(
+    rdp_32bpp_fillrect_320,
+    "32BPP/Rectangle/FillRectangle/FillRectangle320x240/FillRectangle32BPP320X240.N64",
+    RES_320 | FIX_LINES | FIX_L160
+);
+
+krom_rdp!(
+    rdp_32bpp_fillrect_320_1cycle,
+    "32BPP/Rectangle/FillRectangle/Cycle1FillRectangle320x240/Cycle1FillRectangle32BPP320X240.N64",
+    RES_320 | FIX_LINES
+);
