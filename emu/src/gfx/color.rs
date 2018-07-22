@@ -355,6 +355,13 @@ mod tests {
     }
 
     #[test]
+    fn greyscale() {
+        let c = Color::<I4>::new_clamped(0x4, 0, 0, 0);
+        let c2: Color<Rgba8888> = c.cconv();
+        assert_eq!(Color::<Rgba8888>::new_clamped(0x44, 0x44, 0x44, 0xff), c2);
+    }
+
+    #[test]
     fn alpha() {
         assert_eq!(Color::<Rgb555>::new(0x10, 0x10, 0x10, 0).is_some(), true);
         assert_eq!(Color::<Rgb555>::new(0x10, 0x10, 0x10, 1).is_none(), true);
