@@ -9,6 +9,8 @@ extern crate emu_derive;
 extern crate byteorder;
 extern crate emu;
 
+extern crate packed_simd;
+
 #[macro_use]
 extern crate bitflags;
 

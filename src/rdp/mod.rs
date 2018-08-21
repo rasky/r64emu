@@ -2,8 +2,8 @@ extern crate byteorder;
 extern crate emu;
 use byteorder::{ByteOrder, LittleEndian};
 use emu::gfx::{Color, ColorConverter, ColorFormat, Rgba8888};
+use packed_simd::*;
 use std::arch::x86_64::*;
-use std::simd::*;
 
 type MultiColor = u16x8;
 
@@ -40,7 +40,7 @@ impl MColor for MultiColor {
             u8x16::from_bits(c)
         };
         let mut cbuf: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        c.store_unaligned(&mut cbuf);
+        c.write_to_slice_unaligned(&mut cbuf);
         match idx {
             0 => Color::<Rgba8888>::from_bits(LittleEndian::read_u32(&cbuf[0..4])).cconv(),
             1 => Color::<Rgba8888>::from_bits(LittleEndian::read_u32(&cbuf[4..8])).cconv(),

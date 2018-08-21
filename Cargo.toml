@@ -27,5 +27,10 @@ failure = "0.1.1"
 version = "1"
 features = ["i128"]
 
+[dependencies.packed_simd]
+git = "https://github.com/rust-lang-nursery/packed_simd"
+features = ["default", "into_bits", "coresimd"]
+
+
 [profile.dev]
 overflow-checks = false
