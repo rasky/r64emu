@@ -65,6 +65,7 @@ impl N64 {
             // Configure main bus
             let mut bus = bus.borrow_mut();
             bus.map_device(0x0000_0000, &ri, 0)?;
+            bus.map_device(0x03F0_0000, &ri, 1)?;
             bus.map_device(0x0400_0000, &sp, 0)?;
             bus.map_device(0x0404_0000, &sp, 1)?;
             bus.map_device(0x0408_0000, &sp, 2)?;
@@ -72,7 +73,7 @@ impl N64 {
             bus.map_device(0x0440_0000, &vi, 0)?;
             bus.map_device(0x0450_0000, &ai, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
-            bus.map_device(0x0470_0000, &ri, 1)?;
+            bus.map_device(0x0470_0000, &ri, 2)?;
             bus.map_device(0x0480_0000, &si, 0)?;
             bus.map_device(0x1000_0000, &cart, 0)?;
             bus.map_device(0x1FC0_0000, &pi, 1)?;
