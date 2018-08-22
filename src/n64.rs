@@ -70,6 +70,7 @@ impl N64 {
             bus.map_device(0x0404_0000, &sp, 1)?;
             bus.map_device(0x0408_0000, &sp, 2)?;
             bus.map_device(0x0410_0000, &dp, 0)?;
+            bus.map_device(0x0430_0000, &cpu.borrow().regs_mi, 0)?;
             bus.map_device(0x0440_0000, &vi, 0)?;
             bus.map_device(0x0450_0000, &ai, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
