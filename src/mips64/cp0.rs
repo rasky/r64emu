@@ -82,16 +82,14 @@ impl Cop for Cp0 {
                 match op.rd() {
                     12 => {
                         op.cpu.regs[op.rt()] = op.cop0.reg_status;
-                        op.cpu.tight_exit = true;
                     }
                     13 => {
                         op.cpu.regs[op.rt()] = op.cop0.reg_cause;
-                        op.cpu.tight_exit = true;
                     }
                     _ => warn!(
                         op.cop0.logger,
                         "unimplemented COP0 read32";
-                        o!("reg" => op.rd())
+                        "reg" => op.rd()
                     ),
                 }
             }
@@ -110,7 +108,7 @@ impl Cop for Cp0 {
                     _ => warn!(
                         op.cop0.logger,
                         "unimplemented COP0 write32";
-                        o!("reg" => op.rd())
+                        "reg" => op.rd()
                     ),
                 }
             }
