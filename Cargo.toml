@@ -16,7 +16,9 @@ crc = "^1.0.0"
 lazy_static = "1.0"
 bitflags = "1.0"
 bit_field = "0.9.0"
+bitfield = "0.13.0"
 enum-map = "0.4.0"
+enum_primitive = "0.1.1"
 
 [dev-dependencies]
 image = "0.13"
