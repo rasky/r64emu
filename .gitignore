@@ -3,3 +3,5 @@
 roms
 bios
 *.png
+emu/emu-derive/target
+emu/target
