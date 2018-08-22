@@ -33,6 +33,7 @@ pub mod cartridge;
 pub mod dp;
 pub mod mips64;
 pub mod pi;
+pub mod ri;
 pub mod si;
 pub mod sp;
 pub mod spvector;

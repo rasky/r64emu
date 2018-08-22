@@ -12,6 +12,7 @@ use super::dp::Dp;
 use super::errors::*;
 use super::mips64;
 use super::pi::Pi;
+use super::ri::Ri;
 use super::si::Si;
 use super::sp::Sp;
 use super::vi::Vi;
@@ -36,6 +37,7 @@ pub struct N64 {
     dp: DevPtr<Dp>,
     vi: DevPtr<Vi>,
     ai: DevPtr<Ai>,
+    ri: DevPtr<Ri>,
 }
 
 impl N64 {
@@ -56,6 +58,7 @@ impl N64 {
         let dp = DevPtr::new(Dp::new(logger.new(o!()), bus.clone()));
         let vi = DevPtr::new(Vi::new(logger.new(o!()), bus.clone()));
         let ai = DevPtr::new(Ai::new(logger.new(o!())));
+        let ri = DevPtr::new(Ri::new(logger.new(o!())));
 
         {
             // Install CPU coprocessors
@@ -77,6 +80,7 @@ impl N64 {
             bus.map_device(0x0440_0000, &vi, 0)?;
             bus.map_device(0x0450_0000, &ai, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
+            bus.map_device(0x0470_0000, &ri, 0)?;
             bus.map_device(0x0480_0000, &si, 0)?;
             bus.map_device(0x1000_0000, &cart, 0)?;
             bus.map_device(0x1FC0_0000, &pi, 1)?;
@@ -109,6 +113,7 @@ impl N64 {
             dp,
             vi,
             ai,
+            ri,
         });
     }
 
