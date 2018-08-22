@@ -12,15 +12,10 @@ use super::dp::Dp;
 use super::errors::*;
 use super::mips64;
 use super::pi::Pi;
+use super::ri::Ri;
 use super::si::Si;
 use super::sp::Sp;
 use super::vi::Vi;
-
-#[derive(Default, DeviceBE)]
-struct Memory {
-    #[mem(size = 4194304, offset = 0x0000_0000, vsize = 0x03F0_0000)]
-    rdram: Mem,
-}
 
 pub struct N64 {
     logger: slog::Logger,
@@ -29,13 +24,13 @@ pub struct N64 {
     cpu: Rc<RefCell<Box<mips64::Cpu>>>,
     cart: DevPtr<Cartridge>,
 
-    mem: DevPtr<Memory>,
     pi: DevPtr<Pi>,
     si: DevPtr<Si>,
     sp: DevPtr<Sp>,
     dp: DevPtr<Dp>,
     vi: DevPtr<Vi>,
     ai: DevPtr<Ai>,
+    ri: DevPtr<Ri>,
 }
 
 impl N64 {
@@ -46,7 +41,6 @@ impl N64 {
             bus.clone(),
         ))));
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
-        let mem = DevPtr::new(Memory::default());
         let pi = DevPtr::new(
             Pi::new(logger.new(o!()), bus.clone(), "bios/pifdata.bin")
                 .chain_err(|| "cannot open BIOS file")?,
@@ -56,6 +50,7 @@ impl N64 {
         let dp = DevPtr::new(Dp::new(logger.new(o!()), bus.clone()));
         let vi = DevPtr::new(Vi::new(logger.new(o!()), bus.clone()));
         let ai = DevPtr::new(Ai::new(logger.new(o!())));
+        let ri = DevPtr::new(Ri::new(logger.new(o!())));
 
         {
             // Install CPU coprocessors
@@ -69,7 +64,8 @@ impl N64 {
         {
             // Configure main bus
             let mut bus = bus.borrow_mut();
-            bus.map_device(0x0000_0000, &mem, 0)?;
+            bus.map_device(0x0000_0000, &ri, 0)?;
+            bus.map_device(0x03F0_0000, &ri, 1)?;
             bus.map_device(0x0400_0000, &sp, 0)?;
             bus.map_device(0x0404_0000, &sp, 1)?;
             bus.map_device(0x0408_0000, &sp, 2)?;
@@ -77,6 +73,7 @@ impl N64 {
             bus.map_device(0x0440_0000, &vi, 0)?;
             bus.map_device(0x0450_0000, &ai, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
+            bus.map_device(0x0470_0000, &ri, 2)?;
             bus.map_device(0x0480_0000, &si, 0)?;
             bus.map_device(0x1000_0000, &cart, 0)?;
             bus.map_device(0x1FC0_0000, &pi, 1)?;
@@ -102,13 +99,13 @@ impl N64 {
             cpu,
             cart,
             bus,
-            mem,
             pi,
             si,
             sp,
             dp,
             vi,
             ai,
+            ri,
         });
     }
 

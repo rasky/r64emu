@@ -77,8 +77,24 @@ impl Cop for Cp0 {
             cop0: self,
         };
         match op.func() {
+            0x00 => {
+                // MFC0
+                match op.rd() {
+                    12 => {
+                        op.cpu.regs[op.rt()] = op.cop0.reg_status;
+                    }
+                    13 => {
+                        op.cpu.regs[op.rt()] = op.cop0.reg_cause;
+                    }
+                    _ => warn!(
+                        op.cop0.logger,
+                        "unimplemented COP0 read32";
+                        "reg" => op.rd()
+                    ),
+                }
+            }
             0x04 => {
-                // write32
+                // MTC0 - write32
                 let sel = op.sel();
                 match op.rd() {
                     12 if sel == 0 => {
@@ -92,7 +108,7 @@ impl Cop for Cp0 {
                     _ => warn!(
                         op.cop0.logger,
                         "unimplemented COP0 write32";
-                        o!("reg" => op.rd())
+                        "reg" => op.rd()
                     ),
                 }
             }

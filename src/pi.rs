@@ -19,20 +19,59 @@ pub struct Pi {
     #[reg(bank = 1, offset = 0x7FC, wcb, rcb)]
     magic: Reg32,
 
+    // [23:0] starting RDRAM address
     #[reg(bank = 0, offset = 0x00, rwmask = 0x00FF_FFFF)]
     dma_ram_addr: Reg32,
 
+    // [31:0] starting AD16 address
     #[reg(bank = 0, offset = 0x04)]
     dma_rom_addr: Reg32,
 
+    // [23:0] read data length
     #[reg(bank = 0, offset = 0x08, rwmask = 0x00FF_FFFF, wcb)]
     dma_rd_len: Reg32,
 
+    // [23:0] write data length
     #[reg(bank = 0, offset = 0x0C, rwmask = 0x00FF_FFFF, wcb)]
     dma_wr_len: Reg32,
 
+    // (R) [0] DMA busy             (W): [0] reset controller
+    //     [1] IO busy                       (and abort current op)
+    //     [2] error [1] clear intr
     #[reg(bank = 0, offset = 0x10, rwmask = 0, wcb)]
     dma_status: Reg32,
+
+    // [7:0] domain 1 device latency
+    #[reg(bank = 0, offset = 0x0014, rwmask = 0)]
+    dom1_latency: Reg32,
+
+    // [7:0] domain 1 device R/W strobe pulse width
+    #[reg(bank = 0, offset = 0x0018, rwmask = 0)]
+    dom1_pulse_width: Reg32,
+
+    // [3:0] domain 1 device page size
+    #[reg(bank = 0, offset = 0x001C, rwmask = 0xF)]
+    dom1_page_size: Reg32,
+
+    // [1:0] domain 1 device R/W release duration
+    #[reg(bank = 0, offset = 0x0020, rwmask = 0x3)]
+    dom1_release: Reg32,
+
+    // [7:0] domain 2 device latency
+    #[reg(bank = 0, offset = 0x0024, rwmask = 0xFF)]
+    dom2_latency: Reg32,
+
+    // [7:0] domain 2 device R/W strobe pulse width
+    #[reg(bank = 0, offset = 0x0028, rwmask = 0xFF)]
+    dom2_pulse_width: Reg32,
+
+    // [3:0] domain 2 device page size
+    #[reg(bank = 0, offset = 0x002C, rwmask = 0xF)]
+    dom2_page_size: Reg32,
+
+    // [1:0] domain 2 device R/W release duration
+    #[reg(bank = 0, offset = 0x0030, rwmask = 0x3)]
+    dom2_release: Reg32,
 
     logger: slog::Logger,
     bus: Rc<RefCell<Box<Bus>>>,
@@ -54,6 +93,14 @@ impl Pi {
             dma_rd_len: Reg32::default(),
             dma_wr_len: Reg32::default(),
             dma_status: Reg32::default(),
+            dom1_latency: Reg32::default(),
+            dom1_pulse_width: Reg32::default(),
+            dom1_page_size: Reg32::default(),
+            dom1_release: Reg32::default(),
+            dom2_latency: Reg32::default(),
+            dom2_pulse_width: Reg32::default(),
+            dom2_page_size: Reg32::default(),
+            dom2_release: Reg32::default(),
         })
     }
 
