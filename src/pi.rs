@@ -1,5 +1,6 @@
 extern crate emu;
 extern crate slog;
+use bit_field::BitField;
 use emu::bus::be::{Bus, Mem, MemFlags, Reg32};
 use emu::int::Numerics;
 use errors::*;
@@ -37,8 +38,8 @@ pub struct Pi {
 
     // (R) [0] DMA busy             (W): [0] reset controller
     //     [1] IO busy                       (and abort current op)
-    //     [2] error [1] clear intr
-    #[reg(bank = 0, offset = 0x10, rwmask = 0, wcb)]
+    //     [2] error                     [1] clear intr
+    #[reg(bank = 0, offset = 0x10, rwmask = 0, wcb, rcb)]
     dma_status: Reg32,
 
     // [7:0] domain 1 device latency
@@ -82,7 +83,7 @@ impl Pi {
         let mut contents = vec![];
         File::open(pifrom)?.read_to_end(&mut contents)?;
 
-        Ok(Pi {
+        let pi = Pi {
             logger,
             bus,
             rom: Mem::from_buffer(contents, MemFlags::READACCESS),
@@ -101,7 +102,12 @@ impl Pi {
             dom2_pulse_width: Reg32::default(),
             dom2_page_size: Reg32::default(),
             dom2_release: Reg32::default(),
-        })
+        };
+
+        // TODO: is this correct?
+        pi.dma_status.set(0x3);
+
+        Ok(pi)
     }
 
     fn cb_read_magic(&self, val: u32) -> u32 {
@@ -116,17 +122,35 @@ impl Pi {
         }
     }
 
-    fn cb_write_dma_status(&mut self, _old: u32, new: u32) {
+    fn cb_write_dma_status(&mut self, old: u32, new: u32) {
         info!(self.logger, "write dma status"; o!("val" => format!("{:x}", new)));
+
+        // reset PI
+        if new.get_bit(0) {
+            self.dma_status.set(0)
+        }
+
+        // clear interrupt
+        if new.get_bit(1) {
+            // TODO:
+            warn!(self.logger, "unimplemented: clear PI interrupt");
+        }
+    }
+
+    fn cb_read_dma_status(&self, val: u32) -> u32 {
+        let val = val.get_bits(0..3);
+        info!(self.logger, "read dma status"; "val" => format!("{:x}", val));
+        val
     }
 
     fn cb_write_dma_wr_len(&mut self, _old: u32, val: u32) {
         let mut raddr = self.dma_rom_addr.get();
         let mut waddr = self.dma_ram_addr.get();
-        info!(self.logger, "DMA xfer"; o!(
-            "src" => raddr.hex(),
-            "dst" => waddr.hex(),
-            "len" => val+1));
+        info!(self.logger, "DMA xfer (write)";
+              "src" => raddr.hex(),
+              "dst" => waddr.hex(),
+              "len" => val+1
+        );
 
         let bus = self.bus.borrow();
         let mut i = 0;
@@ -138,9 +162,30 @@ impl Pi {
         }
         self.dma_rom_addr.set(raddr);
         self.dma_ram_addr.set(waddr);
+
+        // TODO: signal rcp interrupt
     }
 
-    fn cb_write_dma_rd_len(&mut self, _old: u32, _new: u32) {
-        unimplemented!()
+    fn cb_write_dma_rd_len(&mut self, _old: u32, val: u32) {
+        let mut raddr = self.dma_ram_addr.get();
+        let mut waddr = self.dma_rom_addr.get();
+        info!(self.logger, "DMA xfer (read)";
+              "src" => raddr.hex(),
+              "dst" => waddr.hex(),
+              "len" => val+1
+        );
+
+        let bus = self.bus.borrow();
+        let mut i = 0;
+        while i < val + 1 {
+            bus.write::<u32>(waddr, bus.read::<u32>(raddr));
+            raddr = raddr + 4;
+            waddr = waddr + 4;
+            i += 4;
+        }
+        self.dma_rom_addr.set(raddr);
+        self.dma_ram_addr.set(waddr);
+
+        // TODO: signal rcp interrupt
     }
 }

@@ -216,6 +216,7 @@ impl Cop for Fpu {
         let fmt = (opcode >> 21) & 0x1F;
         match fmt {
             8 => {
+                // TODO: what fmt version is this?
                 let tgt = cpu.pc + ((opcode & 0xffff) as i16 as i32 as u32) * 4;
                 let cc = ((opcode >> 18) & 3) as usize;
                 let nd = opcode & (1 << 17) != 0;
@@ -225,7 +226,10 @@ impl Cop for Fpu {
             }
             16 => self.fop::<f32>(cpu, opcode),
             17 => self.fop::<f64>(cpu, opcode),
-            _ => panic!("unimplemented COP1 fmt: fmt={:x?}", fmt),
+            20 => panic!("unimplemented COP1 fmt: 20 => W"),
+            21 => panic!("unimplemented COP1 fmt: 21 => L"),
+            18 | 19 | 22...31 => warn!(self.logger, "reserved COP1 fmt:"; "fmt" => fmt),
+            _ => warn!(self.logger, "unknown COP1 fmt:"; "fmt" => fmt),
         }
     }
 }

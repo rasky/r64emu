@@ -1,9 +1,10 @@
 extern crate emu;
 
-use self::emu::bus::be::{Bus, MemIoR};
+use self::emu::bus::be::{Bus, DevPtr, MemIoR, Reg32};
 use self::emu::bus::MemInt;
 use self::emu::int::Numerics;
 use self::emu::sync;
+use bit_field::BitField;
 use slog;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -88,7 +89,177 @@ pub struct CpuContext {
     lines: Lines,
 }
 
+// TODO: implement read/write settings as indicated by comments below.
+#[derive(DeviceBE)]
+pub struct RegsMI {
+    // (W): [6:0] init length        (R): [6:0] init length
+    //      [7] clear init mode           [7] init mode
+    //      [8] set init mode             [8] ebus test mode
+    //      [9/10] clr/set ebus test mode [9] RDRAM reg mode
+    //      [11] clear DP interrupt
+    //      [12] clear RDRAM reg
+    //      [13] set RDRAM reg mode
+    #[reg(bank = 0, offset = 0x00, rwmask = 0x3FFF, wcb, rcb)]
+    init_mode: Reg32,
+
+    // (R): [7:0] io
+    //      [15:8] rac
+    //      [23:16] rdp
+    //      [31:24] rsp
+    #[reg(bank = 0, offset = 0x04, rwmask = 0, readonly)]
+    version: Reg32,
+
+    // (R): [0] SP intr
+    //      [1] SI intr
+    //      [2] AI intr
+    //      [3] VI intr
+    //      [4] PI intr
+    //      [5] DP intr
+    #[reg(bank = 0, offset = 0x08, rwmask = 0x3F, readonly)]
+    interrupt: Reg32,
+
+    // (W): [0/1] clear/set SP mask  (R): [0] SP intr mask
+    //      [2/3] clear/set SI mask       [1] SI intr mask
+    //      [4/5] clear/set AI mask       [2] AI intr mask
+    //      [6/7] clear/set VI mask       [3] VI intr mask
+    //      [8/9] clear/set PI mask       [4] PI intr mask
+    //      [10/11] clear/set DP mask     [5] DP intr mask
+    #[reg(bank = 0, offset = 0x0C, rwmask = 0xFFF, wcb, rcb)]
+    interrupt_mask: Reg32,
+}
+
+impl Default for RegsMI {
+    fn default() -> Self {
+        let mi = RegsMI {
+            init_mode: Reg32::default(),
+            version: Reg32::default(),
+            interrupt: Reg32::default(),
+            interrupt_mask: Reg32::default(),
+        };
+
+        // defaults from cen64
+        mi.version.set(0x01010101);
+        mi.init_mode.set(0x80);
+
+        mi
+    }
+}
+
+impl RegsMI {
+    fn cb_write_init_mode(&mut self, old: u32, new: u32) {
+        let mut res = old;
+
+        // init length
+        res.set_bits(0..7, new.get_bits(0..7));
+
+        // clear init mode
+        if new.get_bit(7) {
+            res.set_bit(7, false);
+        }
+
+        // set init mode
+        if new.get_bit(8) {
+            res.set_bit(7, true);
+        }
+
+        // clear ebus test mode
+        if new.get_bit(9) {
+            res.set_bit(8, false);
+        }
+
+        // set ebus test mode
+        if new.get_bit(10) {
+            res.set_bit(8, true);
+        }
+
+        // clear DP interrupt
+        if new.get_bit(11) {
+            self.interrupt.set(*self.interrupt.get().set_bit(5, false));
+        }
+
+        // clear RDRAM reg mode
+        if new.get_bit(12) {
+            res.set_bit(9, false);
+        }
+
+        // set RDRAM reg mode
+        if new.get_bit(13) {
+            res.set_bit(9, true);
+        }
+
+        self.init_mode.set(res);
+    }
+
+    fn cb_read_init_mode(&self, old: u32) -> u32 {
+        old.get_bits(0..10)
+    }
+
+    fn cb_write_interrupt_mask(&mut self, old: u32, new: u32) {
+        let mut res = old;
+
+        // clear SP mask
+        if new.get_bit(0) {
+            res.set_bit(0, false);
+        }
+        // set SP mask
+        if new.get_bit(1) {
+            res.set_bit(0, true);
+        }
+
+        // clear SI mask
+        if new.get_bit(2) {
+            res.set_bit(1, false);
+        }
+        // set SI mask
+        if new.get_bit(3) {
+            res.set_bit(1, true);
+        }
+
+        // clear AI mask
+        if new.get_bit(4) {
+            res.set_bit(2, false);
+        }
+        // set AI mask
+        if new.get_bit(5) {
+            res.set_bit(2, true);
+        }
+
+        // clear VI mask
+        if new.get_bit(6) {
+            res.set_bit(3, false);
+        }
+        // set VI mask
+        if new.get_bit(7) {
+            res.set_bit(3, true);
+        }
+
+        // clear PI mask
+        if new.get_bit(8) {
+            res.set_bit(3, false);
+        }
+        // set PI mask
+        if new.get_bit(9) {
+            res.set_bit(4, true);
+        }
+
+        // clear DP mask
+        if new.get_bit(10) {
+            res.set_bit(5, false);
+        }
+        // set DP mask
+        if new.get_bit(11) {
+            res.set_bit(5, true);
+        }
+    }
+
+    fn cb_read_interrupt_mask(&self, old: u32) -> u32 {
+        old.get_bits(0..6)
+    }
+}
+
 pub struct Cpu {
+    pub regs_mi: DevPtr<RegsMI>,
+
     ctx: CpuContext,
 
     cop0: Option<Box<Cop0>>,
@@ -282,6 +453,7 @@ impl Cpu {
             until: 0,
             last_fetch_addr: 0xFFFF_FFFF,
             last_fetch_mem: MemIoR::default(),
+            regs_mi: DevPtr::new(RegsMI::default()),
         };
     }
 
@@ -489,9 +661,12 @@ impl Cpu {
             0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),                          // SD
 
             _ => panic!(
-                "unimplemented opcode: func=0x{:x?}, pc={}",
+                "unimplemented opcode: func=0x{:x?}, {:#b}, pc={} {:x?} {:#034b}",
                 op.op(),
-                op.cpu.ctx.pc.hex()
+                op.op(),
+                op.cpu.ctx.pc.hex(),
+                op.opcode,
+                op.opcode,
             ),
         }
     }
@@ -675,5 +850,56 @@ impl sync::Subsystem for Box<Cpu> {
 
     fn cycles(&self) -> i64 {
         self.ctx.clock
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::emu::bus::{Bus, DevPtr, Mem, Reg};
+    use super::slog;
+    use super::slog::Drain;
+    use super::*;
+    use bit_field::BitField;
+    extern crate slog_term;
+    use std;
+
+    fn logger() -> slog::Logger {
+        let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        slog::Logger::root(drain, o!())
+    }
+
+    #[test]
+    fn test_regs_mi() {
+        let mut bus = Bus::new(logger());
+        let mi = DevPtr::new(RegsMI::default());
+
+        bus.map_device(0x00, &mi, 0).unwrap();
+
+        // setting everything to 0
+        bus.write::<u32>(0x00, 0x00);
+        assert_eq!(bus.read::<u32>(0x00), 0);
+
+        // setting init mode
+        let val = *0u32.set_bit(8, true);
+        bus.write::<u32>(0x00, val);
+        assert_eq!(bus.read::<u32>(0x00).get_bit(7), true);
+
+        // clear init mode
+        bus.write::<u32>(0x00, *0u32.set_bit(7, true));
+        assert_eq!(bus.read::<u32>(0x00).get_bit(7), false);
+
+        // setting rdram reg mode
+        let val = *0u32.set_bit(13, true);
+        bus.write::<u32>(0x00, val);
+        assert_eq!(bus.read::<u32>(0x00).get_bit(9), true);
+
+        // clear rdram reg mode
+        bus.write::<u32>(0x00, *0u32.set_bit(12, true));
+        assert_eq!(bus.read::<u32>(0x00).get_bit(9), false);
+
+        // write init mode
+        bus.write::<u32>(0x00, *0u32.set_bits(0..7, 0xF));
+        assert_eq!(bus.read::<u32>(0x00).get_bits(0..7), 0xF);
     }
 }

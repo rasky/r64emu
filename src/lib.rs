@@ -14,6 +14,11 @@ extern crate packed_simd;
 #[macro_use]
 extern crate bitflags;
 
+extern crate bit_field;
+
+#[macro_use]
+extern crate bitfield;
+
 #[macro_use]
 extern crate error_chain;
 
