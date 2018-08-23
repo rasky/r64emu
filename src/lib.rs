@@ -22,10 +22,6 @@ extern crate bitfield;
 #[macro_use]
 extern crate error_chain;
 
-#[macro_use]
-extern crate enum_primitive;
-extern crate num;
-
 pub mod errors {
     error_chain!{
         foreign_links {

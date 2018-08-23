@@ -1,37 +1,31 @@
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
-use num::FromPrimitive;
 use slog;
 
-enum_from_primitive! {
-#[derive(Debug)]
-enum Cp0Reg {
-    Index = 0,
-    Random = 1,
-    EntryLo0 = 2,
-    EntryLo1 = 3,
-    Context = 4,
-    PageMask = 5,
-    Wired = 6,
-    BadVaddr = 8,
-    Count = 9,
-    EntryHi = 10,
-    Compare = 11,
-    Status = 12,
-    Cause = 13,
-    Epc = 14,
-    PrId = 15,
-    Config = 16,
-    LlAddr = 17,
-    WatchLo = 18,
-    WatchHi = 19,
-    XContext = 20,
-    ParityError = 26,
-    CacheError = 27,
-    TagLo = 28,
-    TagHi = 29,
-    ErrorEpc = 30,
-}
-}
+const CP0_REG_INDEX: usize = 0;
+const CP0_REG_RANDOM: usize = 1;
+const CP0_REG_ENTRY_LO0: usize = 2;
+const CP0_REG_ENTRY_LO1: usize = 3;
+const CP0_REG_CONTEXT: usize = 4;
+const CP0_REG_PAGE_MASK: usize = 5;
+const CP0_REG_WIRED: usize = 6;
+const CP0_REG_BAD_VADDR: usize = 8;
+const CP0_REG_COUNT: usize = 9;
+const CP0_REG_ENTRY_HI: usize = 10;
+const CP0_REG_COMPARE: usize = 11;
+const CP0_REG_STATUS: usize = 12;
+const CP0_REG_CAUSE: usize = 13;
+const CP0_REG_EPC: usize = 14;
+const CP0_REG_PRID: usize = 15;
+const CP0_REG_CONFIG: usize = 16;
+const CP0_REG_LL_ADDR: usize = 17;
+const CP0_REG_WATCH_LO: usize = 18;
+const CP0_REG_WATCH_HI: usize = 19;
+const CP0_REG_X_CONTEXT: usize = 20;
+const CP0_REG_PARITY_ERROR: usize = 26;
+const CP0_REG_CACHE_ERROR: usize = 27;
+const CP0_REG_TAG_LO: usize = 28;
+const CP0_REG_TAG_HI: usize = 29;
+const CP0_REG_ERROR_EPC: usize = 30;
 
 bitfield! {
     #[derive(Default)]
@@ -249,35 +243,33 @@ impl<'a> C0op<'a> {
 
 impl Cop for Cp0 {
     fn reg(&self, idx: usize) -> u128 {
-        match Cp0Reg::from_usize(idx) {
-            Some(reg) => match reg {
-                Cp0Reg::Index => self.reg_index as u128,
-                Cp0Reg::Random => self.reg_random as u128,
-                Cp0Reg::EntryLo0 => self.reg_entry_lo0 as u128,
-                Cp0Reg::EntryLo1 => self.reg_entry_lo1 as u128,
-                Cp0Reg::Context => self.reg_context as u128,
-                Cp0Reg::PageMask => self.reg_page_mask as u128,
-                Cp0Reg::Wired => self.reg_wired as u128,
-                Cp0Reg::BadVaddr => self.reg_bad_vaddr as u128,
-                Cp0Reg::Count => self.reg_count as u128,
-                Cp0Reg::EntryHi => self.reg_entry_hi as u128,
-                Cp0Reg::Compare => self.reg_compare as u128,
-                Cp0Reg::Status => self.reg_status.0 as u128,
-                Cp0Reg::Cause => self.reg_cause as u128,
-                Cp0Reg::Epc => self.reg_epc as u128,
-                Cp0Reg::PrId => self.reg_pr_id as u128,
-                Cp0Reg::Config => self.reg_config as u128,
-                Cp0Reg::LlAddr => self.reg_ll_addr as u128,
-                Cp0Reg::WatchLo => self.reg_watch_lo as u128,
-                Cp0Reg::WatchHi => self.reg_watch_hi as u128,
-                Cp0Reg::XContext => self.reg_x_context as u128,
-                Cp0Reg::ParityError => self.reg_parity_error as u128,
-                Cp0Reg::CacheError => self.reg_cache_error as u128,
-                Cp0Reg::TagLo => self.reg_tag_lo as u128,
-                Cp0Reg::TagHi => self.reg_tag_hi as u128,
-                Cp0Reg::ErrorEpc => self.reg_error_epc as u128,
-            },
-            None => {
+        match idx {
+            CP0_REG_INDEX => self.reg_index as u128,
+            CP0_REG_RANDOM => self.reg_random as u128,
+            CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 as u128,
+            CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 as u128,
+            CP0_REG_CONTEXT => self.reg_context as u128,
+            CP0_REG_PAGE_MASK => self.reg_page_mask as u128,
+            CP0_REG_WIRED => self.reg_wired as u128,
+            CP0_REG_BAD_VADDR => self.reg_bad_vaddr as u128,
+            CP0_REG_COUNT => self.reg_count as u128,
+            CP0_REG_ENTRY_HI => self.reg_entry_hi as u128,
+            CP0_REG_COMPARE => self.reg_compare as u128,
+            CP0_REG_STATUS => self.reg_status.0 as u128,
+            CP0_REG_CAUSE => self.reg_cause as u128,
+            CP0_REG_EPC => self.reg_epc as u128,
+            CP0_REG_PRID => self.reg_pr_id as u128,
+            CP0_REG_CONFIG => self.reg_config as u128,
+            CP0_REG_LL_ADDR => self.reg_ll_addr as u128,
+            CP0_REG_WATCH_LO => self.reg_watch_lo as u128,
+            CP0_REG_WATCH_HI => self.reg_watch_hi as u128,
+            CP0_REG_X_CONTEXT => self.reg_x_context as u128,
+            CP0_REG_PARITY_ERROR => self.reg_parity_error as u128,
+            CP0_REG_CACHE_ERROR => self.reg_cache_error as u128,
+            CP0_REG_TAG_LO => self.reg_tag_lo as u128,
+            CP0_REG_TAG_HI => self.reg_tag_hi as u128,
+            CP0_REG_ERROR_EPC => self.reg_error_epc as u128,
+            _ => {
                 warn!(self.logger, "CP0 read reg: unknown register"; "reg" => idx);
                 0
             }
@@ -285,35 +277,33 @@ impl Cop for Cp0 {
     }
 
     fn set_reg(&mut self, idx: usize, val: u128) {
-        match Cp0Reg::from_usize(idx) {
-            Some(reg) => match reg {
-                Cp0Reg::Index => self.reg_index = val as u64,
-                Cp0Reg::Random => self.reg_random = val as u64,
-                Cp0Reg::EntryLo0 => self.reg_entry_lo0 = val as u64,
-                Cp0Reg::EntryLo1 => self.reg_entry_lo1 = val as u64,
-                Cp0Reg::Context => self.reg_context = val as u64,
-                Cp0Reg::PageMask => self.reg_page_mask = val as u64,
-                Cp0Reg::Wired => self.reg_wired = val as u64,
-                Cp0Reg::BadVaddr => self.reg_bad_vaddr = val as u64,
-                Cp0Reg::Count => self.reg_count = val as u64,
-                Cp0Reg::EntryHi => self.reg_entry_hi = val as u64,
-                Cp0Reg::Compare => self.reg_compare = val as u64,
-                Cp0Reg::Status => self.reg_status.0 = val as u32,
-                Cp0Reg::Cause => self.reg_cause = val as u64,
-                Cp0Reg::Epc => self.reg_epc = val as u64,
-                Cp0Reg::PrId => self.reg_pr_id = val as u64,
-                Cp0Reg::Config => self.reg_config = val as u64,
-                Cp0Reg::LlAddr => self.reg_ll_addr = val as u64,
-                Cp0Reg::WatchLo => self.reg_watch_lo = val as u64,
-                Cp0Reg::WatchHi => self.reg_watch_hi = val as u64,
-                Cp0Reg::XContext => self.reg_x_context = val as u64,
-                Cp0Reg::ParityError => self.reg_parity_error = val as u64,
-                Cp0Reg::CacheError => self.reg_cache_error = val as u64,
-                Cp0Reg::TagLo => self.reg_tag_lo = val as u64,
-                Cp0Reg::TagHi => self.reg_tag_hi = val as u64,
-                Cp0Reg::ErrorEpc => self.reg_error_epc = val as u64,
-            },
-            None => {
+        match idx {
+            CP0_REG_INDEX => self.reg_index = val as u64,
+            CP0_REG_RANDOM => self.reg_random = val as u64,
+            CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 = val as u64,
+            CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 = val as u64,
+            CP0_REG_CONTEXT => self.reg_context = val as u64,
+            CP0_REG_PAGE_MASK => self.reg_page_mask = val as u64,
+            CP0_REG_WIRED => self.reg_wired = val as u64,
+            CP0_REG_BAD_VADDR => self.reg_bad_vaddr = val as u64,
+            CP0_REG_COUNT => self.reg_count = val as u64,
+            CP0_REG_ENTRY_HI => self.reg_entry_hi = val as u64,
+            CP0_REG_COMPARE => self.reg_compare = val as u64,
+            CP0_REG_STATUS => self.reg_status.0 = val as u32,
+            CP0_REG_CAUSE => self.reg_cause = val as u64,
+            CP0_REG_EPC => self.reg_epc = val as u64,
+            CP0_REG_PRID => self.reg_pr_id = val as u64,
+            CP0_REG_CONFIG => self.reg_config = val as u64,
+            CP0_REG_LL_ADDR => self.reg_ll_addr = val as u64,
+            CP0_REG_WATCH_LO => self.reg_watch_lo = val as u64,
+            CP0_REG_WATCH_HI => self.reg_watch_hi = val as u64,
+            CP0_REG_X_CONTEXT => self.reg_x_context = val as u64,
+            CP0_REG_PARITY_ERROR => self.reg_parity_error = val as u64,
+            CP0_REG_CACHE_ERROR => self.reg_cache_error = val as u64,
+            CP0_REG_TAG_LO => self.reg_tag_lo = val as u64,
+            CP0_REG_TAG_HI => self.reg_tag_hi = val as u64,
+            CP0_REG_ERROR_EPC => self.reg_error_epc = val as u64,
+            _ => {
                 warn!(self.logger, "CP0 write reg: unknown register"; "reg" => idx);
             }
         }
@@ -353,7 +343,7 @@ impl Cop for Cp0 {
                     }
                     0x2 => {
                         // TLBWI
-                        warn!(op.cop0.logger, "unimplemented COP0 TLBWI");
+                        warn!(op.cop0.logger, "unimplemented COP0 TLBWI"; "opcode" => op.opcode);
                     }
                     0x6 => {
                         // TLBWR
