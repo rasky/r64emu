@@ -1,4 +1,5 @@
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
+use super::segment::Segment;
 use slog;
 
 const CP0_REG_INDEX: usize = 0;
@@ -34,32 +35,34 @@ bitfield! {
     // Specifies and indicates global interrupt enable
     // (0 - disable interrupts, 1 - enable interrupts)
     ie, set_ie: 0;
+
     // Specifies and indicates exception level
     // (0 - normal, 1 - exception)
-    exl, set_exl: 1;
+    pub exl, set_exl: 1;
+
     // Specifies and indicates error level
     // (0 - normal, 1 - error)
-    erl, set_erl: 2;
+    pub erl, set_erl: 2;
 
     // Specifies and indicates mode bits
     // (10 - User, 01 - Supervisor, 00 - Kernel)
-    ksu, set_ksu: 4, 3;
+    pub ksu, set_ksu: 4, 3;
 
     // Enables 64-bit addressing and operations in User mode. When this bit is set, XTLB
     // miss exception is generated on TLB misses in User mode addresses space.
     // (0 - 32-bit, 1 - 64-bit)
-    ux, set_ux: 5;
+    pub ux, set_ux: 5;
 
     // Enables 64-bit addressing and operations in Supervisor mode. When this bit is set, XTLB
     // miss exception is generated on TLB misses in Supervisor mode addresses space.
     // (0 - 32-bit, 1 - 64-bit)
-    sx, set_sx: 6;
+    pub sx, set_sx: 6;
 
     // Enables 64-bit addressing in Kernel mode. When this bit is set, XTLB
     // miss exception is generated on TLB misses in Kernel mode addresses space.
     // (0 - 32-bit, 1 - 64-bit)
     // 64-bit operation is always valid in Kernel mode.
-    kx, set_kx: 7;
+    pub kx, set_kx: 7;
 
     // Interrupt Mask field, enables external, internal, coprocessors or software interrupts.
     im, set_im: 15, 8;
@@ -171,6 +174,11 @@ pub struct Cp0 {
 
 impl Cp0 {
     pub fn new(logger: slog::Logger) -> Box<Cp0> {
+        let mut reg_status = StatusReg::default();
+        // set defaults for cold reset
+        reg_status.set_erl(true);
+        reg_status.set_ds_bev(true);
+
         Box::new(Cp0 {
             reg_index: 0,
             reg_random: 0,
@@ -183,7 +191,7 @@ impl Cp0 {
             reg_count: 0,
             reg_entry_hi: 0,
             reg_compare: 0,
-            reg_status: StatusReg::default(),
+            reg_status,
             reg_cause: 0,
             reg_epc: 0,
             reg_pr_id: 0,
@@ -201,6 +209,11 @@ impl Cp0 {
             logger: logger,
         })
     }
+
+    /// Fetches the matching memory segment for the given virtual address.
+    fn get_segment(&self, vaddr: u64) -> &Segment {
+        Segment::from_vaddr(vaddr, &self.reg_status)
+    }
 }
 
 impl Cop0 for Cp0 {
@@ -209,6 +222,16 @@ impl Cop0 for Cp0 {
     }
 
     fn exception(&mut self, _ctx: &mut CpuContext, _exc: Exception) {}
+
+    fn translate_addr(&self, vaddr: u64) -> u32 {
+        let segment = self.get_segment(vaddr);
+
+        if segment.mapped {
+            unimplemented!("tlb mapped address region");
+        } else {
+            (vaddr - segment.start) as u32
+        }
+    }
 }
 
 struct C0op<'a> {

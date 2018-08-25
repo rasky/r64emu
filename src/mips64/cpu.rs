@@ -76,6 +76,9 @@ pub trait Cop0: Cop {
 
     /// Trigger the specified excepion.
     fn exception(&mut self, ctx: &mut CpuContext, exc: Exception);
+
+    /// Translate a virtual address into the physical counter part.
+    fn translate_addr(&self, vaddr: u64) -> u32;
 }
 
 pub struct CpuContext {
@@ -89,7 +92,6 @@ pub struct CpuContext {
     lines: Lines,
 }
 
-// TODO: implement read/write settings as indicated by comments below.
 #[derive(DeviceBE)]
 pub struct RegsMI {
     // (W): [6:0] init length        (R): [6:0] init length
@@ -498,6 +500,7 @@ impl Cpu {
     fn op(&mut self, opcode: u32) {
         self.ctx.clock += 1;
         let mut op = Mipsop { opcode, cpu: self };
+        // println!("op: {:#0x} {:#0x}", op.op(), opcode);
         match op.op() {
             // SPECIAL
             0x00 => match op.special() {
@@ -708,16 +711,37 @@ impl Cpu {
         &self.last_fetch_mem
     }
 
-    fn read<U: MemInt>(&self, addr: u32) -> U {
-        self.bus
-            .borrow()
-            .read::<U>(addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1))
+    fn read<U: MemInt>(&self, vaddr: u32) -> U {
+        let paddr = self.translate_addr(vaddr as i32 as u64) & !(U::SIZE as u32 - 1);
+        let v = self.bus.borrow().read::<U>(paddr);
+        // {
+        //     let v: u64 = v.into();
+        //     println!(
+        //         "read mem: {:#0x}({:#0x}) -> {:#0x} (pc: {:#0x})",
+        //         addr, paddr, v, self.ctx.pc
+        //     );
+        // }
+        v
     }
 
-    fn write<U: MemInt>(&self, addr: u32, val: U) {
-        self.bus
-            .borrow()
-            .write::<U>(addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1), val);
+    fn write<U: MemInt>(&self, vaddr: u32, val: U) {
+        let paddr = self.translate_addr(vaddr as i32 as u64) & !(U::SIZE as u32 - 1);
+        // {
+        //     let v: u64 = val.into();
+        //     println!(
+        //         "write mem: {:#0x}({:#0x}) <- {:#0x} (pc: {:#0x})",
+        //         addr, paddr, v, self.ctx.pc
+        //     );
+        // }
+        self.bus.borrow().write::<U>(paddr, val);
+    }
+
+    fn translate_addr(&self, vaddr: u64) -> u32 {
+        if let Some(ref cop0) = self.cop0 {
+            cop0.translate_addr(vaddr)
+        } else {
+            panic!("missing COP0");
+        }
     }
 
     pub fn run(&mut self, until: i64) {
@@ -855,7 +879,7 @@ impl sync::Subsystem for Box<Cpu> {
 
 #[cfg(test)]
 mod tests {
-    use super::emu::bus::{Bus, DevPtr, Mem, Reg};
+    use super::emu::bus::{Bus, DevPtr};
     use super::slog;
     use super::slog::Drain;
     use super::*;

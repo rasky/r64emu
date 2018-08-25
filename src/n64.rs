@@ -80,6 +80,8 @@ impl N64 {
             bus.map_device(0x1FC0_0000, &pi, 1)?;
         }
 
+        // 0x0020_5005 -> RDRAM range 2
+        // 0x000E_0204 -> RDRAM range 1, written to
         const MAIN_CLOCK: i64 = 187488000; // TODO: guessed
 
         let mut sync = sync::Sync::new(sync::Config {
