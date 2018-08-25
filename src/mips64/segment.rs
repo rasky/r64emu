@@ -1,5 +1,6 @@
 use super::cp0::StatusReg;
 use bit_field::BitField;
+use phf;
 
 macro_rules! seg {
     ($name:ident, $start:expr, $length:expr, $cached:expr, $mapped:expr) => {
@@ -76,6 +77,54 @@ seg!(
     true,
     true
 );
+
+static SEGMENTS: phf::OrderedMap<[u8; 4], &Segment> = phf_ordered_map! {
+    // -- User
+    // 32bit
+    [0b10, 0, 0, 0] => &USEG,
+    // 64bit
+    [0b10, 1, 0, 0] => &XUSEG,
+
+    // -- Supervisor
+    // 32bit
+    [0b01, 0, 0, 0] => &SUSEG,
+    [0b01, 0, 1, 0] => &SSEG,
+    // 64bit
+    [0b01, 1, 0b00, 0] => &XSUSEG,
+    [0b01, 1, 0b01, 0] => &XSSEG,
+    [0b01, 1, 0b11, 0] => &CSSEG,
+
+    // -- Kernel
+    // 32bit
+    [0b00, 0, 0b000, 0] => &KUSEG,
+    [0b00, 0, 0b001, 0] => &KUSEG,
+    [0b00, 0, 0b010, 0] => &KUSEG,
+    [0b00, 0, 0b011, 0] => &KUSEG,
+    [0b00, 0, 0b100, 0] => &KSEG0,
+    [0b00, 0, 0b101, 0] => &KSEG1,
+    [0b00, 0, 0b110, 0] => &KSSEG,
+    [0b00, 0, 0b111, 0] => &KSEG3,
+
+    // 64bit
+    [0b00, 1, 0b00, 0] => &XKUSEG,
+    [0b00, 1, 0b01, 0] => &XKSSEG,
+    [0b00, 1, 0b10, 0] => &XKPHYS0,
+    [0b00, 1, 0b10, 1] => &XKPHYS1,
+    [0b00, 1, 0b10, 2] => &XKPHYS2,
+    [0b00, 1, 0b10, 3] => &XKPHYS3,
+    [0b00, 1, 0b10, 4] => &XKPHYS4,
+    [0b00, 1, 0b10, 5] => &XKPHYS5,
+    [0b00, 1, 0b10, 6] => &XKPHYS6,
+    [0b00, 1, 0b10, 7] => &XKPHYS7,
+    [0b00, 1, 0b11, 4] => &XKSEG,
+    [0b00, 1, 0b11, 0] => &CKSEG0,
+    [0b00, 1, 0b11, 1] => &CKSEG1,
+    [0b00, 1, 0b11, 2] => &CKSSEG,
+    [0b00, 1, 0b11, 3] => &CKSEG3,
+};
+
+// Placeholder, in arrays
+seg!(NULL, 0, 0, false, false);
 
 // Kernel Mode
 seg!(
@@ -220,87 +269,53 @@ seg!(
     true
 );
 
-const XKPHYS: [&Segment; 8] = [
-    &XKPHYS0, &XKPHYS1, &XKPHYS2, &XKPHYS3, &XKPHYS4, &XKPHYS5, &XKPHYS6, &XKPHYS7,
-];
-
 impl Segment {
     #[inline(never)]
     pub fn from_vaddr(vaddr: u64, status: &StatusReg) -> &Segment {
-        let ksu = status.ksu();
+        let ksu = status.ksu() as u8;
         let exl = status.exl();
         let erl = status.erl();
         let user_mode = ksu == 0b10 && !exl && !erl;
         let supervisor_mode = ksu == 0b01 && !exl && !erl;
         let kernel_mode = ksu == 0b00 || exl || erl;
+        let use64 = status.ux() | status.sx() | status.kx();
 
-        if user_mode {
-            // TODO: check for out of bounds
-            if status.ux() {
-                // 64bit
-                &XUSEG
+        // TODO: make the below stuff simpler & faster
+        let info = if kernel_mode {
+            if use64 {
+                let b1 = vaddr.get_bits(62..64) as u8;
+                let b2 = if b1 == 0b11 {
+                    if vaddr < CKSEG0.start {
+                        4u8
+                    } else if vaddr < CKSEG1.start {
+                        0u8
+                    } else if vaddr < CKSSEG.start {
+                        1u8
+                    } else if vaddr < CKSEG3.start {
+                        2u8
+                    } else {
+                        3u8
+                    }
+                } else {
+                    vaddr.get_bits(59..62) as u8
+                };
+
+                (b1, b2)
             } else {
-                // 32bit
-                &USEG
+                (vaddr.get_bits(29..32) as u8, 0u8)
             }
         } else if supervisor_mode {
-            if status.sx() {
-                // 64bit
-                match vaddr.get_bits(62..64) {
-                    0b00 => &XSUSEG,
-                    0b01 => &XSSEG,
-                    0b11 => &CSSEG,
-                    _ => {
-                        // TODO: proper error handling
-                        panic!("invalid address access")
-                    }
-                }
+            if use64 {
+                (vaddr.get_bits(62..64) as u8, 0u8)
             } else {
-                // 32bit
-                if vaddr.get_bit(32) {
-                    &SSEG
-                } else {
-                    &SUSEG
-                }
-            }
-        } else if kernel_mode {
-            if status.kx() {
-                // 64bit
-                match vaddr.get_bits(62..64) {
-                    0b00 => &XKUSEG,
-                    0b01 => &XKSSEG,
-                    0b10 => XKPHYS[vaddr.get_bits(59..62) as usize],
-                    0b11 => {
-                        if vaddr < CKSEG0.start {
-                            &XKSEG
-                        } else if vaddr < CKSEG1.start {
-                            &CKSEG0
-                        } else if vaddr < CKSSEG.start {
-                            &CKSEG1
-                        } else if vaddr < CKSEG3.start {
-                            &CKSSEG
-                        } else {
-                            &CKSEG3
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-            } else {
-                // 32bit
-                if !vaddr.get_bit(31) {
-                    &KUSEG
-                } else {
-                    match vaddr.get_bits(29..32) {
-                        0b100 => &KSEG0,
-                        0b101 => &KSEG1,
-                        0b110 => &KSSEG,
-                        0b111 => &KSEG3,
-                        _ => panic!("unimplemented address access"),
-                    }
-                }
+                (vaddr.get_bit(32) as u8, 0u8)
             }
         } else {
-            panic!("invalid operating mode");
-        }
+            (0u8, 0u8)
+        };
+
+        SEGMENTS
+            .get(&[ksu, use64 as u8, info.0, info.1])
+            .expect("invalid address access")
     }
 }
