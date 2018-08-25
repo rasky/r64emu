@@ -121,9 +121,9 @@ pub struct Cp0 {
     // Reg #1
     reg_random: u64,
     // Reg #2
-    reg_entry_lo0: u64,
+    reg_entry_lo0: u32,
     // Reg #3
-    reg_entry_lo1: u64,
+    reg_entry_lo1: u32,
     // Reg #4
     reg_context: u64,
     // Reg #5
@@ -303,8 +303,8 @@ impl Cop for Cp0 {
         match idx {
             CP0_REG_INDEX => self.reg_index = val as u64,
             CP0_REG_RANDOM => self.reg_random = val as u64,
-            CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 = val as u64,
-            CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 = val as u64,
+            CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 = val as u32,
+            CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 = val as u32,
             CP0_REG_CONTEXT => self.reg_context = val as u64,
             CP0_REG_PAGE_MASK => self.reg_page_mask = val as u64,
             CP0_REG_WIRED => self.reg_wired = val as u64,
