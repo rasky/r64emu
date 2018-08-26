@@ -123,8 +123,6 @@ impl Pi {
     }
 
     fn cb_write_dma_status(&mut self, old: u32, new: u32) {
-        info!(self.logger, "write dma status"; o!("val" => format!("{:x}", new)));
-
         // reset PI
         if new.get_bit(0) {
             self.dma_status.set(0)
@@ -138,9 +136,7 @@ impl Pi {
     }
 
     fn cb_read_dma_status(&self, val: u32) -> u32 {
-        let val = val.get_bits(0..3);
-        info!(self.logger, "read dma status"; "val" => format!("{:x}", val));
-        val
+        val.get_bits(0..3)
     }
 
     fn cb_write_dma_wr_len(&mut self, _old: u32, val: u32) {

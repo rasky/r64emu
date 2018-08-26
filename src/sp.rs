@@ -43,6 +43,9 @@ pub struct Sp {
     #[reg(bank = 2, offset = 0x0, rwmask = 0xFFF, wcb, rcb)]
     reg_rsp_pc: Reg32,
 
+    #[reg(bank = 2, offset = 0x4, wcb, rcb)]
+    reg_rsp_imem_bist: Reg32,
+
     #[reg(bank = 1, offset = 0x00, rwmask = 0x1FF8)]
     reg_dma_rsp_addr: Reg32,
 
@@ -58,8 +61,14 @@ pub struct Sp {
     #[reg(bank = 1, offset = 0x10, init = 0x1, wcb)]
     reg_status: Reg32,
 
+    #[reg(bank = 1, offset = 0x14, init = 0, rwmask = 0x1, readonly)]
+    reg_dma_full: Reg32,
+
     #[reg(bank = 1, offset = 0x18, init = 0, rwmask = 0x1, readonly)]
     reg_dma_busy: Reg32,
+
+    #[reg(bank = 1, offset = 0x1C, init = 0, rwmask = 0x1, wcb)]
+    reg_semaphore: Reg32,
 
     logger: slog::Logger,
 
@@ -80,6 +89,7 @@ impl Sp {
             main_bus,
             dmem: Mem::default(),
             imem: Mem::default(),
+            reg_rsp_imem_bist: Reg32::default(),
             reg_status: Reg32::default(),
             reg_dma_busy: Reg32::default(),
             reg_dma_rsp_addr: Reg32::default(),
@@ -87,6 +97,8 @@ impl Sp {
             reg_dma_wr_len: Reg32::default(),
             reg_dma_rd_len: Reg32::default(),
             reg_rsp_pc: Reg32::default(),
+            reg_dma_full: Reg32::default(),
+            reg_semaphore: Reg32::default(),
 
             core_bus: bus,
             core_cpu: cpu,
@@ -237,7 +249,8 @@ impl Sp {
         skip_dst: usize,
     ) {
         let bus = self.main_bus.borrow();
-        for _ in 0..count {
+        for i in 0..count {
+            info!(self.logger, "dma xfer inner"; "i" => i, "count" => count);
             let src_hwio = bus.fetch_read::<u8>(src);
             let dst_hwio = bus.fetch_write::<u8>(dst);
             let src_mem = src_hwio.mem().unwrap();
@@ -302,6 +315,19 @@ impl Sp {
 
     fn cb_read_reg_rsp_pc(&self, _old: u32) -> u32 {
         self.core_cpu.borrow().ctx().get_pc() & 0xFFF
+    }
+
+    fn cb_write_reg_semaphore(&mut self, _old: u32, _val: u32) {
+        self.reg_semaphore.set(0);
+    }
+
+    fn cb_write_reg_rsp_imem_bist(&mut self, _old: u32, val: u32) {
+        error!(self.logger, "RSP reg imem bist (write) not yet implemented"; "val" => val);
+    }
+
+    fn cb_read_reg_rsp_imem_bist(&self, _old: u32) -> u32 {
+        error!(self.logger, "RSP reg imem bist (read) not yet implemented");
+        0
     }
 }
 
