@@ -336,9 +336,9 @@ impl mips64::Cop0 for SpCop0 {
             _ => unimplemented!(),
         }
     }
-    fn translate_addr(&self, vaddr: u64) -> u32 {
+    fn translate_addr(&mut self, vaddr: u64) -> ::std::result::Result<u32, mips64::Exception> {
         // TODO: verify this is the right way
-        vaddr as u32 & 0x1FFF_FFFF
+        Ok(vaddr as u32 & 0x1FFF_FFFF)
     }
 }
 

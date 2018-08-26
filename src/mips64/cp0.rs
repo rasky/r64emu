@@ -1,14 +1,21 @@
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
 use super::segment::Segment;
 use super::tlb;
-use rand::{Rng, XorShiftRng};
+use rand::{FromEntropy, Rng, XorShiftRng};
 use slog;
+
+const EXC_LOC_COMMON: u32 = 0xBFC0_0000;
+const EXC_LOC_BASE_0: u32 = 0x8000_0000;
+const EXC_LOC_BASE_1: u32 = 0xBFC0_0000;
+const EXC_LOC_OFF_TLB_MISS: u32 = 0x0000;
+const EXC_LOC_OFF_XTLB_MISS: u32 = 0x0080;
+const EXC_LOC_OFF_OTHER: u32 = 0x0180;
 
 // Only safe in single threaded environements!
 static mut RNG: Option<XorShiftRng> = None;
 unsafe fn rng() -> &'static mut XorShiftRng {
     if RNG.is_none() {
-        RNG = Some(XorShiftRng::new_unseeded());
+        RNG = Some(XorShiftRng::from_entropy());
     }
 
     RNG.as_mut().unwrap()
@@ -93,7 +100,7 @@ bitfield! {
     ds_sr, set_ds_sr: 20;
 
     // Indicates TLB shutdown has occurred (read-only)
-    ds_ts, _: 21;
+    ds_ts, set_ds_ts: 21;
 
     // Controls the location of TLB miss and general purpose exception vectors.
     // 0 - normal
@@ -126,57 +133,123 @@ bitfield! {
     cu3, set_cu3: 31;
 }
 
+bitflags! {
+    struct EXC_CODE: u8 {
+        /// Exception Code - Interrupt
+        const INT = 0;
+        /// Exception Code - TLB Modification exception
+        const MOD = 1;
+        /// Exception Code - TLB Miss exception (load or instruction fetch)
+        const TLBL = 2;
+        /// Exception Code - TLB Miss exception (store)
+        const TLBS = 3;
+        /// Exception Code - Address Error exception (load or instruction fetch)
+        const ADEL = 4;
+        /// Exception Code - Address Error exception (store)
+        const ADES = 5;
+        /// Exception Code - Bus Error exception (instruction fetch)
+        const IBE = 6;
+        /// Exception Code - Bus Error exception (data reference: load or store)
+        const DBE = 7;
+        /// Exception Code - Syscall exception
+        const SYS = 8;
+        /// Exception Code - Breakpoint exception
+        const BP = 9;
+        /// Exception Code - Reserved Instruction exception
+        const RI = 10;
+        /// Exception Code - Coprocessor Unusable exception
+        const CPU = 11;
+        /// Exception Code - Arithmetic Overflow exception
+        const OV = 12;
+        /// Exception Code - Trap exception
+        const TR = 13;
+        /// Exception Code - Floating-Point exception
+        const FPE = 15;
+        /// Exception Code - Watch exception
+        const WATCH = 23;
+    }
+}
+
+bitfield! {
+    #[derive(Default)]
+    pub struct CauseReg(u32);
+    impl Debug;
+
+    /// Exception Code
+    u8, exc_code, set_exc_code: 6, 2;
+    /// Interrupt pending?
+    u8, ip, set_ip: 15, 8;
+    /// Coprocessor unit, only defined for coprocessor unusable exceptions.
+    u8, ce, set_ce: 29, 28;
+    /// Exception occured in branch delay slot?
+    bd, set_bd: 31;
+}
+
 /// System Control Coprocessor (CP0)
 pub struct Cp0 {
-    // Reg #0
+    /// [tlb] #0 Index
     reg_index: u32,
-    // Reg #2
+    /// [tbl] #2 Entry Lo0 (even)
     reg_entry_lo0: u64,
-    // Reg #3
+    /// [tlb] #3 Entry Lo1 (odd)
     reg_entry_lo1: u64,
-    // Reg #4
+    /// [tlb/exception] #4 Context
+    /// Used in handling TLB Miss exceptions.
+    /// Contains PTEBase || BadVPN2 on exception || 0000
     reg_context: u64,
-    // Reg #5
+    /// [tlb] #5 Page Mask
     reg_page_mask: u32,
-    // Reg #6
+    /// [tlb] #6 Wired
+    /// Protects parts of the tlb from being overwritten in TLBWR.
     reg_wired: u32,
-
-    // Reg #8
+    /// [exception] #8 Bad Virtual Address
+    /// Read only. Holds the last virtual address, which errored out.
     reg_bad_vaddr: u64,
-    // Reg #9
+    /// [exception] #9 Count
+    /// Running counter at half the clock speed of PClock.
     reg_count: u64,
-    // Reg #10
+    /// [tlb] #10 Entry Hi
     reg_entry_hi: u64,
-    // Reg #11
+    /// [exception] #11 Compare
+    /// Used for comparision with the count register to generate a timer interrupt.
     reg_compare: u64,
-    // Reg #12
+    /// [exception] #12 Status
+    /// Hold various status informations, see the definition of `StatusReg` for details.
     reg_status: StatusReg,
-    // Reg #13
-    reg_cause: u64,
-    // Reg #14
+    /// [exception] #13 Cause
+    /// Hold the cause of the last exception occured
+    reg_cause: CauseReg,
+    /// [exception] #14 Exception Program Counter
+    /// Contains either the vaddr of the instruction that was the direct cause
+    /// or the vaddr of the immediately preceding branch or jump instruction
+    /// (if the direct cause was inside the branch delay slot).
+    /// This is the address where execution is resumed after processing.
     reg_epc: u64,
-    // Reg #15
+    /// Reg #15
     reg_pr_id: u64,
     // Reg #16
     reg_config: u64,
     // Reg #17
     reg_ll_addr: u64,
-    // Reg #18
+    /// [exception] #18 Watch Lo
     reg_watch_lo: u64,
-    // Reg #19
+    /// [exception] #19 Watch Hi
     reg_watch_hi: u64,
-    // Reg #20
+    /// [exception] #20 XContext
+    /// 64bit version of Context.
     reg_x_context: u64,
-
-    // Reg #26
+    /// [exception] #26 Parity Error
+    /// Unused.
     reg_parity_error: u64,
-    // Reg #27
+    /// [exception] #27 Cache Error
+    /// Read only. Unused.
     reg_cache_error: u64,
     // Reg #28
     reg_tag_lo: u64,
     // Reg #29
     reg_tag_hi: u64,
-    // Reg #30
+    /// [exception] #30 Error Exception Program Counter
+    /// Similar to EPC, also used to store the PC on {Cold|Soft} Reset and NMI.
     reg_error_epc: u64,
 
     tlb: tlb::Tlb,
@@ -202,7 +275,7 @@ impl Cp0 {
             reg_entry_hi: 0,
             reg_compare: 0,
             reg_status,
-            reg_cause: 0,
+            reg_cause: CauseReg::default(),
             reg_epc: 0,
             reg_pr_id: 0,
             reg_config: 0,
@@ -225,6 +298,22 @@ impl Cp0 {
     fn get_segment(&self, vaddr: u64) -> &Segment {
         Segment::from_vaddr(vaddr, &self.reg_status)
     }
+
+    fn exception_setup(&mut self, ctx: &mut CpuContext, exc: Exception) {
+        if let Some(cause) = EXC_CODE::from_bits(exc.as_u8()) {
+            // These are all the exceptions that are not RESET and NMI.
+
+            self.reg_cause.set_exc_code(cause.bits() as u8);
+
+            if ctx.branch_pc != 0 {
+                // In a branch delay, use the preceeding branch as resume point.
+                self.reg_epc = (ctx.branch_pc - 4) as u64;
+                self.reg_cause.set_bd(true);
+            } else {
+                self.reg_epc = ctx.pc as u64;
+            }
+        }
+    }
 }
 
 impl Cop0 for Cp0 {
@@ -232,15 +321,96 @@ impl Cop0 for Cp0 {
         false
     }
 
-    fn exception(&mut self, _ctx: &mut CpuContext, _exc: Exception) {}
+    fn exception(&mut self, ctx: &mut CpuContext, exc: Exception) {
+        let next_pc: u32;
 
-    fn translate_addr(&self, vaddr: u64) -> u32 {
+        match exc {
+            Exception::INT => unimplemented!("INT Exception"),
+            Exception::MOD => unimplemented!("TLB MOD Exception"),
+            Exception::TLBL_MISS | Exception::TLBS_MISS => {
+                self.exception_setup(ctx, exc);
+
+                let base = if self.reg_status.exl() {
+                    EXC_LOC_COMMON
+                } else if self.reg_status.ds_bev() {
+                    EXC_LOC_BASE_1
+                } else {
+                    EXC_LOC_BASE_0
+                };
+                let offset = if self.reg_status.ux() || self.reg_status.sx() || self.reg_status.kx()
+                {
+                    // 64bit
+                    EXC_LOC_OFF_XTLB_MISS
+                } else {
+                    // 32bit
+                    EXC_LOC_OFF_TLB_MISS
+                };
+
+                next_pc = base + offset;
+            }
+            Exception::TLBL_INVALID | Exception::TLBS_INVALID => {
+                self.exception_setup(ctx, exc);
+                next_pc = EXC_LOC_COMMON + EXC_LOC_OFF_OTHER;
+            }
+            Exception::ADEL => unimplemented!("ADEL Exception"),
+            Exception::ADES => unimplemented!("ADES Exception"),
+            Exception::IBE => unimplemented!("IBE Exception"),
+            Exception::DBE => unimplemented!("DBE Exception"),
+            Exception::SYS => unimplemented!("SYS Exception"),
+            Exception::BP => unimplemented!("BP Exception"),
+            Exception::RI => unimplemented!("RI Exception"),
+            Exception::TR => unimplemented!("TR Exception"),
+            Exception::FPE => unimplemented!("FPE Exception"),
+            Exception::WATCH => unimplemented!("WATCH Exception"),
+
+            // Special exceptions that are not specified in the Cause register
+            Exception::RESET => {
+                next_pc = EXC_LOC_COMMON;
+
+                self.reg_status.set_ds_ts(false);
+                self.reg_status.set_ds_sr(false);
+                self.reg_status.set_rp(false);
+                self.reg_status.set_erl(true);
+                self.reg_status.set_ds_bev(true);
+
+                // TODO: set RegConfig BE = 1
+                // TODO: set RegConfig EP(3:0) = 0
+                // TODO: set RegConfig EC(2:0) = DivMode(2:0)
+            }
+            Exception::SOFTRESET => {
+                next_pc = if !self.reg_status.erl() {
+                    self.reg_error_epc as u32
+                } else {
+                    EXC_LOC_COMMON
+                };
+
+                self.reg_status.set_ds_ts(false);
+                self.reg_status.set_rp(false);
+                self.reg_status.set_erl(true);
+                self.reg_status.set_ds_bev(true);
+                self.reg_status.set_ds_sr(true);
+            }
+            Exception::NMI => {
+                next_pc = self.reg_error_epc as u32;
+
+                self.reg_status.set_ds_ts(false);
+                self.reg_status.set_erl(true);
+                self.reg_status.set_ds_bev(true);
+                self.reg_status.set_ds_sr(true);
+            }
+        }
+
+        ctx.pc = next_pc;
+    }
+
+    fn translate_addr(&mut self, vaddr: u64) -> Result<u32, Exception> {
         let segment = self.get_segment(vaddr);
 
         if segment.mapped {
-            info!(self.logger, "reading tlb mapped address region");
+            info!(self.logger, "reading tlb mapped address region"; "vaddr" => format!("{:#0x}", vaddr));
             let asid = self.reg_entry_hi as u8;
             let index = self.tlb.probe(vaddr, asid);
+
             if let Some(index) = index {
                 let entry = self.tlb.read(index);
                 let page_mask = (entry.page_mask | 0x1FFF) >> 1;
@@ -248,18 +418,30 @@ impl Cop0 for Cp0 {
                 let is_odd = vaddr & (page_mask as u64 + 1) != 0;
                 if (!is_odd && entry.valid0()) || (is_odd && entry.valid1()) {
                     if is_odd {
-                        entry.pfn1() | (vaddr as u32 & page_mask)
+                        Ok(entry.pfn1() | (vaddr as u32 & page_mask))
                     } else {
-                        entry.pfn0() | (vaddr as u32 & page_mask)
+                        Ok(entry.pfn0() | (vaddr as u32 & page_mask))
                     }
                 } else {
-                    panic!("TLB INVALID not yet handled: {:#0x}, {:#0x}", vaddr, asid);
+                    // TODO: set
+                    // - badvaddr
+                    // - context
+                    // - xcontext
+                    // - entryhi
+                    Err(Exception::TLBL_INVALID)
+                    // panic!("TLB INVALID not yet handled: {:#0x}, {:#0x}", vaddr, asid);
                 }
             } else {
-                panic!("TLB MISS not yet handled: {:#0x}, {:#0x}", vaddr, asid);
+                // TODO: set
+                // - badvaddr
+                // - context
+                // - xcontext
+                // - entryhi
+                Err(Exception::TLBL_MISS)
+                // panic!("TLB MISS not yet handled: {:#0x}, {:#0x}", vaddr, asid);
             }
         } else {
-            (vaddr - segment.start) as u32
+            Ok((vaddr - segment.start) as u32)
         }
     }
 }
@@ -315,18 +497,30 @@ impl Cop for Cp0 {
             CP0_REG_PAGE_MASK => self.reg_page_mask as u128,
             CP0_REG_WIRED => self.reg_wired as u128,
             CP0_REG_BAD_VADDR => self.reg_bad_vaddr as u128,
-            CP0_REG_COUNT => self.reg_count as u128,
+            CP0_REG_COUNT => {
+                error!(self.logger, "(read) reg count is not yet implemented");
+                0
+            }
             CP0_REG_ENTRY_HI => self.reg_entry_hi as u128,
             CP0_REG_COMPARE => self.reg_compare as u128,
             CP0_REG_STATUS => self.reg_status.0 as u128,
-            CP0_REG_CAUSE => self.reg_cause as u128,
+            CP0_REG_CAUSE => self.reg_cause.0 as u128,
             CP0_REG_EPC => self.reg_epc as u128,
             CP0_REG_PRID => self.reg_pr_id as u128,
             CP0_REG_CONFIG => self.reg_config as u128,
             CP0_REG_LL_ADDR => self.reg_ll_addr as u128,
-            CP0_REG_WATCH_LO => self.reg_watch_lo as u128,
-            CP0_REG_WATCH_HI => self.reg_watch_hi as u128,
-            CP0_REG_X_CONTEXT => self.reg_x_context as u128,
+            CP0_REG_WATCH_LO => {
+                error!(self.logger, "(read) watch lo is not yet implemented");
+                self.reg_watch_lo as u128
+            }
+            CP0_REG_WATCH_HI => {
+                error!(self.logger, "(read) watch hi is not yet implemented");
+                self.reg_watch_hi as u128
+            }
+            CP0_REG_X_CONTEXT => {
+                error!(self.logger, "(read) xcontext is not yet implemented");
+                self.reg_x_context as u128
+            }
             CP0_REG_PARITY_ERROR => self.reg_parity_error as u128,
             CP0_REG_CACHE_ERROR => self.reg_cache_error as u128,
             CP0_REG_TAG_LO => self.reg_tag_lo as u128,
@@ -342,27 +536,39 @@ impl Cop for Cp0 {
     fn set_reg(&mut self, idx: usize, val: u128) {
         match idx {
             CP0_REG_INDEX => self.reg_index = val as u32,
-            CP0_REG_RANDOM => panic!("reg random is not writable"),
+            CP0_REG_RANDOM => panic!("reg random is readonly"),
             CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 = val as u64,
             CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 = val as u64,
             CP0_REG_CONTEXT => self.reg_context = val as u64,
             CP0_REG_PAGE_MASK => self.reg_page_mask = val as u32,
             CP0_REG_WIRED => self.reg_wired = val as u32,
-            CP0_REG_BAD_VADDR => self.reg_bad_vaddr = val as u64,
-            CP0_REG_COUNT => self.reg_count = val as u64,
+            CP0_REG_BAD_VADDR => panic!("reg bad vaddr is readonly"),
+            CP0_REG_COUNT => {
+                error!(self.logger, "(write) reg count is not yet implemented");
+                self.reg_count = val as u64;
+            }
             CP0_REG_ENTRY_HI => self.reg_entry_hi = val as u64,
             CP0_REG_COMPARE => self.reg_compare = val as u64,
             CP0_REG_STATUS => self.reg_status.0 = val as u32,
-            CP0_REG_CAUSE => self.reg_cause = val as u64,
+            CP0_REG_CAUSE => self.reg_cause.0 = val as u32,
             CP0_REG_EPC => self.reg_epc = val as u64,
             CP0_REG_PRID => self.reg_pr_id = val as u64,
             CP0_REG_CONFIG => self.reg_config = val as u64,
             CP0_REG_LL_ADDR => self.reg_ll_addr = val as u64,
-            CP0_REG_WATCH_LO => self.reg_watch_lo = val as u64,
-            CP0_REG_WATCH_HI => self.reg_watch_hi = val as u64,
-            CP0_REG_X_CONTEXT => self.reg_x_context = val as u64,
+            CP0_REG_WATCH_LO => {
+                error!(self.logger, "(write) watch lo is not yet implemented");
+                self.reg_watch_lo = val as u64;
+            }
+            CP0_REG_WATCH_HI => {
+                error!(self.logger, "(write) watch hi is not yet implemented");
+                self.reg_watch_hi = val as u64;
+            }
+            CP0_REG_X_CONTEXT => {
+                error!(self.logger, "(write) xcontext is not yet implemented");
+                self.reg_x_context = val as u64
+            }
             CP0_REG_PARITY_ERROR => self.reg_parity_error = val as u64,
-            CP0_REG_CACHE_ERROR => self.reg_cache_error = val as u64,
+            CP0_REG_CACHE_ERROR => panic!("reg cache error is readonly"),
             CP0_REG_TAG_LO => self.reg_tag_lo = val as u64,
             CP0_REG_TAG_HI => self.reg_tag_hi = val as u64,
             CP0_REG_ERROR_EPC => self.reg_error_epc = val as u64,
@@ -417,7 +623,7 @@ impl Cop for Cp0 {
                         let index = (op.cop0.reg_index & 0x3F) as usize;
                         let entry_hi = op.cop0.reg_entry_hi;
 
-                        info!(op.cop0.logger, "TLBWI"; "index" => index, "entry_hi" => entry_hi);
+                        info!(op.cop0.logger, "TLBWI"; "index" => index, "entry_hi" => format!("{:#0x}", entry_hi));
 
                         op.cop0.tlb.write(
                             index,
@@ -447,10 +653,10 @@ impl Cop for Cp0 {
                         info!(op.cop0.logger, "COP0 ERET"; "erl" => op.cop0.reg_status.erl(), "epc" => op.cop0.reg_epc);
 
                         if op.cop0.reg_status.erl() {
-                            op.cpu.pc = op.cop0.reg_error_epc as u32;
+                            op.cpu.set_pc(op.cop0.reg_error_epc as u32);
                             op.cop0.reg_status.set_erl(false);
                         } else {
-                            op.cpu.pc = op.cop0.reg_epc as u32;
+                            op.cpu.set_pc(op.cop0.reg_epc as u32);
                             op.cop0.reg_status.set_exl(false);
                         }
                     }
