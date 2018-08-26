@@ -275,7 +275,7 @@ impl Segment {
         let ksu = status.ksu() as u8;
         let exl = status.exl();
         let erl = status.erl();
-        let user_mode = ksu == 0b10 && !exl && !erl;
+        // let user_mode = ksu == 0b10 && !exl && !erl;
         let supervisor_mode = ksu == 0b01 && !exl && !erl;
         let kernel_mode = ksu == 0b00 || exl || erl;
         let use64 = status.ux() | status.sx() | status.kx();

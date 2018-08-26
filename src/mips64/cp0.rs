@@ -1,6 +1,18 @@
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
 use super::segment::Segment;
+use super::tlb;
+use rand::{Rng, XorShiftRng};
 use slog;
+
+// Only safe in single threaded environements!
+static mut RNG: Option<XorShiftRng> = None;
+unsafe fn rng() -> &'static mut XorShiftRng {
+    if RNG.is_none() {
+        RNG = Some(XorShiftRng::new_unseeded());
+    }
+
+    RNG.as_mut().unwrap()
+}
 
 const CP0_REG_INDEX: usize = 0;
 const CP0_REG_RANDOM: usize = 1;
@@ -117,19 +129,17 @@ bitfield! {
 /// System Control Coprocessor (CP0)
 pub struct Cp0 {
     // Reg #0
-    reg_index: u64,
-    // Reg #1
-    reg_random: u64,
+    reg_index: u32,
     // Reg #2
-    reg_entry_lo0: u32,
+    reg_entry_lo0: u64,
     // Reg #3
-    reg_entry_lo1: u32,
+    reg_entry_lo1: u64,
     // Reg #4
     reg_context: u64,
     // Reg #5
-    reg_page_mask: u64,
+    reg_page_mask: u32,
     // Reg #6
-    reg_wired: u64,
+    reg_wired: u32,
 
     // Reg #8
     reg_bad_vaddr: u64,
@@ -169,6 +179,7 @@ pub struct Cp0 {
     // Reg #30
     reg_error_epc: u64,
 
+    tlb: tlb::Tlb,
     logger: slog::Logger,
 }
 
@@ -181,7 +192,6 @@ impl Cp0 {
 
         Box::new(Cp0 {
             reg_index: 0,
-            reg_random: 0,
             reg_entry_lo0: 0,
             reg_entry_lo1: 0,
             reg_context: 0,
@@ -206,6 +216,7 @@ impl Cp0 {
             reg_tag_hi: 0,
             reg_error_epc: 0,
 
+            tlb: tlb::Tlb::default(),
             logger: logger,
         })
     }
@@ -227,7 +238,26 @@ impl Cop0 for Cp0 {
         let segment = self.get_segment(vaddr);
 
         if segment.mapped {
-            unimplemented!("tlb mapped address region");
+            info!(self.logger, "reading tlb mapped address region");
+            let asid = self.reg_entry_hi as u8;
+            let index = self.tlb.probe(vaddr, asid);
+            if let Some(index) = index {
+                let entry = self.tlb.read(index);
+                let page_mask = (entry.page_mask | 0x1FFF) >> 1;
+                // this selects the first bit after the page mask (bit 13 for 4KB page size)
+                let is_odd = vaddr & (page_mask as u64 + 1) != 0;
+                if (!is_odd && entry.valid0()) || (is_odd && entry.valid1()) {
+                    if is_odd {
+                        entry.pfn1() | (vaddr as u32 & page_mask)
+                    } else {
+                        entry.pfn0() | (vaddr as u32 & page_mask)
+                    }
+                } else {
+                    panic!("TLB INVALID not yet handled: {:#0x}, {:#0x}", vaddr, asid);
+                }
+            } else {
+                panic!("TLB MISS not yet handled: {:#0x}, {:#0x}", vaddr, asid);
+            }
         } else {
             (vaddr - segment.start) as u32
         }
@@ -268,7 +298,17 @@ impl Cop for Cp0 {
     fn reg(&self, idx: usize) -> u128 {
         match idx {
             CP0_REG_INDEX => self.reg_index as u128,
-            CP0_REG_RANDOM => self.reg_random as u128,
+            CP0_REG_RANDOM => {
+                // The value is technicaly generated as backwords counter,
+                // which is decremented on every cpu cycle.
+                // But even cen64 uses a random number generator for this, so we should
+                // be good to do this too for now.
+                // The important part is that we generate a number in the range of
+                // [wired, 32).
+
+                let val: u32 = unsafe { rng().gen_range(self.reg_wired.into(), 32) };
+                val as u128
+            }
             CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 as u128,
             CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 as u128,
             CP0_REG_CONTEXT => self.reg_context as u128,
@@ -301,13 +341,13 @@ impl Cop for Cp0 {
 
     fn set_reg(&mut self, idx: usize, val: u128) {
         match idx {
-            CP0_REG_INDEX => self.reg_index = val as u64,
-            CP0_REG_RANDOM => self.reg_random = val as u64,
-            CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 = val as u32,
-            CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 = val as u32,
+            CP0_REG_INDEX => self.reg_index = val as u32,
+            CP0_REG_RANDOM => panic!("reg random is not writable"),
+            CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 = val as u64,
+            CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 = val as u64,
             CP0_REG_CONTEXT => self.reg_context = val as u64,
-            CP0_REG_PAGE_MASK => self.reg_page_mask = val as u64,
-            CP0_REG_WIRED => self.reg_wired = val as u64,
+            CP0_REG_PAGE_MASK => self.reg_page_mask = val as u32,
+            CP0_REG_WIRED => self.reg_wired = val as u32,
             CP0_REG_BAD_VADDR => self.reg_bad_vaddr = val as u64,
             CP0_REG_COUNT => self.reg_count = val as u64,
             CP0_REG_ENTRY_HI => self.reg_entry_hi = val as u64,
@@ -362,15 +402,45 @@ impl Cop for Cp0 {
                 match op.fmt() {
                     0x1 => {
                         // TLBR
-                        warn!(op.cop0.logger, "unimplemented COP0 TLBR");
+
+                        // TODO: this could fail, should handle this somehow
+                        let entry = op.cop0.tlb.read((op.cop0.reg_index & 0x3F) as usize);
+
+                        // information is written into the various registers
+                        op.cop0.reg_entry_hi = entry.hi();
+                        op.cop0.reg_entry_lo0 = entry.lo0;
+                        op.cop0.reg_entry_lo1 = entry.lo1;
+                        op.cop0.reg_page_mask = entry.page_mask & 0x1FFF_E000;
                     }
                     0x2 => {
                         // TLBWI
-                        warn!(op.cop0.logger, "unimplemented COP0 TLBWI"; "opcode" => op.opcode);
+                        let index = (op.cop0.reg_index & 0x3F) as usize;
+                        let entry_hi = op.cop0.reg_entry_hi;
+
+                        info!(op.cop0.logger, "TLBWI"; "index" => index, "entry_hi" => entry_hi);
+
+                        op.cop0.tlb.write(
+                            index,
+                            op.cop0.reg_page_mask,
+                            entry_hi,
+                            op.cop0.reg_entry_lo0,
+                            op.cop0.reg_entry_lo1,
+                        );
                     }
                     0x6 => {
                         // TLBWR
-                        warn!(op.cop0.logger, "unimplemented COP0 TLBWR");
+                        let index = op.cop0.reg(CP0_REG_RANDOM) as usize;
+                        let entry_hi = op.cop0.reg_entry_hi;
+
+                        info!(op.cop0.logger, "TLBWR"; "index" => index, "entry_hi" => entry_hi);
+
+                        op.cop0.tlb.write(
+                            index,
+                            op.cop0.reg_page_mask,
+                            entry_hi,
+                            op.cop0.reg_entry_lo0,
+                            op.cop0.reg_entry_lo1,
+                        );
                     }
                     0x18 => {
                         // ERET

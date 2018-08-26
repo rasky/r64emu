@@ -2,6 +2,7 @@
 #![feature(stdsimd)]
 #![feature(plugin)]
 #![plugin(phf_macros)]
+#![feature(test)]
 
 #[macro_use]
 extern crate slog;
@@ -25,6 +26,11 @@ extern crate bitfield;
 extern crate error_chain;
 
 extern crate phf;
+
+extern crate rand;
+
+#[cfg(test)]
+extern crate test;
 
 pub mod errors {
     error_chain!{
