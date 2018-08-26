@@ -10,7 +10,7 @@ pub struct Ri {
         bank = 0,
         size = 4194304,
         offset = 0x0000_0000,
-        vsize = 0x03F0_0000
+        vsize = 0x03F0_0000,
     )]
     rdram: Mem,
 
@@ -90,7 +90,7 @@ pub struct Ri {
 
 impl Ri {
     pub fn new(logger: slog::Logger) -> Ri {
-        let mut ri = Ri {
+        let ri = Ri {
             rdram: Mem::default(),
 
             reg_rdram_config: Reg32::default(),

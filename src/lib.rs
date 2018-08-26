@@ -1,5 +1,8 @@
 #![feature(attr_literals)]
 #![feature(stdsimd)]
+#![feature(plugin)]
+#![plugin(phf_macros)]
+#![feature(test)]
 
 #[macro_use]
 extern crate slog;
@@ -14,8 +17,20 @@ extern crate packed_simd;
 #[macro_use]
 extern crate bitflags;
 
+extern crate bit_field;
+
+#[macro_use]
+extern crate bitfield;
+
 #[macro_use]
 extern crate error_chain;
+
+extern crate phf;
+
+extern crate rand;
+
+#[cfg(test)]
+extern crate test;
 
 pub mod errors {
     error_chain!{

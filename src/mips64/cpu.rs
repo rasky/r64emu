@@ -1,9 +1,10 @@
 extern crate emu;
 
-use self::emu::bus::be::{Bus, MemIoR};
+use self::emu::bus::be::{Bus, DevPtr, MemIoR, Reg32};
 use self::emu::bus::MemInt;
 use self::emu::int::Numerics;
 use self::emu::sync;
+use bit_field::BitField;
 use slog;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -45,20 +46,55 @@ pub trait Cop {
 }
 
 pub enum Exception {
-    INT = 0x00,  // Interrupt
-    MOD = 0x01,  // TLB modification exception
-    TLBL = 0x02, // TLB load/fetch
-    TLBS = 0x03, // TLB store
-    ADEL = 0x04, // Address error (load/fetch)
-    ADES = 0x05, // Address error (store)
-    SYS = 0x08,  // Syscall
-    BP = 0x09,   // Breakpoint
-    RI = 0x0A,   // Reserved instruction
+    INT = 0x00,   // Interrupt
+    MOD = 0x01,   // TLB modification exception
+    ADEL = 0x04,  // Address error (load/fetch)
+    ADES = 0x05,  // Address error (store)
+    IBE = 0x06,   // Bus Error exception (instruction fetch)
+    DBE = 0x07,   // Bus Error exception (data reference: load or store)
+    SYS = 0x08,   // Syscall
+    BP = 0x09,    // Breakpoint
+    RI = 0x0A,    // Reserved instruction
+    TR = 0x0B,    // Trap exception
+    FPE = 0x0F,   // Floating point exception
+    WATCH = 0x17, // Watch exception
+
+    // Sepcial codes, to signal miss vs invalid tlb exceptions
+    TLBLInvalid = 0xE0, // TLB Load Invalid
+    TLBLMiss = 0xE1,    // TLB Load Miss
+    TLBSInvalid = 0xE2, // TLB Store Invalid
+    TLBSMiss = 0xE3,    // TLB Store Miss
 
     // Special exceptions that are not specified in the Cause register
-    RESET = 0x100,
-    SOFTRESET = 0x101,
-    NMI = 0x102,
+    RESET = 0xF0,
+    SOFTRESET = 0xF1,
+    NMI = 0xF2,
+}
+
+impl Exception {
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            Exception::INT => 0x00,
+            Exception::MOD => 0x01,
+            Exception::ADEL => 0x04,
+            Exception::ADES => 0x05,
+            Exception::IBE => 0x06,
+            Exception::DBE => 0x07,
+            Exception::SYS => 0x08,
+            Exception::BP => 0x09,
+            Exception::RI => 0x0A,
+            Exception::TR => 0x0B,
+            Exception::FPE => 0x0F,
+            Exception::WATCH => 0x17,
+            Exception::TLBLInvalid => 0x02,
+            Exception::TLBLMiss => 0x02,
+            Exception::TLBSInvalid => 0x03,
+            Exception::TLBSMiss => 0x03,
+            Exception::RESET => 0xF0,
+            Exception::SOFTRESET => 0xF1,
+            Exception::NMI => 0xF2,
+        }
+    }
 }
 
 struct Lines {
@@ -75,6 +111,9 @@ pub trait Cop0: Cop {
 
     /// Trigger the specified excepion.
     fn exception(&mut self, ctx: &mut CpuContext, exc: Exception);
+
+    /// Translate a virtual address into the physical counter part.
+    fn translate_addr(&mut self, vaddr: u64) -> Result<u32, Exception>;
 }
 
 pub struct CpuContext {
@@ -88,7 +127,176 @@ pub struct CpuContext {
     lines: Lines,
 }
 
+#[derive(DeviceBE)]
+pub struct RegsMI {
+    // (W): [6:0] init length        (R): [6:0] init length
+    //      [7] clear init mode           [7] init mode
+    //      [8] set init mode             [8] ebus test mode
+    //      [9/10] clr/set ebus test mode [9] RDRAM reg mode
+    //      [11] clear DP interrupt
+    //      [12] clear RDRAM reg
+    //      [13] set RDRAM reg mode
+    #[reg(bank = 0, offset = 0x00, rwmask = 0x3FFF, wcb, rcb)]
+    init_mode: Reg32,
+
+    // (R): [7:0] io
+    //      [15:8] rac
+    //      [23:16] rdp
+    //      [31:24] rsp
+    #[reg(bank = 0, offset = 0x04, rwmask = 0, readonly)]
+    version: Reg32,
+
+    // (R): [0] SP intr
+    //      [1] SI intr
+    //      [2] AI intr
+    //      [3] VI intr
+    //      [4] PI intr
+    //      [5] DP intr
+    #[reg(bank = 0, offset = 0x08, rwmask = 0x3F, readonly)]
+    interrupt: Reg32,
+
+    // (W): [0/1] clear/set SP mask  (R): [0] SP intr mask
+    //      [2/3] clear/set SI mask       [1] SI intr mask
+    //      [4/5] clear/set AI mask       [2] AI intr mask
+    //      [6/7] clear/set VI mask       [3] VI intr mask
+    //      [8/9] clear/set PI mask       [4] PI intr mask
+    //      [10/11] clear/set DP mask     [5] DP intr mask
+    #[reg(bank = 0, offset = 0x0C, rwmask = 0xFFF, wcb, rcb)]
+    interrupt_mask: Reg32,
+}
+
+impl Default for RegsMI {
+    fn default() -> Self {
+        let mi = RegsMI {
+            init_mode: Reg32::default(),
+            version: Reg32::default(),
+            interrupt: Reg32::default(),
+            interrupt_mask: Reg32::default(),
+        };
+
+        // defaults from cen64
+        mi.version.set(0x01010101);
+        mi.init_mode.set(0x80);
+
+        mi
+    }
+}
+
+impl RegsMI {
+    fn cb_write_init_mode(&mut self, old: u32, new: u32) {
+        let mut res = old;
+
+        // init length
+        res.set_bits(0..7, new.get_bits(0..7));
+
+        // clear init mode
+        if new.get_bit(7) {
+            res.set_bit(7, false);
+        }
+
+        // set init mode
+        if new.get_bit(8) {
+            res.set_bit(7, true);
+        }
+
+        // clear ebus test mode
+        if new.get_bit(9) {
+            res.set_bit(8, false);
+        }
+
+        // set ebus test mode
+        if new.get_bit(10) {
+            res.set_bit(8, true);
+        }
+
+        // clear DP interrupt
+        if new.get_bit(11) {
+            self.interrupt.set(*self.interrupt.get().set_bit(5, false));
+        }
+
+        // clear RDRAM reg mode
+        if new.get_bit(12) {
+            res.set_bit(9, false);
+        }
+
+        // set RDRAM reg mode
+        if new.get_bit(13) {
+            res.set_bit(9, true);
+        }
+
+        self.init_mode.set(res);
+    }
+
+    fn cb_read_init_mode(&self, old: u32) -> u32 {
+        old.get_bits(0..10)
+    }
+
+    fn cb_write_interrupt_mask(&mut self, old: u32, new: u32) {
+        let mut res = old;
+
+        // clear SP mask
+        if new.get_bit(0) {
+            res.set_bit(0, false);
+        }
+        // set SP mask
+        if new.get_bit(1) {
+            res.set_bit(0, true);
+        }
+
+        // clear SI mask
+        if new.get_bit(2) {
+            res.set_bit(1, false);
+        }
+        // set SI mask
+        if new.get_bit(3) {
+            res.set_bit(1, true);
+        }
+
+        // clear AI mask
+        if new.get_bit(4) {
+            res.set_bit(2, false);
+        }
+        // set AI mask
+        if new.get_bit(5) {
+            res.set_bit(2, true);
+        }
+
+        // clear VI mask
+        if new.get_bit(6) {
+            res.set_bit(3, false);
+        }
+        // set VI mask
+        if new.get_bit(7) {
+            res.set_bit(3, true);
+        }
+
+        // clear PI mask
+        if new.get_bit(8) {
+            res.set_bit(3, false);
+        }
+        // set PI mask
+        if new.get_bit(9) {
+            res.set_bit(4, true);
+        }
+
+        // clear DP mask
+        if new.get_bit(10) {
+            res.set_bit(5, false);
+        }
+        // set DP mask
+        if new.get_bit(11) {
+            res.set_bit(5, true);
+        }
+    }
+
+    fn cb_read_interrupt_mask(&self, old: u32) -> u32 {
+        old.get_bits(0..6)
+    }
+}
+
 pub struct Cpu {
+    pub regs_mi: DevPtr<RegsMI>,
+
     ctx: CpuContext,
 
     cop0: Option<Box<Cop0>>,
@@ -282,6 +490,7 @@ impl Cpu {
             until: 0,
             last_fetch_addr: 0xFFFF_FFFF,
             last_fetch_mem: MemIoR::default(),
+            regs_mi: DevPtr::new(RegsMI::default()),
         };
     }
 
@@ -313,6 +522,10 @@ impl Cpu {
         self.exception(Exception::RESET);
     }
 
+    pub fn soft_rest(&mut self) {
+        self.exception(Exception::SOFTRESET);
+    }
+
     fn exception(&mut self, exc: Exception) {
         if let Some(ref mut cop0) = self.cop0 {
             cop0.exception(&mut self.ctx, exc);
@@ -323,9 +536,10 @@ impl Cpu {
         unimplemented!();
     }
 
-    fn op(&mut self, opcode: u32) {
+    fn op(&mut self, opcode: u32) -> Result<(), Exception> {
         self.ctx.clock += 1;
         let mut op = Mipsop { opcode, cpu: self };
+
         match op.op() {
             // SPECIAL
             0x00 => match op.special() {
@@ -462,66 +676,140 @@ impl Cpu {
             0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()), // DADDI
             0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,        // DADDIU
 
-            0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea()).sx64(), // LB
-            0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea()).sx64(), // LH
-            0x22 => *op.mrt64() = op.cpu.lwl(op.ea(), op.rt32()).sx64(), // LWL
-            0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea()).sx64(), // LW
-            0x24 => *op.mrt64() = op.cpu.read::<u8>(op.ea()) as u64, // LBU
-            0x25 => *op.mrt64() = op.cpu.read::<u16>(op.ea()) as u64, // LHU
-            0x26 => *op.mrt64() = op.cpu.lwr(op.ea(), op.rt32()).sx64(), // LWR
-            0x27 => *op.mrt64() = op.cpu.read::<u32>(op.ea()) as u64, // LWU
-            0x28 => op.cpu.write::<u8>(op.ea(), op.rt32() as u8),    // SB
-            0x29 => op.cpu.write::<u16>(op.ea(), op.rt32() as u16),  // SH
-            0x2A => op.cpu.write::<u32>(op.ea(), op.cpu.swl(op.ea(), op.rt32())), // SWL
-            0x2B => op.cpu.write::<u32>(op.ea(), op.rt32()),         // SW
-            0x2E => op.cpu.write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32())), // SWR
-            0x2F => {}                                               // CACHE
+            0x20 => {
+                // LB
+                let ea = op.ea();
+                *op.mrt64() = op.cpu.read::<u8>(ea)?.sx64()
+            }
+            0x21 => {
+                // LH
+                let ea = op.ea();
+                *op.mrt64() = op.cpu.read::<u16>(ea)?.sx64()
+            }
+            0x22 => {
+                // LWL
+                let ea = op.ea();
+                let rt = op.rt32();
+                *op.mrt64() = op.cpu.lwl(ea, rt)?.sx64()
+            }
+            0x23 => {
+                // LW
+                let ea = op.ea();
+                *op.mrt64() = op.cpu.read::<u32>(ea)?.sx64()
+            }
+            0x24 => {
+                // LBU
+                let ea = op.ea();
+                *op.mrt64() = op.cpu.read::<u8>(ea)? as u64
+            }
+            0x25 => {
+                // LHU
+                let ea = op.ea();
+                *op.mrt64() = op.cpu.read::<u16>(ea)? as u64
+            }
+            0x26 => {
+                // LWR
+                let ea = op.ea();
+                let rt = op.rt32();
+                *op.mrt64() = op.cpu.lwr(ea, rt)?.sx64()
+            }
+            0x27 => {
+                let ea = op.ea();
+                *op.mrt64() = op.cpu.read::<u32>(ea)? as u64
+            }
+            0x28 => {
+                // SB
+                let ea = op.ea();
+                let rt = op.rt32() as u8;
+                op.cpu.write::<u8>(ea, rt)?
+            }
+            0x29 => {
+                // SH
+                let ea = op.ea();
+                let rt = op.rt32() as u16;
+                op.cpu.write::<u16>(ea, rt)?
+            }
+            0x2A => {
+                // SWL
+                let ea = op.ea();
+                let rt = op.rt32();
+                let res = op.cpu.swl(ea, rt)?;
+                op.cpu.write::<u32>(ea, res)?;
+            }
+            0x2B => {
+                // SW
+                let ea = op.ea();
+                let rt = op.rt32();
+                op.cpu.write::<u32>(ea, rt)?;
+            }
+            0x2E => {
+                // SWR
+                let ea = op.ea();
+                let rt = op.rt32();
+                let res = op.cpu.swr(ea, rt);
+                op.cpu.write::<u32>(ea, rt)?;
+            }
+            0x2F => {} // CACHE
 
             0x31 => if_cop!(op, cop1, cop1.lwc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LWC1
             0x32 => if_cop!(op, cop2, cop2.lwc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LWC2
             0x35 => if_cop!(op, cop1, cop1.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC1
             0x36 => if_cop!(op, cop2, cop2.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC2
-            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()),                        // LD
+            0x37 => {
+                // LD
+                let ea = op.ea();
+                *op.mrt64() = op.cpu.read::<u64>(ea)?
+            }
             0x39 => if_cop!(op, cop1, cop1.swc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SWC1
             0x3A => if_cop!(op, cop2, cop2.swc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SWC2
             0x3D => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SDC1
             0x3E => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SDC2
-            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),                          // SD
+            0x3F => {
+                // SD
+                let ea = op.ea();
+                let rt = op.rt64();
+                op.cpu.write::<u64>(ea, rt)?
+            }
 
             _ => panic!(
-                "unimplemented opcode: func=0x{:x?}, pc={}",
+                "unimplemented opcode: func=0x{:x?}, {:#b}, pc={} {:x?} {:#034b}",
                 op.op(),
-                op.cpu.ctx.pc.hex()
+                op.op(),
+                op.cpu.ctx.pc.hex(),
+                op.opcode,
+                op.opcode,
             ),
         }
+
+        Ok(())
     }
 
-    fn lwl(&self, addr: u32, reg: u32) -> u32 {
-        let mem = self.read::<u32>(addr);
+    fn lwl(&mut self, addr: u32, reg: u32) -> Result<u32, Exception> {
+        let mem = self.read::<u32>(addr)?;
         let shift = (addr & 3) * 8;
         let mask = (1 << shift) - 1;
-        (reg & mask) | ((mem << shift) & !mask)
+        Ok((reg & mask) | ((mem << shift) & !mask))
     }
 
-    fn lwr(&self, addr: u32, reg: u32) -> u32 {
-        let mem = self.read::<u32>(addr);
+    fn lwr(&mut self, addr: u32, reg: u32) -> Result<u32, Exception> {
+        let mem = self.read::<u32>(addr)?;
         let shift = (!addr & 3) * 8;
         let mask = ((1u64 << (32 - shift)) - 1) as u32;
-        (reg & !mask) | ((mem >> shift) & mask)
+        Ok((reg & !mask) | ((mem >> shift) & mask))
     }
 
-    fn swl(&self, addr: u32, reg: u32) -> u32 {
-        let mem = self.read::<u32>(addr);
+    fn swl(&mut self, addr: u32, reg: u32) -> Result<u32, Exception> {
+        let mem = self.read::<u32>(addr)?;
         let shift = (addr & 3) * 8;
         let mask = ((1u64 << (32 - shift)) - 1) as u32;
-        (mem & !mask) | ((reg >> shift) & mask)
+        Ok((mem & !mask) | ((reg >> shift) & mask))
     }
 
-    fn swr(&self, addr: u32, reg: u32) -> u32 {
-        let mem = self.read::<u32>(addr);
+    fn swr(&mut self, addr: u32, reg: u32) -> Result<u32, Exception> {
+        let mem = self.read::<u32>(addr)?;
         let shift = (!addr & 3) * 8;
         let mask = (1 << shift) - 1;
-        (mem & mask) | ((reg << shift) & !mask)
+        Ok((mem & mask) | ((reg << shift) & !mask))
     }
 
     fn fetch(&mut self, addr: u32) -> &MemIoR<u32> {
@@ -533,16 +821,23 @@ impl Cpu {
         &self.last_fetch_mem
     }
 
-    fn read<U: MemInt>(&self, addr: u32) -> U {
-        self.bus
-            .borrow()
-            .read::<U>(addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1))
+    fn read<U: MemInt>(&mut self, vaddr: u32) -> Result<U, Exception> {
+        let paddr = self.translate_addr(vaddr as i32 as u64)? & !(U::SIZE as u32 - 1);
+        Ok(self.bus.borrow().read::<U>(paddr))
     }
 
-    fn write<U: MemInt>(&self, addr: u32, val: U) {
-        self.bus
-            .borrow()
-            .write::<U>(addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1), val);
+    fn write<U: MemInt>(&mut self, vaddr: u32, val: U) -> Result<(), Exception> {
+        let paddr = self.translate_addr(vaddr as i32 as u64)? & !(U::SIZE as u32 - 1);
+        self.bus.borrow().write::<U>(paddr, val);
+        Ok(())
+    }
+
+    fn translate_addr(&mut self, vaddr: u64) -> Result<u32, Exception> {
+        if let Some(ref mut cop0) = self.cop0 {
+            cop0.translate_addr(vaddr)
+        } else {
+            panic!("missing COP0");
+        }
     }
 
     pub fn run(&mut self, until: i64) {
@@ -567,7 +862,10 @@ impl Cpu {
             self.ctx.tight_exit = false;
             while let Some(op) = iter.next() {
                 self.ctx.pc += 4;
-                self.op(op);
+                match self.op(op) {
+                    Ok(_) => {}
+                    Err(exc) => self.exception(exc),
+                }
                 if self.ctx.clock >= self.until || self.ctx.tight_exit {
                     break;
                 }
@@ -578,7 +876,10 @@ impl Cpu {
                 let op = iter.next().unwrap_or_else(|| self.fetch(pc).read());
                 self.ctx.pc = self.ctx.branch_pc;
                 self.ctx.branch_pc = 0;
-                self.op(op);
+                match self.op(op) {
+                    Ok(_) => {}
+                    Err(exc) => self.exception(exc),
+                }
             }
         }
     }
@@ -675,5 +976,56 @@ impl sync::Subsystem for Box<Cpu> {
 
     fn cycles(&self) -> i64 {
         self.ctx.clock
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::emu::bus::{Bus, DevPtr};
+    use super::slog;
+    use super::slog::Drain;
+    use super::*;
+    use bit_field::BitField;
+    extern crate slog_term;
+    use std;
+
+    fn logger() -> slog::Logger {
+        let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        slog::Logger::root(drain, o!())
+    }
+
+    #[test]
+    fn test_regs_mi() {
+        let mut bus = Bus::new(logger());
+        let mi = DevPtr::new(RegsMI::default());
+
+        bus.map_device(0x00, &mi, 0).unwrap();
+
+        // setting everything to 0
+        bus.write::<u32>(0x00, 0x00);
+        assert_eq!(bus.read::<u32>(0x00), 0);
+
+        // setting init mode
+        let val = *0u32.set_bit(8, true);
+        bus.write::<u32>(0x00, val);
+        assert_eq!(bus.read::<u32>(0x00).get_bit(7), true);
+
+        // clear init mode
+        bus.write::<u32>(0x00, *0u32.set_bit(7, true));
+        assert_eq!(bus.read::<u32>(0x00).get_bit(7), false);
+
+        // setting rdram reg mode
+        let val = *0u32.set_bit(13, true);
+        bus.write::<u32>(0x00, val);
+        assert_eq!(bus.read::<u32>(0x00).get_bit(9), true);
+
+        // clear rdram reg mode
+        bus.write::<u32>(0x00, *0u32.set_bit(12, true));
+        assert_eq!(bus.read::<u32>(0x00).get_bit(9), false);
+
+        // write init mode
+        bus.write::<u32>(0x00, *0u32.set_bits(0..7, 0xF));
+        assert_eq!(bus.read::<u32>(0x00).get_bits(0..7), 0xF);
     }
 }

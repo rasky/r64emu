@@ -70,6 +70,7 @@ impl N64 {
             bus.map_device(0x0404_0000, &sp, 1)?;
             bus.map_device(0x0408_0000, &sp, 2)?;
             bus.map_device(0x0410_0000, &dp, 0)?;
+            bus.map_device(0x0430_0000, &cpu.borrow().regs_mi, 0)?;
             bus.map_device(0x0440_0000, &vi, 0)?;
             bus.map_device(0x0450_0000, &ai, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
@@ -79,6 +80,8 @@ impl N64 {
             bus.map_device(0x1FC0_0000, &pi, 1)?;
         }
 
+        // 0x0020_5005 -> RDRAM range 2
+        // 0x000E_0204 -> RDRAM range 1, written to
         const MAIN_CLOCK: i64 = 187488000; // TODO: guessed
 
         let mut sync = sync::Sync::new(sync::Config {
