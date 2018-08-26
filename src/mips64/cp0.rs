@@ -1,6 +1,7 @@
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
 use super::segment::Segment;
 use super::tlb;
+use bit_field::BitField;
 use rand::{FromEntropy, Rng, XorShiftRng};
 use slog;
 
@@ -133,6 +134,13 @@ bitfield! {
     cu3, set_cu3: 31;
 }
 
+impl StatusReg {
+    /// Returns if currently in 64bit mode.
+    pub fn is64(&self) -> bool {
+        self.ux() || self.sx() || self.kx()
+    }
+}
+
 bitflags! {
     struct EXC_CODE: u8 {
         /// Exception Code - Interrupt
@@ -185,6 +193,35 @@ bitfield! {
     bd, set_bd: 31;
 }
 
+bitfield! {
+    #[derive(Default)]
+    pub struct ContextReg(u64);
+    impl Debug;
+
+    u32, bad_vpn2, set_bad_vpn2: 22, 4;
+    pte_base, _: 63, 23;
+}
+
+bitfield! {
+    #[derive(Default)]
+    pub struct XContextReg(u64);
+    impl Debug;
+
+    u32, bad_vpn2, set_bad_vpn2: 30, 4;
+    u8, r, set_r: 32, 31;
+    pte_base, _: 63, 33;
+}
+
+bitfield! {
+    #[derive(Default)]
+    pub struct EntryHiReg(u64);
+    impl Debug;
+
+    u8, asid, set_asid: 8, 0;
+    u32, vpn2, set_vpn2: 39, 13;
+    u8, r, set_r: 63, 62;
+}
+
 /// System Control Coprocessor (CP0)
 pub struct Cp0 {
     /// [tlb] #0 Index
@@ -196,7 +233,7 @@ pub struct Cp0 {
     /// [tlb/exception] #4 Context
     /// Used in handling TLB Miss exceptions.
     /// Contains PTEBase || BadVPN2 on exception || 0000
-    reg_context: u64,
+    reg_context: ContextReg,
     /// [tlb] #5 Page Mask
     reg_page_mask: u32,
     /// [tlb] #6 Wired
@@ -209,7 +246,7 @@ pub struct Cp0 {
     /// Running counter at half the clock speed of PClock.
     reg_count: u64,
     /// [tlb] #10 Entry Hi
-    reg_entry_hi: u64,
+    reg_entry_hi: EntryHiReg,
     /// [exception] #11 Compare
     /// Used for comparision with the count register to generate a timer interrupt.
     reg_compare: u64,
@@ -237,7 +274,7 @@ pub struct Cp0 {
     reg_watch_hi: u64,
     /// [exception] #20 XContext
     /// 64bit version of Context.
-    reg_x_context: u64,
+    reg_x_context: XContextReg,
     /// [exception] #26 Parity Error
     /// Unused.
     reg_parity_error: u64,
@@ -267,12 +304,12 @@ impl Cp0 {
             reg_index: 0,
             reg_entry_lo0: 0,
             reg_entry_lo1: 0,
-            reg_context: 0,
+            reg_context: ContextReg::default(),
             reg_page_mask: 0,
             reg_wired: 0,
             reg_bad_vaddr: 0,
             reg_count: 0,
-            reg_entry_hi: 0,
+            reg_entry_hi: EntryHiReg::default(),
             reg_compare: 0,
             reg_status,
             reg_cause: CauseReg::default(),
@@ -282,7 +319,7 @@ impl Cp0 {
             reg_ll_addr: 0,
             reg_watch_lo: 0,
             reg_watch_hi: 0,
-            reg_x_context: 0,
+            reg_x_context: XContextReg::default(),
             reg_parity_error: 0,
             reg_cache_error: 0,
             reg_tag_lo: 0,
@@ -314,6 +351,17 @@ impl Cp0 {
             }
         }
     }
+
+    fn write_regs_tlb_exception(&mut self, vaddr: u64) {
+        let vpn2 = tlb::calc_vpn2(vaddr);
+        self.reg_bad_vaddr = vaddr;
+        self.reg_context.set_bad_vpn2(vpn2);
+        self.reg_entry_hi.set_vpn2(vpn2);
+        if self.reg_status.is64() {
+            self.reg_x_context.set_bad_vpn2(vpn2);
+            self.reg_x_context.set_r(vaddr.get_bits(31..33) as u8);
+        }
+    }
 }
 
 impl Cop0 for Cp0 {
@@ -327,7 +375,7 @@ impl Cop0 for Cp0 {
         match exc {
             Exception::INT => unimplemented!("INT Exception"),
             Exception::MOD => unimplemented!("TLB MOD Exception"),
-            Exception::TLBL_MISS | Exception::TLBS_MISS => {
+            Exception::TLBLMiss | Exception::TLBSMiss => {
                 self.exception_setup(ctx, exc);
 
                 let base = if self.reg_status.exl() {
@@ -337,8 +385,7 @@ impl Cop0 for Cp0 {
                 } else {
                     EXC_LOC_BASE_0
                 };
-                let offset = if self.reg_status.ux() || self.reg_status.sx() || self.reg_status.kx()
-                {
+                let offset = if self.reg_status.is64() {
                     // 64bit
                     EXC_LOC_OFF_XTLB_MISS
                 } else {
@@ -348,7 +395,7 @@ impl Cop0 for Cp0 {
 
                 next_pc = base + offset;
             }
-            Exception::TLBL_INVALID | Exception::TLBS_INVALID => {
+            Exception::TLBLInvalid | Exception::TLBSInvalid => {
                 self.exception_setup(ctx, exc);
                 next_pc = EXC_LOC_COMMON + EXC_LOC_OFF_OTHER;
             }
@@ -404,44 +451,38 @@ impl Cop0 for Cp0 {
     }
 
     fn translate_addr(&mut self, vaddr: u64) -> Result<u32, Exception> {
-        let segment = self.get_segment(vaddr);
+        {
+            let segment = self.get_segment(vaddr);
 
-        if segment.mapped {
-            info!(self.logger, "reading tlb mapped address region"; "vaddr" => format!("{:#0x}", vaddr));
-            let asid = self.reg_entry_hi as u8;
-            let index = self.tlb.probe(vaddr, asid);
+            if !segment.mapped {
+                return Ok((vaddr - segment.start) as u32);
+            }
+        }
 
-            if let Some(index) = index {
+        info!(self.logger, "reading tlb mapped address region"; "vaddr" => format!("{:#0x}", vaddr));
+        let asid = self.reg_entry_hi.asid();
+        let index = self.tlb.probe(vaddr, asid);
+
+        if let Some(index) = index {
+            {
                 let entry = self.tlb.read(index);
                 let page_mask = (entry.page_mask | 0x1FFF) >> 1;
                 // this selects the first bit after the page mask (bit 13 for 4KB page size)
                 let is_odd = vaddr & (page_mask as u64 + 1) != 0;
                 if (!is_odd && entry.valid0()) || (is_odd && entry.valid1()) {
                     if is_odd {
-                        Ok(entry.pfn1() | (vaddr as u32 & page_mask))
+                        return Ok(entry.pfn1() | (vaddr as u32 & page_mask));
                     } else {
-                        Ok(entry.pfn0() | (vaddr as u32 & page_mask))
+                        return Ok(entry.pfn0() | (vaddr as u32 & page_mask));
                     }
-                } else {
-                    // TODO: set
-                    // - badvaddr
-                    // - context
-                    // - xcontext
-                    // - entryhi
-                    Err(Exception::TLBL_INVALID)
-                    // panic!("TLB INVALID not yet handled: {:#0x}, {:#0x}", vaddr, asid);
                 }
-            } else {
-                // TODO: set
-                // - badvaddr
-                // - context
-                // - xcontext
-                // - entryhi
-                Err(Exception::TLBL_MISS)
-                // panic!("TLB MISS not yet handled: {:#0x}, {:#0x}", vaddr, asid);
             }
+
+            self.write_regs_tlb_exception(vaddr);
+            Err(Exception::TLBLInvalid)
         } else {
-            Ok((vaddr - segment.start) as u32)
+            self.write_regs_tlb_exception(vaddr);
+            Err(Exception::TLBLMiss)
         }
     }
 }
@@ -493,7 +534,7 @@ impl Cop for Cp0 {
             }
             CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 as u128,
             CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 as u128,
-            CP0_REG_CONTEXT => self.reg_context as u128,
+            CP0_REG_CONTEXT => self.reg_context.0 as u128,
             CP0_REG_PAGE_MASK => self.reg_page_mask as u128,
             CP0_REG_WIRED => self.reg_wired as u128,
             CP0_REG_BAD_VADDR => self.reg_bad_vaddr as u128,
@@ -501,7 +542,7 @@ impl Cop for Cp0 {
                 error!(self.logger, "(read) reg count is not yet implemented");
                 0
             }
-            CP0_REG_ENTRY_HI => self.reg_entry_hi as u128,
+            CP0_REG_ENTRY_HI => self.reg_entry_hi.0 as u128,
             CP0_REG_COMPARE => self.reg_compare as u128,
             CP0_REG_STATUS => self.reg_status.0 as u128,
             CP0_REG_CAUSE => self.reg_cause.0 as u128,
@@ -517,10 +558,7 @@ impl Cop for Cp0 {
                 error!(self.logger, "(read) watch hi is not yet implemented");
                 self.reg_watch_hi as u128
             }
-            CP0_REG_X_CONTEXT => {
-                error!(self.logger, "(read) xcontext is not yet implemented");
-                self.reg_x_context as u128
-            }
+            CP0_REG_X_CONTEXT => self.reg_x_context.0 as u128,
             CP0_REG_PARITY_ERROR => self.reg_parity_error as u128,
             CP0_REG_CACHE_ERROR => self.reg_cache_error as u128,
             CP0_REG_TAG_LO => self.reg_tag_lo as u128,
@@ -539,7 +577,7 @@ impl Cop for Cp0 {
             CP0_REG_RANDOM => panic!("reg random is readonly"),
             CP0_REG_ENTRY_LO0 => self.reg_entry_lo0 = val as u64,
             CP0_REG_ENTRY_LO1 => self.reg_entry_lo1 = val as u64,
-            CP0_REG_CONTEXT => self.reg_context = val as u64,
+            CP0_REG_CONTEXT => self.reg_context.0 = val as u64,
             CP0_REG_PAGE_MASK => self.reg_page_mask = val as u32,
             CP0_REG_WIRED => self.reg_wired = val as u32,
             CP0_REG_BAD_VADDR => panic!("reg bad vaddr is readonly"),
@@ -547,7 +585,7 @@ impl Cop for Cp0 {
                 error!(self.logger, "(write) reg count is not yet implemented");
                 self.reg_count = val as u64;
             }
-            CP0_REG_ENTRY_HI => self.reg_entry_hi = val as u64,
+            CP0_REG_ENTRY_HI => self.reg_entry_hi.0 = val as u64,
             CP0_REG_COMPARE => self.reg_compare = val as u64,
             CP0_REG_STATUS => self.reg_status.0 = val as u32,
             CP0_REG_CAUSE => self.reg_cause.0 = val as u32,
@@ -563,10 +601,7 @@ impl Cop for Cp0 {
                 error!(self.logger, "(write) watch hi is not yet implemented");
                 self.reg_watch_hi = val as u64;
             }
-            CP0_REG_X_CONTEXT => {
-                error!(self.logger, "(write) xcontext is not yet implemented");
-                self.reg_x_context = val as u64
-            }
+            CP0_REG_X_CONTEXT => self.reg_x_context.0 = val as u64,
             CP0_REG_PARITY_ERROR => self.reg_parity_error = val as u64,
             CP0_REG_CACHE_ERROR => panic!("reg cache error is readonly"),
             CP0_REG_TAG_LO => self.reg_tag_lo = val as u64,
@@ -613,7 +648,7 @@ impl Cop for Cp0 {
                         let entry = op.cop0.tlb.read((op.cop0.reg_index & 0x3F) as usize);
 
                         // information is written into the various registers
-                        op.cop0.reg_entry_hi = entry.hi();
+                        op.cop0.reg_entry_hi.0 = entry.hi();
                         op.cop0.reg_entry_lo0 = entry.lo0;
                         op.cop0.reg_entry_lo1 = entry.lo1;
                         op.cop0.reg_page_mask = entry.page_mask & 0x1FFF_E000;
@@ -621,7 +656,7 @@ impl Cop for Cp0 {
                     0x2 => {
                         // TLBWI
                         let index = (op.cop0.reg_index & 0x3F) as usize;
-                        let entry_hi = op.cop0.reg_entry_hi;
+                        let entry_hi = op.cop0.reg_entry_hi.0;
 
                         info!(op.cop0.logger, "TLBWI"; "index" => index, "entry_hi" => format!("{:#0x}", entry_hi));
 
@@ -636,7 +671,7 @@ impl Cop for Cp0 {
                     0x6 => {
                         // TLBWR
                         let index = op.cop0.reg(CP0_REG_RANDOM) as usize;
-                        let entry_hi = op.cop0.reg_entry_hi;
+                        let entry_hi = op.cop0.reg_entry_hi.0;
 
                         info!(op.cop0.logger, "TLBWR"; "index" => index, "entry_hi" => entry_hi);
 

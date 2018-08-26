@@ -86,8 +86,8 @@ impl Tlb {
     /// Probes for a matching entry and returns the index if a match is found.
     /// None if no match is found.
     pub fn probe(&self, vaddr: u64, vasid: u8) -> Option<usize> {
-        let vpn2 = (vaddr >> 35 & 0x1800_0000) as u32 | (vaddr >> 13 & 0x07FF_FFFF) as u32;
-        println!("probe {:#0x} {:?}", vpn2, vpn2);
+        let vpn2 = calc_vpn2(vaddr);
+
         for (i, entry) in self.0.iter().enumerate() {
             let asid_match = entry.global || entry.asid == vasid;
             let vpn_match = entry.vpn2 == vpn2 & !(entry.page_mask >> 13);
@@ -117,15 +117,18 @@ impl Tlb {
         let entry = &mut self.0[index];
 
         entry.page_mask = page_mask;
-        entry.vpn2 = (entry_hi >> 35 & 0x1800_0000) as u32 | (entry_hi >> 13 & 0x07FF_FFFF) as u32;
+        entry.vpn2 = calc_vpn2(entry_hi);
+
         entry.asid = entry_hi as u8;
         entry.global = entry_lo0.get_bit(0) && entry_lo1.get_bit(0);
 
         entry.lo0 = entry_lo0;
         entry.lo1 = entry_lo1;
-
-        println!("wrote entry: {:?}", entry);
     }
+}
+
+pub fn calc_vpn2(addr: u64) -> u32 {
+    (addr >> 35 & 0x1800_0000) as u32 | (addr >> 13 & 0x07FF_FFFF) as u32
 }
 
 #[cfg(test)]

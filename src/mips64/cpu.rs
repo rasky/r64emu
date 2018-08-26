@@ -60,15 +60,15 @@ pub enum Exception {
     WATCH = 0x17, // Watch exception
 
     // Sepcial codes, to signal miss vs invalid tlb exceptions
-    TLBL_INVALID = 0x96, // TLB Load Invalid
-    TLBL_MISS = 0x97,    // TLB Load Miss
-    TLBS_INVALID = 0x98, // TLB Store Invalid
-    TLBS_MISS = 0x99,    // TLB Store Miss
+    TLBLInvalid = 0xE0, // TLB Load Invalid
+    TLBLMiss = 0xE1,    // TLB Load Miss
+    TLBSInvalid = 0xE2, // TLB Store Invalid
+    TLBSMiss = 0xE3,    // TLB Store Miss
 
     // Special exceptions that are not specified in the Cause register
-    RESET = 0x100,
-    SOFTRESET = 0x101,
-    NMI = 0x102,
+    RESET = 0xF0,
+    SOFTRESET = 0xF1,
+    NMI = 0xF2,
 }
 
 impl Exception {
@@ -86,13 +86,13 @@ impl Exception {
             Exception::TR => 0x0B,
             Exception::FPE => 0x0F,
             Exception::WATCH => 0x17,
-            Exception::TLBL_INVALID => 0x02,
-            Exception::TLBL_MISS => 0x02,
-            Exception::TLBS_INVALID => 0x03,
-            Exception::TLBS_MISS => 0x03,
-            Exception::RESET => 0x100,
-            Exception::SOFTRESET => 0x101,
-            Exception::NMI => 0x102,
+            Exception::TLBLInvalid => 0x02,
+            Exception::TLBLMiss => 0x02,
+            Exception::TLBSInvalid => 0x03,
+            Exception::TLBSMiss => 0x03,
+            Exception::RESET => 0xF0,
+            Exception::SOFTRESET => 0xF1,
+            Exception::NMI => 0xF2,
         }
     }
 }
