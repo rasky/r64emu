@@ -100,6 +100,10 @@ impl Sp {
             let mut cpu = spb.core_cpu.borrow_mut();
             cpu.set_cop0(SpCop0::new(&sp));
             cpu.set_cop2(SpVector::new(&sp, spb.logger.new(o!())));
+            cpu.bus_write_mask = 0xFFF;
+            cpu.bus_read_mask = 0xFFF;
+            cpu.bus_fetch_mask = 0xFFF;
+            cpu.bus_fetch_fixed = 0x1000;
 
             let ctx = cpu.ctx_mut();
             ctx.set_halt_line(true);
@@ -217,11 +221,9 @@ impl Sp {
                     // FIXME: generate interrupt on break
                 }
             } else {
-                // Releasing HALT causes a reset.
-                // FIXME: I would love to call reset() here but borrowing
-                // rules doesn't allow me re-entrancy into CPU.
-                //cpu.reset();
-                ctx.set_pc(0x1000);
+                // Restore execution. RESET is *NOT* performed:
+                // execution continues from the point where it was halted
+                // before (verified on real hardware).
                 ctx.set_halt_line(false);
             }
         }
@@ -297,7 +299,7 @@ impl Sp {
 
     fn cb_write_reg_rsp_pc(&self, _old: u32, val: u32) {
         info!(self.logger, "RSP set PC"; o!("pc" => val.hex()));
-        self.core_cpu.borrow_mut().ctx_mut().set_pc(val + 0x1000);
+        self.core_cpu.borrow_mut().ctx_mut().set_pc(val);
     }
 
     fn cb_read_reg_rsp_pc(&self, _old: u32) -> u32 {
@@ -323,7 +325,7 @@ impl mips64::Cop0 for SpCop0 {
     fn exception(&mut self, ctx: &mut mips64::CpuContext, exc: mips64::Exception) {
         match exc {
             mips64::Exception::RESET => {
-                ctx.set_pc(0x1000);
+                ctx.set_pc(0);
             }
 
             // Breakpoint exception is used by RSP to halt itself
