@@ -76,6 +76,7 @@ impl N64 {
             bus.map_device(0x0470_0000, &ri, 2)?;
             bus.map_device(0x0480_0000, &si, 0)?;
             bus.map_device(0x1000_0000, &cart, 0)?;
+            bus.map_device(0x1800_0000, &cart, 1)?;
             bus.map_device(0x1FC0_0000, &pi, 1)?;
         }
 

@@ -2,15 +2,21 @@ extern crate crc;
 extern crate emu;
 
 use self::crc::crc32;
-use emu::bus::be::{Mem, MemFlags};
+use emu::bus::be::{Mem, MemFlags, Reg16, Reg32};
 use errors::*;
 use std::fs::File;
 use std::io::Read;
 
 #[derive(DeviceBE)]
 pub struct Cartridge {
-    #[mem(offset = 0, vsize = 0x0FC0_0000)]
+    #[mem(offset = 0, vsize = 0x07C0_0000)]
     rom: Mem,
+
+    #[reg(bank = 1, offset = 0x200)]
+    drive64_status: Reg32,
+
+    #[reg(bank = 1, offset = 0x208)]
+    drive64_cmd: Reg32,
 }
 
 pub enum CicModel {
@@ -49,6 +55,8 @@ impl Cartridge {
         }
 
         Ok(Cartridge {
+            drive64_status: Reg32::default(),
+            drive64_cmd: Reg32::default(),
             rom: Mem::from_buffer(romswap(contents), MemFlags::READACCESS),
         })
     }
