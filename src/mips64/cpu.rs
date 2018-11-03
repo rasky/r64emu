@@ -102,6 +102,13 @@ pub struct Cpu {
 
     last_fetch_addr: u32,
     last_fetch_mem: MemIoR<u32>,
+
+    // Masks that isolate lines that are connected to the external bus
+    // Defaults to 0x1FFF_FFFF for all three accesses types.
+    pub bus_read_mask: u32,
+    pub bus_write_mask: u32,
+    pub bus_fetch_mask: u32,
+    pub bus_fetch_fixed: u32,
 }
 
 struct Mipsop<'a> {
@@ -282,6 +289,10 @@ impl Cpu {
             until: 0,
             last_fetch_addr: 0xFFFF_FFFF,
             last_fetch_mem: MemIoR::default(),
+            bus_read_mask: 0x1FFF_FFFF,
+            bus_write_mask: 0x1FFF_FFFF,
+            bus_fetch_mask: 0x1FFF_FFFF,
+            bus_fetch_fixed: 0,
         };
     }
 
@@ -528,7 +539,9 @@ impl Cpu {
         // Save last fetched memio, to speed up hot loops
         if self.last_fetch_addr != addr {
             self.last_fetch_addr = addr;
-            self.last_fetch_mem = self.bus.borrow().fetch_read::<u32>(addr & 0x1FFF_FFFC);
+            self.last_fetch_mem = self.bus.borrow().fetch_read::<u32>(
+                (addr & 0xFFFF_FFFC & self.bus_fetch_mask) | self.bus_fetch_fixed,
+            );
         }
         &self.last_fetch_mem
     }
@@ -536,13 +549,13 @@ impl Cpu {
     fn read<U: MemInt>(&self, addr: u32) -> U {
         self.bus
             .borrow()
-            .read::<U>(addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1))
+            .read::<U>(addr & self.bus_read_mask & !(U::SIZE as u32 - 1))
     }
 
     fn write<U: MemInt>(&self, addr: u32, val: U) {
         self.bus
             .borrow()
-            .write::<U>(addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1), val);
+            .write::<U>(addr & self.bus_write_mask & !(U::SIZE as u32 - 1), val);
     }
 
     pub fn run(&mut self, until: i64) {
