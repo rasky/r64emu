@@ -1,6 +1,6 @@
 arch n64.cpu
 endian msb
-output "rsp_stress_test.n64", create
+output "golden_test.n64", create
 fill 1052672 // Set ROM Size
 
 origin $00000000
@@ -20,7 +20,6 @@ Start:
   //j End
   //nop
 
-  // Load RSP Code To IMEM
   DMASPRD(RSPCode, RSPCodeEnd, SP_IMEM) // DMA Data Read DRAM->RSP MEM: Start Address, End Address, Destination RSP MEM Address
   DMASPWait() // Wait For RSP DMA To Finish
 
@@ -96,55 +95,13 @@ Halt:
 	j Halt
 	nop
 
-arch n64.rsp
-align(8) // Align 64-Bit
+align(1024) // Align 64-Bit
 RSPCode:
-base $0000 // Set Base Of RSP Code Object To Zero
-
-  li a0,$0
-  li a1,$800
-
-  lqv v2[e0],$00(a0) // $20: ACCUM LO
-  vsar v8,v2,v0[e10]
-
-  lqv v1[e0],$10(a0) // $10: ACCUM MD
-  vsar v8,v1,v0[e9]
-
-  lqv v0[e0],$30(a0) // $00: ACCUM HI
-  vsar v8,v0,v0[e8]
-
-  lqv v0[e0],$30(a0) // $30: V0
-  lqv v1[e0],$40(a0) // $40: V1
-
-  vmulf v0,v1[e0] // V0 += (V0 * V1[0]), Vector Multiply Accumulate Signed Fractions: VMACF VD,VS,VT[ELEMENT]
-
-  sqv v0[e0],$00(a1) // 128-Bit DMEM $000(R0) = V0, Store Vector To Quad: SQV VT[ELEMENT],$OFFSET(BASE)
-
-  vsar v0,v0[e10] // V0 = Vector Accumulator LO, Vector Accumulator Read: VSAR VD,VS,VT[ELEMENT]
-  sqv v0[e0],$10(a1) // 128-Bit DMEM $030(R0) = V0, Store Vector To Quad: SQV VT[ELEMENT],$OFFSET(BASE)
-
-  vsar v0,v0[e9] // V0 = Vector Accumulator MD, Vector Accumulator Read: VSAR VD,VS,VT[ELEMENT]
-  sqv v0[e0],$20(a1) // 128-Bit DMEM $020(R0) = V0, Store Vector To Quad: SQV VT[ELEMENT],$OFFSET(BASE)
-
-  vsar v0,v0[e8] // V0 = Vector Accumulator HI, Vector Accumulator Read: VSAR VD,VS,VT[ELEMENT]
-  sqv v0[e0],$30(a1) // 128-Bit DMEM $010(R0) = V0, Store Vector To Quad: SQV VT[ELEMENT],$OFFSET(BASE)
-
-  li t0,0
-  cfc2 t0,vco   // T0 = RSP CP2 Control Register: VCO (Vector Carry Out)
-  sw t0,$40(a1) // 16-Bit DMEM $040(R0) = T0
-  li t0,0
-  cfc2 t0,vcc   // T0 = RSP CP2 Control Register: VCC (Vector Compare Code)
-  sw t0,$44(a1) // 16-Bit DMEM $042(R0) = T0
-  li t0,0
-  cfc2 t0,vce   // T0 = RSP CP2 Control Register: VCE (Vector Compare Extension)
-  sw t0,$48(a1) //  8-Bit DMEM $044(R0) = T0
-
-  break // Set SP Status Halt, Broke & Check For Interrupt, Set SP Program Counter To $0000
+insert RSPCode2, "rsp.bin"
 align(8) // Align 64-Bit
-base RSPCode+pc() // Set End Of RSP Code Object
 RSPCodeEnd:
 
 align(16)
-insert TestVectors, "vectors.bin"
+insert TestVectors, "input.bin"
 TestVectorsEnd:
 Results:
