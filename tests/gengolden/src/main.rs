@@ -6,13 +6,13 @@ extern crate toml;
 use byteorder::{BigEndian, WriteBytesExt};
 use std::env;
 use std::fs;
-use std::process::Command;
+use std::path::Path;
+use std::process::{exit, Command};
 
 #[derive(Deserialize)]
 struct TestVector {
     name: String,
     input: Vec<u32>,
-    output: Vec<u32>,
 }
 
 #[derive(Deserialize)]
@@ -24,9 +24,14 @@ struct Testsuite {
 }
 
 fn main() {
-    let name: String = "vmulf".into();
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 2 {
+        println!("usage: gengolden <TESTNAME.TOML>");
+        exit(1);
+    }
+    let tomlname = Path::new(&args[1]);
 
-    let tomlsrc = fs::read_to_string(name.clone() + ".toml").expect("TOML file not found");
+    let tomlsrc = fs::read_to_string(tomlname).expect("TOML file not found");
     let t: Testsuite = toml::from_str(&tomlsrc).unwrap();
 
     // Calculate input and output size
@@ -65,17 +70,20 @@ fn main() {
         Command::new("bass")
             .args(&["-o", "rsp.bin", "rsp.asm"])
             .spawn()
-            .expect("failed to execute bass");
+            .expect("failed to execute bass")
+            .wait()
+            .unwrap();
+        fs::remove_file("rsp.asm").unwrap();
     }
 
     // Generate input vector
     {
         let mut f = fs::File::create("input.bin").expect("cannot create input.bin");
 
-        f.write_u32::<BigEndian>(t.test.len() as u32);
-        f.write_u32::<BigEndian>(input_size);
-        f.write_u32::<BigEndian>(output_size);
-        f.write_u32::<BigEndian>(0);
+        f.write_u32::<BigEndian>(t.test.len() as u32).unwrap();
+        f.write_u32::<BigEndian>(input_size).unwrap();
+        f.write_u32::<BigEndian>(output_size).unwrap();
+        f.write_u32::<BigEndian>(0).unwrap();
 
         for tv in &t.test {
             if tv.input.len() * 4 != input_size as usize {
@@ -88,7 +96,7 @@ fn main() {
             }
 
             for v in &tv.input {
-                f.write_u32::<BigEndian>(*v);
+                f.write_u32::<BigEndian>(*v).unwrap();
             }
         }
     }
@@ -97,11 +105,22 @@ fn main() {
     {
         Command::new("./run.sh")
             .args(&[
-                name.clone() + ".golden",
-                (output_size as usize * t.test.len()).to_string(),
+                tomlname.with_extension("golden").to_str().unwrap(),
+                &(output_size as usize * t.test.len()).to_string(),
             ])
             .spawn()
             .expect("failed to execute run.sh")
-            .wait();
+            .wait()
+            .unwrap();
     }
+
+    // Cleanup
+    fs::rename("rsp.bin", tomlname.with_extension("rsp")).unwrap();
+    fs::remove_file("input.bin").unwrap();
+
+    println!(
+        "Generated: {}, {}",
+        tomlname.with_extension("rsp").display(),
+        tomlname.with_extension("golden").display()
+    );
 }
