@@ -1,5 +1,5 @@
 #![feature(box_syntax)]
-#![feature(exact_chunks)]
+#![feature(chunks_exact)]
 #![feature(step_trait)]
 #![feature(specialization)]
 

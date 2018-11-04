@@ -8,6 +8,7 @@ extern crate quote;
 extern crate proc_macro2;
 
 use proc_macro2::{Ident, Span};
+use std::num::ParseIntError;
 use synstructure::BindStyle;
 
 decl_derive!([DeviceLE, attributes(reg, mem)] => derive_device_le);
@@ -35,6 +36,22 @@ struct MemAttributes {
     bank: usize,
     offset: u32,
     vsize: u32,
+}
+
+fn parse_u32(s: &str) -> Result<u32, ParseIntError> {
+    if s.starts_with("0x") {
+        u32::from_str_radix(&s[2..].replace("_", ""), 16)
+    } else {
+        s.parse::<u32>()
+    }
+}
+
+fn parse_usize(s: &str) -> Result<usize, ParseIntError> {
+    if s.starts_with("0x") {
+        usize::from_str_radix(&s[2..].replace("_", ""), 16)
+    } else {
+        s.parse::<usize>()
+    }
 }
 
 fn parse_reg_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> RegAttributes {
@@ -85,13 +102,17 @@ fn parse_reg_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> RegA
                 if kv.len() != 2 {
                     panic!(format!("{}: no argument for bank", varname))
                 }
-                ra.bank = kv[1].trim().parse::<usize>().unwrap();
+                ra.bank = kv[1]
+                    .trim()
+                    .parse::<usize>()
+                    .expect(&format!("cannot parse bank: {:?}", kv[1].trim()));
             }
             "offset" => {
                 if kv.len() != 2 {
                     panic!(format!("{}: no argument for offset", varname))
                 }
-                ra.offset = kv[1].trim().parse::<u32>().unwrap();
+                ra.offset = parse_u32(kv[1].trim())
+                    .expect(&format!("cannot parse offset: {:?}", kv[1].trim()));
                 offsetfound = true;
             }
             _ => panic!(format!("{}: invalid attribute: {}", varname, kv[0].trim())),
@@ -134,7 +155,8 @@ fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemA
                     panic!(format!("{}: no argument for size", varname))
                 }
 
-                ma.size = kv[1].trim().parse::<usize>().unwrap();
+                ma.size = parse_usize(kv[1].trim())
+                    .expect(&format!("cannot parse size: {:?}", kv[1].trim()));
             }
             "readonly" => {
                 if kv.len() != 1 {
@@ -152,13 +174,15 @@ fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemA
                 if kv.len() != 2 {
                     panic!(format!("{}: no argument for bank", varname))
                 }
-                ma.bank = kv[1].trim().parse::<usize>().unwrap();
+                ma.bank = parse_usize(kv[1].trim())
+                    .expect(&format!("cannot parse bank: {:?}", kv[1].trim()));
             }
             "offset" => {
                 if kv.len() != 2 {
                     panic!(format!("{}: no argument for offset", varname))
                 }
-                ma.offset = kv[1].trim().parse::<u32>().unwrap();
+                ma.offset = parse_u32(kv[1].trim())
+                    .expect(&format!("cannot parse offset: {:?}", kv[1].trim()));
                 offsetfound = true;
             }
             "vsize" => {
@@ -166,7 +190,8 @@ fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemA
                     panic!(format!("{}: no argument for size", varname))
                 }
 
-                ma.vsize = kv[1].trim().parse::<u32>().unwrap();
+                ma.vsize = parse_u32(kv[1].trim())
+                    .expect(&format!("cannot parse vsize: {:?}", kv[1].trim()));
             }
             _ => panic!(format!("{}: invalid attribute: {}", varname, kv[0].trim())),
         }
@@ -226,8 +251,9 @@ fn expand_reg_devinit(
         }
     }
 
-    let init = ra.init.parse::<u32>().unwrap();
-    let rwmask = ra.rwmask.parse::<u32>().unwrap();
+    let init = parse_u32(&ra.init).expect(&format!("cannot parse init value: {:?}", ra.init));
+    let rwmask =
+        parse_u32(&ra.rwmask).expect(&format!("cannot parse rwmask value: {:?}", ra.rwmask));
     let read = !ra.writeonly;
     let write = !ra.readonly;
     quote! {
