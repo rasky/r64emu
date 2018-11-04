@@ -1,0 +1,10 @@
+[package]
+name = "gengolden"
+version = "0.1.0"
+authors = ["Giovanni Bajo <rasky@develer.com>"]
+
+[dependencies]
+byteorder = "1"
+serde = "1.0.80"
+serde_derive = "1.0.80"
+toml = "0.4.8"
