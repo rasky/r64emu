@@ -211,10 +211,10 @@ impl SpVector {
                             op.setvd(vzero);
                         }
                         8..=10 => {
+                            // NOTE: VSAR is not able to write the accumulator,
+                            // contrary to what documentation says.
                             let sar = op.accum(2 - (e - 8));
                             op.setvd(sar);
-                            let new = op.vs();
-                            op.setaccum(2 - (e - 8), new);
                         }
                         _ => unimplemented!(),
                     }
