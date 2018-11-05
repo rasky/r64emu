@@ -187,3 +187,13 @@ fn test_golden(testname: &str) {
 fn golden_vmulf() {
     test_golden("tests/gengolden/vmulf.toml");
 }
+
+#[test]
+fn golden_vmulu() {
+    test_golden("tests/gengolden/vmulu.toml");
+}
+
+#[test]
+fn golden_vmacf() {
+    test_golden("tests/gengolden/vmacf.toml");
+}
