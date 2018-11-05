@@ -41,36 +41,60 @@ unsafe fn internal_vmulfu(
     signed: bool,
     mac: bool,
 ) -> (__m128i, __m128i, __m128i, __m128i) {
-    let vs1 = _mm_srai_epi32(_mm_unpacklo_epi16(vs, vs), 16);
-    let vs2 = _mm_srai_epi32(_mm_unpackhi_epi16(vs, vs), 16);
-    let vt1 = _mm_srai_epi32(_mm_unpacklo_epi16(vt, vt), 16);
-    let vt2 = _mm_srai_epi32(_mm_unpackhi_epi16(vt, vt), 16);
+    let mlo = _mm_mullo_epi16(vs, vt);
+    let mhi = _mm_mulhi_epi16(vs, vt);
 
-    let mut acc1 = _mm_slli_epi32(_mm_mullo_epi32(vs1, vt1), 1);
-    let mut acc2 = _mm_slli_epi32(_mm_mullo_epi32(vs2, vt2), 1);
-
-    if mac {
-        if signed {
-            acc1 = _mm_adds_epi32(acc1, _mm_unpacklo_epi16(aclo, acmd));
-            acc2 = _mm_adds_epi32(acc2, _mm_unpackhi_epi16(aclo, acmd));
-        } else {
-            acc1 = _mm_add_epi32(acc1, _mm_unpacklo_epi16(aclo, acmd));
-            acc2 = _mm_add_epi32(acc2, _mm_unpackhi_epi16(aclo, acmd));
-        }
-    }
+    let mut acc1 = _mm_unpacklo_epi16(mlo, mhi);
+    let mut acc2 = _mm_unpackhi_epi16(mlo, mhi);
 
     let kzero = _mm_setzero_si128();
     let klomask = _mm_set1_epi32(0xFFFF);
 
     if !mac {
-        acc1 = _mm_add_epi32(acc1, _mm_set1_epi32(0x8000));
-        acc2 = _mm_add_epi32(acc2, _mm_set1_epi32(0x8000));
+        acc1 = _mm_add_epi32(acc1, _mm_set1_epi32(0x4000));
+        acc2 = _mm_add_epi32(acc2, _mm_set1_epi32(0x4000));
+        let carry = _mm_packs_epi32(_mm_srai_epi32(acc1, 31), _mm_srai_epi32(acc2, 31));
+        acc1 = _mm_slli_epi32(acc1, 1);
+        acc2 = _mm_slli_epi32(acc2, 1);
+        let plo = _mm_packus_epi32(_mm_and_si128(acc1, klomask), _mm_and_si128(acc2, klomask));
+        let pmd = _mm_packs_epi32(_mm_srai_epi32(acc1, 16), _mm_srai_epi32(acc2, 16));
+
+        // The accumulator is now 33 effective bits: PLO, PMD and CARRY.
+        // The result is computed by saturating the upper 17 bits (so PMD and CARRY)
+        let res = if signed {
+            // Signed saturation of ACCUM HI/MD 17bit -> RES 16bit
+            _mm_packs_epi32(
+                _mm_unpacklo_epi16(pmd, carry),
+                _mm_unpackhi_epi16(pmd, carry),
+            )
+        } else {
+            // Unsigned saturation of ACCUM HI/MD 17bit -> RES 16bit
+            //   * Negative values: 0
+            //   * Positive values < 0x7FFF: kept as-is
+            //   * Positive values >= 0x8000: 0xFFFF
+            // See golden test "overflow" for vmulu
+            let x = _mm_andnot_si128(carry, pmd);
+            _mm_or_si128(x, _mm_srai_epi16(x, 15))
+        };
+
+        return (res, plo, pmd, carry);
+    }
+
+    acc1 = _mm_slli_epi32(acc1, 1);
+    acc2 = _mm_slli_epi32(acc2, 1);
+
+    if signed {
+        acc1 = _mm_adds_epi32(acc1, _mm_unpacklo_epi16(aclo, acmd));
+        acc2 = _mm_adds_epi32(acc2, _mm_unpackhi_epi16(aclo, acmd));
+    } else {
+        acc1 = _mm_add_epi32(acc1, _mm_unpacklo_epi16(aclo, acmd));
+        acc2 = _mm_add_epi32(acc2, _mm_unpackhi_epi16(aclo, acmd));
     }
 
     let res = _mm_packs_epi32(_mm_srai_epi32(acc1, 16), _mm_srai_epi32(acc2, 16));
     let plo = _mm_packus_epi32(_mm_and_si128(acc1, klomask), _mm_and_si128(acc2, klomask));
     let pmd = res;
-    let phi = if mac && !signed {
+    let phi = if !signed {
         kzero
     } else {
         _mm_cmpgt_epi16(kzero, pmd)
@@ -79,11 +103,7 @@ unsafe fn internal_vmulfu(
     let res = if signed {
         res
     } else {
-        if mac {
-            _mm_or_si128(_mm_cmplt_epi16(res, kzero), res)
-        } else {
-            _mm_and_si128(_mm_cmpgt_epi16(res, kzero), res)
-        }
+        _mm_or_si128(_mm_cmplt_epi16(res, kzero), res)
     };
 
     (res, plo, pmd, phi)

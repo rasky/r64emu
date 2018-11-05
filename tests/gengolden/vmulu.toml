@@ -21,7 +21,7 @@ rsp_code = """
   lqv v0[e0],$00(a0)
   lqv v1[e0],$10(a0)
 
-  vmulf v0,v1[e0]  // V0*V1
+  vmulu v0,v1[e0]  // V0*V1
 
   sqv v0[e0],$00(a1)
 
