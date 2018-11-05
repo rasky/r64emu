@@ -129,7 +129,7 @@ fn test_golden(testname: &str) {
     let goldenname = tomlname.with_extension("golden");
     assert!(
         goldenname.metadata().unwrap().modified().unwrap()
-            <= tomlname.metadata().unwrap().modified().unwrap(),
+            >= tomlname.metadata().unwrap().modified().unwrap(),
         "{} is newer than {}",
         tomlname.display(),
         goldenname.display()
