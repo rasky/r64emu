@@ -197,3 +197,8 @@ fn golden_vmulu() {
 fn golden_vmacf() {
     test_golden("tests/gengolden/vmacf.toml");
 }
+
+#[test]
+fn golden_vmacu() {
+    test_golden("tests/gengolden/vmacu.toml");
+}

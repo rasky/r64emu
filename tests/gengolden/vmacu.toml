@@ -51,7 +51,7 @@ rsp_code = """
 Loop:
   lqv v0[e0],$00(a0) // $00: V0
   lqv v1[e0],$10(a0) // $10: V1
-  vmacf v0,v1[e0]
+  vmacu v0,v1[e0]
 
   sqv v0[e0],$00(a1)
 
