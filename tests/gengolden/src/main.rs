@@ -64,15 +64,17 @@ fn main() {
             base $0000
             include "LIB/N64.INC"
             include "LIB/N64_RSP.INC"
-        "#.into();
+        "#
+        .into();
 
         fs::write("rsp.asm", prefix + &t.rsp_code).expect("cannot write RSP.ASM file");
-        Command::new("bass")
+        let status = Command::new("bass")
             .args(&["-o", "rsp.bin", "rsp.asm"])
-            .spawn()
-            .expect("failed to execute bass")
-            .wait()
-            .unwrap();
+            .status()
+            .expect("failed to execute bass");
+        if !status.success() {
+            exit(1);
+        }
         fs::remove_file("rsp.asm").unwrap();
     }
 
@@ -103,15 +105,15 @@ fn main() {
 
     // Compile and execute the golden test to create golden results
     {
-        Command::new("./run.sh")
-            .args(&[
-                tomlname.with_extension("golden").to_str().unwrap(),
-                &(output_size as usize * t.test.len()).to_string(),
-            ])
-            .spawn()
-            .expect("failed to execute run.sh")
-            .wait()
-            .unwrap();
+        let goldenname = tomlname.with_extension("golden");
+        let total_output_size = output_size as usize * t.test.len();
+        let status = Command::new("./run.sh")
+            .args(&[goldenname.to_str().unwrap(), &total_output_size.to_string()])
+            .status()
+            .expect("failed to execute run.sh");
+        if !status.success() {
+            exit(1);
+        }
     }
 
     // Cleanup
