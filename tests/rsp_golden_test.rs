@@ -162,10 +162,11 @@ fn test_golden(testname: &str) {
 
         // Emulate the microcode
         {
-            main_bus.borrow().write::<u32>(0x0404_0000, 0); // REG_PC = 0
+            main_bus.borrow().write::<u32>(0x0408_0000, 0); // REG_PC = 0
             main_bus.borrow().write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
             let cpu = sp.borrow().core_cpu.clone();
-            cpu.borrow_mut().run(10000);
+            let clock = cpu.borrow().ctx().clock;
+            cpu.borrow_mut().run(clock + 1000);
         }
 
         // Read the results
