@@ -55,6 +55,12 @@ fn main() {
             panic!(format!("invalid desc string: {}", *d));
         }
     }
+    if input_size % 8 != 0 {
+        panic!("input size must be multiple of 8 bytes (found: {})", input_size);
+    }
+    if output_size % 8 != 0 {
+        panic!("output size must be multiple of 8 bytes (found: {})", output_size);
+    }
 
     // Generate RSP binary
     {
