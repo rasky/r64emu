@@ -126,7 +126,7 @@ unsafe fn internal_vmulfu(
             x
         } else {
             let mut x = pmd;
-            x = _mm_andnot_si128(_mm_cmpgt_epi16(kzero, phi), pmd); // PHI<0? X=0
+            x = _mm_andnot_si128(_mm_cmpgt_epi16(kzero, phi), x); // PHI<0? X=0
             x = _mm_or_si128(_mm_cmpgt_epi16(phi, kzero), x); // PHI>0? X=FFFF
             x = _mm_or_si128(x, _mm_srai_epi16(x, 15)); // X>0x7FFF? X=FFFF
             x

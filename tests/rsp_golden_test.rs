@@ -202,3 +202,18 @@ fn golden_vmacf() {
 fn golden_vmacu() {
     test_golden("tests/gengolden/vmacu.toml");
 }
+
+#[test]
+fn golden_vmudn() {
+    test_golden("tests/gengolden/vmudn.toml");
+}
+
+#[test]
+fn golden_vmudh() {
+    test_golden("tests/gengolden/vmudh.toml");
+}
+
+#[test]
+fn golden_vmadn() {
+    test_golden("tests/gengolden/vmadn.toml");
+}
