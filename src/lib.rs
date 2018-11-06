@@ -1,3 +1,4 @@
+#![feature(nll)]
 #![feature(attr_literals)]
 #![feature(stdsimd)]
 

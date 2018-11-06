@@ -20,7 +20,7 @@ use std::rc::Rc;
 #[repr(align(16))]
 struct VectorRegs([[u8; 16]; 32]);
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 #[repr(align(16))]
 struct VectorReg([u8; 16]);
 
@@ -170,10 +170,12 @@ impl SpVector {
             match op.func() {
                 0x00 => op_vmul!(op, vmulf), // VMULF
                 0x01 => op_vmul!(op, vmulu), // VMULU
-                0x08 => op_vmul!(op, vmacf), // VMACF
-                0x09 => op_vmul!(op, vmacu), // VMACU
+                0x04 => op_vmul!(op, vmudl), // VMUDL
                 0x06 => op_vmul!(op, vmudn), // VMUDN
                 0x07 => op_vmul!(op, vmudh), // VMUDH
+                0x08 => op_vmul!(op, vmacf), // VMACF
+                0x09 => op_vmul!(op, vmacu), // VMACU
+                0x0C => op_vmul!(op, vmadl), // VMADL
                 0x0E => op_vmul!(op, vmadn), // VMADN
                 0x0F => op_vmul!(op, vmadh), // VMADH
                 0x10 => {
@@ -181,7 +183,14 @@ impl SpVector {
                     let vs = op.vs();
                     let vt = op.vte();
                     let carry = op.carry();
-                    op.setvd(_mm_adds_epi16(_mm_adds_epi16(vs, vt), carry));
+
+                    // Add the carry to the minimum value, as we need to
+                    // saturate the final result and not only intermediate
+                    // results:
+                    //     0x8000 + 0x8000 + 0x1 must be 0x8000, not 0x8001
+                    let min = _mm_min_epi16(vs, vt);
+                    let max = _mm_max_epi16(vs, vt);
+                    op.setvd(_mm_adds_epi16(_mm_adds_epi16(min, carry), max));
                     op.setaccum(0, _mm_add_epi16(_mm_add_epi16(vs, vt), carry));
                     op.setcarry(vzero);
                     op.setne(vzero);
@@ -263,7 +272,13 @@ impl SpVector {
                     0 => cpu.regs[op.rt()] = op.spv.vco() as u64,
                     1 => cpu.regs[op.rt()] = op.spv.vcc() as u64,
                     2 => cpu.regs[op.rt()] = op.spv.vce() as u64,
-                    _ => panic!("unimplement COP2 CTC2 reg:{}", op.rs()),
+                    _ => panic!("unimplement COP2 CFC2 reg:{}", op.rs()),
+                },
+                0x6 => match op.rs() {
+                    0 => op.spv.set_vco(cpu.regs[op.rt()] as u16),
+                    1 => op.spv.set_vcc(cpu.regs[op.rt()] as u16),
+                    2 => op.spv.set_vce(cpu.regs[op.rt()] as u16),
+                    _ => panic!("unimplement COP2 CTC2 reg:{}", op.rd()),
                 },
                 _ => panic!("unimplemented COP2 non-VU opcode={:x}", op.e()),
             }

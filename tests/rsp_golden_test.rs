@@ -174,13 +174,23 @@ fn test_golden(testname: &str) {
             let spb = sp.borrow();
             let outbuf = &spb.dmem.buf()[0x800..0x800 + output_size];
 
-            println!("    outputs:");
+            println!("   outputs:");
             test.display_output(outbuf.chunks_exact(4).map(BigEndian::read_u32));
 
             // Load test input into DMEM
             assert!(exp == outbuf, "output is different from expected result");
         }
     }
+}
+
+#[test]
+fn golden_vadd() {
+    test_golden("tests/gengolden/vadd.toml");
+}
+
+#[test]
+fn golden_vaddc() {
+    test_golden("tests/gengolden/vaddc.toml");
 }
 
 #[test]
@@ -209,11 +219,26 @@ fn golden_vmudn() {
 }
 
 #[test]
+fn golden_vmadn() {
+    test_golden("tests/gengolden/vmadn.toml");
+}
+
+#[test]
 fn golden_vmudh() {
     test_golden("tests/gengolden/vmudh.toml");
 }
 
 #[test]
-fn golden_vmadn() {
-    test_golden("tests/gengolden/vmadn.toml");
+fn golden_vmadh() {
+    test_golden("tests/gengolden/vmadh.toml");
+}
+
+#[test]
+fn golden_vmudl() {
+    test_golden("tests/gengolden/vmudl.toml");
+}
+
+#[test]
+fn golden_vmadl() {
+    test_golden("tests/gengolden/vmadl.toml");
 }

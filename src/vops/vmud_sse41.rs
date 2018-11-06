@@ -1,3 +1,4 @@
+use super::acc_add;
 use std::arch::x86_64::*;
 
 #[inline]
@@ -23,42 +24,6 @@ unsafe fn acc_clamp_unsigned(mut x: __m128i, acc_md: __m128i, acc_hi: __m128i) -
     x = _mm_andnot_si128(mask_min, x); // <MIN? X=0
     x = _mm_or_si128(mask_max, x); // >MAX? X=FFFF
     x
-}
-
-#[inline]
-#[target_feature(enable = "sse4.1")]
-unsafe fn acc_add(
-    acc1_lo: __m128i,
-    acc1_md: __m128i,
-    acc1_hi: __m128i,
-    acc2_lo: __m128i,
-    acc2_md: __m128i,
-    acc2_hi: __m128i,
-) -> (__m128i, __m128i, __m128i) {
-    let mut res_lo = _mm_add_epi16(acc1_lo, acc2_lo);
-    let mut res_md = _mm_add_epi16(acc1_md, acc2_md);
-    let mut res_hi = _mm_add_epi16(acc1_hi, acc2_hi);
-
-    let signbit = _mm_set1_epi16(0x8000);
-    let carry_lo = _mm_srli_epi16(
-        _mm_cmpgt_epi16(
-            _mm_xor_si128(acc2_lo, signbit),
-            _mm_xor_si128(res_lo, signbit),
-        ),
-        15,
-    );
-    res_md = _mm_add_epi16(res_md, carry_lo);
-
-    let carry_md = _mm_srli_epi16(
-        _mm_cmpgt_epi16(
-            _mm_xor_si128(acc2_md, signbit),
-            _mm_xor_si128(res_md, signbit),
-        ),
-        15,
-    );
-    res_hi = _mm_add_epi16(res_hi, carry_md);
-
-    (res_lo, res_md, res_hi)
 }
 
 // SSE 4.1 version
@@ -126,8 +91,50 @@ pub(crate) unsafe fn internal_vmudh(
     (res, acc_lo, acc_md, acc_hi)
 }
 
+// SSE 4.1 version
+#[inline] // FIXME: for some reason, Rust doesn't allow inline(always) here
+#[target_feature(enable = "sse4.1")]
+pub(crate) unsafe fn internal_vmudl(
+    vs: __m128i,
+    vt: __m128i,
+    old_acc_lo: __m128i,
+    old_acc_md: __m128i,
+    old_acc_hi: __m128i,
+    mac: bool,
+) -> (__m128i, __m128i, __m128i, __m128i) {
+    let mut acc_lo = _mm_mulhi_epi16(vs, vt);
+
+    let toggle = _mm_set1_epi16(0x7FFF);
+    acc_lo = _mm_add_epi16(acc_lo, _mm_and_si128(_mm_and_si128(vt, toggle), _mm_srai_epi16(vs, 15)));
+    acc_lo = _mm_add_epi16(acc_lo, _mm_and_si128(_mm_and_si128(vs, toggle), _mm_srai_epi16(vt, 15)));
+
+    let mut acc_md = _mm_setzero_si128();
+    let mut acc_hi = _mm_setzero_si128();
+
+    if mac {
+        let (new_acc_lo, new_acc_md, new_acc_hi) =
+            acc_add(old_acc_lo, old_acc_md, old_acc_hi, acc_lo, acc_md, acc_hi);
+        acc_lo = new_acc_lo;
+        acc_md = new_acc_md;
+        acc_hi = new_acc_hi;
+    }
+
+    let mut res = acc_lo;
+
+    // The clamping is always performed, but we can avoid doing it
+    // in the non-mac case as the upper part is always zero.
+    if mac {
+        res = acc_clamp_unsigned(res, acc_md, acc_hi);
+    }
+
+    (res, acc_lo, acc_md, acc_hi)
+}
+
 gen_mul_variant!(vmudn, internal_vmudn, "sse4.1", false);
 gen_mul_variant!(vmadn, internal_vmudn, "sse4.1", true);
 
 gen_mul_variant!(vmudh, internal_vmudh, "sse4.1", false);
 gen_mul_variant!(vmadh, internal_vmudh, "sse4.1", true);
+
+gen_mul_variant!(vmudl, internal_vmudl, "sse4.1", false);
+gen_mul_variant!(vmadl, internal_vmudl, "sse4.1", true);

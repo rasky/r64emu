@@ -1,33 +1,5 @@
+use super::acc_add;
 use std::arch::x86_64::*;
-
-#[inline(always)]
-unsafe fn _mm_adds_epi32(a: __m128i, b: __m128i) -> __m128i {
-    #[allow(overflowing_literals)]
-    let int_min = _mm_set1_epi32(0x80000000);
-    let int_max = _mm_set1_epi32(0x7FFFFFFF);
-
-    let res = _mm_add_epi32(a, b);
-
-    let sign_and = _mm_and_si128(a, b);
-
-    let sign_or = _mm_or_si128(a, b);
-
-    let min_sat_mask = _mm_andnot_si128(res, sign_and);
-
-    let max_sat_mask = _mm_andnot_si128(sign_or, res);
-
-    let res_temp = _mm_blendv_ps(
-        _mm_castsi128_ps(res),
-        _mm_castsi128_ps(int_min),
-        _mm_castsi128_ps(min_sat_mask),
-    );
-
-    return _mm_castps_si128(_mm_blendv_ps(
-        res_temp,
-        _mm_castsi128_ps(int_max),
-        _mm_castsi128_ps(max_sat_mask),
-    ));
-}
 
 // SSE 4.1 version
 #[inline]
@@ -72,39 +44,17 @@ unsafe fn internal_vmulfu(
     acc1 = _mm_slli_epi32(acc1, 1);
     acc2 = _mm_slli_epi32(acc2, 1);
 
-    if mac {
-        let prev_acc1 = acc1;
-        let prev_acc2 = acc2;
-
-        // Add the partial result to the current accumulator
-        // Using 32-bit registers, we add MD and LO in one shot,
-        // but there could be a carry-over that should be added to HI...
-        acc1 = _mm_add_epi32(acc1, _mm_unpacklo_epi16(aclo, acmd));
-        acc2 = _mm_add_epi32(acc2, _mm_unpackhi_epi16(aclo, acmd));
-
-        // Compute the carry-over from the previous addition.
-        let mask = _mm_set1_epi32(0x80000000);
-        let carry2 = _mm_packus_epi32(
-            _mm_srli_epi32(
-                _mm_cmpgt_epi32(_mm_xor_si128(prev_acc1, mask), _mm_xor_si128(acc1, mask)),
-                31,
-            ),
-            _mm_srli_epi32(
-                _mm_cmpgt_epi32(_mm_xor_si128(prev_acc2, mask), _mm_xor_si128(acc2, mask)),
-                31,
-            ),
-        );
-
-        // Add the carry-over to the partial HI part
-        phi = _mm_add_epi16(phi, carry2);
-
-        // Now add the partial HI part to the current accumulator HI.
-        phi = _mm_add_epi16(phi, achi); // maybe ADDS? FIXME: golden test
-    }
-
     // Repack partial result into 16-bit registers
-    let plo = _mm_packus_epi32(_mm_and_si128(acc1, klomask), _mm_and_si128(acc2, klomask));
-    let pmd = _mm_packs_epi32(_mm_srai_epi32(acc1, 16), _mm_srai_epi32(acc2, 16));
+    let mut plo = _mm_packus_epi32(_mm_and_si128(acc1, klomask), _mm_and_si128(acc2, klomask));
+    let mut pmd = _mm_packus_epi32(_mm_srli_epi32(acc1, 16), _mm_srli_epi32(acc2, 16));
+
+    if mac {
+        let (new_acc_lo, new_acc_md, new_acc_hi) = acc_add(aclo, acmd, achi, plo, pmd, phi);
+
+        plo = new_acc_lo;
+        pmd = new_acc_md;
+        phi = new_acc_hi;
+    }
 
     // The accumulator is now 48 effective bits: PLO, PMD and PHI.
     // The result is computed by saturating the upper 32 bits (so PMD and PHI)
