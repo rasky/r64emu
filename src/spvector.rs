@@ -171,6 +171,7 @@ impl SpVector {
                 0x00 => op_vmul!(op, vmulf), // VMULF
                 0x01 => op_vmul!(op, vmulu), // VMULU
                 0x04 => op_vmul!(op, vmudl), // VMUDL
+                0x05 => op_vmul!(op, vmudm), // VMUDM
                 0x06 => op_vmul!(op, vmudn), // VMUDN
                 0x07 => op_vmul!(op, vmudh), // VMUDH
                 0x08 => op_vmul!(op, vmacf), // VMACF
