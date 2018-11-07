@@ -7,16 +7,12 @@ use std::arch::x86_64::*;
 unsafe fn internal_vmulfu(
     vs: __m128i,
     vt: __m128i,
-    aclo: __m128i,
-    acmd: __m128i,
-    achi: __m128i,
+    old_acc_lo: __m128i,
+    old_acc_md: __m128i,
+    old_acc_hi: __m128i,
     signed: bool,
     mac: bool,
 ) -> (__m128i, __m128i, __m128i, __m128i) {
-    // Constants
-    let kzero = _mm_setzero_si128();
-    let klomask = _mm_set1_epi32(0xFFFF);
-
     // Compute V0*V1 (signed), lower and higher part
     let mlo = _mm_mullo_epi16(vs, vt);
     let mhi = _mm_mulhi_epi16(vs, vt);
@@ -38,31 +34,33 @@ unsafe fn internal_vmulfu(
 
     // We're about to multiply *2. Get the bit being shifted away: it's our
     // ACCUM HI partial result (after sign-extension).
-    let mut phi = _mm_packs_epi32(_mm_srai_epi32(acc1, 31), _mm_srai_epi32(acc2, 31));
+    let mut acc_hi = _mm_packs_epi32(_mm_srai_epi32(acc1, 31), _mm_srai_epi32(acc2, 31));
 
     // Multiply by two
     acc1 = _mm_slli_epi32(acc1, 1);
     acc2 = _mm_slli_epi32(acc2, 1);
 
     // Repack partial result into 16-bit registers
-    let mut plo = _mm_packus_epi32(_mm_and_si128(acc1, klomask), _mm_and_si128(acc2, klomask));
-    let mut pmd = _mm_packus_epi32(_mm_srli_epi32(acc1, 16), _mm_srli_epi32(acc2, 16));
+    let klomask = _mm_set1_epi32(0xFFFF);
+    let mut acc_lo = _mm_packus_epi32(_mm_and_si128(acc1, klomask), _mm_and_si128(acc2, klomask));
+    let mut acc_md = _mm_packus_epi32(_mm_srli_epi32(acc1, 16), _mm_srli_epi32(acc2, 16));
 
     if mac {
-        let (new_acc_lo, new_acc_md, new_acc_hi) = acc_add(aclo, acmd, achi, plo, pmd, phi);
+        let (new_acc_lo, new_acc_md, new_acc_hi) =
+            acc_add(old_acc_lo, old_acc_md, old_acc_hi, acc_lo, acc_md, acc_hi);
 
-        plo = new_acc_lo;
-        pmd = new_acc_md;
-        phi = new_acc_hi;
+        acc_lo = new_acc_lo;
+        acc_md = new_acc_md;
+        acc_hi = new_acc_hi;
     }
 
     let res = if signed {
-        acc_clamp_signed(pmd, phi)
+        acc_clamp_signed(acc_md, acc_hi)
     } else {
-        acc_clamp_unsigned2(pmd, phi)
+        acc_clamp_unsigned2(acc_md, acc_hi)
     };
 
-    (res, plo, pmd, phi)
+    (res, acc_lo, acc_md, acc_hi)
 }
 
 gen_mul_variant!(vmulf, internal_vmulfu, "sse4.1", true, false);
