@@ -56,10 +56,19 @@ fn main() {
         }
     }
     if input_size % 8 != 0 {
-        panic!("input size must be multiple of 8 bytes (found: {})", input_size);
+        panic!(
+            "input size must be multiple of 8 bytes (found: {})",
+            input_size
+        );
     }
     if output_size % 8 != 0 {
-        panic!("output size must be multiple of 8 bytes (found: {})", output_size);
+        panic!(
+            "output size must be multiple of 8 bytes (found: {})",
+            output_size
+        );
+    }
+    if !t.rsp_code.contains("break") {
+        panic!("break missing from RSP code");
     }
 
     // Generate RSP binary
