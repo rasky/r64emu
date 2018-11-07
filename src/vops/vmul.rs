@@ -99,7 +99,7 @@ pub(crate) unsafe fn internal_vmudnm(
     // so there's nothing to do.
     if mac {
         if mid {
-            res = acc_clamp_unsigned2(res, acc_hi);
+            res = acc_clamp_signed(acc_md, acc_hi);
         } else {
             res = acc_clamp_unsigned3(res, acc_md, acc_hi);
         }

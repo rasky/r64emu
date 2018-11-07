@@ -39,6 +39,8 @@ output_desc = [
   "u32:4_vcc",
   "u32:4_vce",
   "u32:4_padding",
+
+  "v128:sat",
 ]
 
 
@@ -76,6 +78,14 @@ Loop:
   subi s0,1
   bnez s0, Loop
   addi a1,$50
+
+  // Perform a vmadn after having filled in the accumulator with large values.
+  // This tests the saturation.
+  lqv v0[e0],$00(a0)
+  lqv v1[e0],$10(a0)
+  vmudh v0,v1[e0]
+  vmadn v0,v1[e0]
+  sqv v0[e0],$0(a1)
 
   break // Set SP Status Halt, Broke & Check For Interrupt, Set SP Program Counter To $0000
 """

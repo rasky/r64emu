@@ -255,5 +255,5 @@ fn golden_vmudm() {
 
 #[test]
 fn golden_vmadm() {
-    test_golden("tests/gengolden/vmudm.toml");
+    test_golden("tests/gengolden/vmadm.toml");
 }
