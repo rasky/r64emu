@@ -194,6 +194,11 @@ fn golden_vaddc() {
 }
 
 #[test]
+fn golden_vlogical() {
+    test_golden("tests/gengolden/vlogical.toml");
+}
+
+#[test]
 fn golden_vmulf() {
     test_golden("tests/gengolden/vmulf.toml");
 }

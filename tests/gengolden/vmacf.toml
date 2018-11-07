@@ -39,6 +39,15 @@ output_desc = [
   "u32:4_vcc",
   "u32:4_vce",
   "u32:4_padding",
+
+  "v128:5_res",
+  "v128:5_accum_lo",
+  "v128:5_accum_md",
+  "v128:5_accum_hi",
+  "u32:5_vco",
+  "u32:5_vcc",
+  "u32:5_vce",
+  "u32:5_padding",
 ]
 
 
@@ -76,6 +85,32 @@ Loop:
   subi s0,1
   bnez s0, Loop
   addi a1,$50
+
+  // Last iteration: first dirty accumulator, so to test saturation
+  lqv v0[e0],$00(a0) // $00: V0
+  lqv v1[e0],$10(a0) // $10: V1
+  vmudh v0,v1[e0]
+  vmacf v0,v1[e0]
+
+  sqv v0[e0],$00(a1)
+
+  vsar v0,v0[e10]
+  sqv v0[e0],$10(a1)
+  vsar v0,v0[e9]
+  sqv v0[e0],$20(a1)
+
+  vsar v0,v0[e8]
+  sqv v0[e0],$30(a1)
+
+  li t0,0
+  cfc2 t0,vco
+  sw t0,$40(a1)
+  li t0,0
+  cfc2 t0,vcc
+  sw t0,$44(a1)
+  li t0,0
+  cfc2 t0,vce
+  sw t0,$48(a1)
 
   break // Set SP Status Halt, Broke & Check For Interrupt, Set SP Program Counter To $0000
 """
