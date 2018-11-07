@@ -29,14 +29,17 @@ unsafe fn acc_clamp_unsigned(mut x: __m128i, acc_md: __m128i, acc_hi: __m128i) -
 // SSE 4.1 version
 #[inline] // FIXME: for some reason, Rust doesn't allow inline(always) here
 #[target_feature(enable = "sse4.1")]
-pub(crate) unsafe fn internal_vmudn(
-    vs: __m128i,
-    vt: __m128i,
+pub(crate) unsafe fn internal_vmudnm(
+    mut vs: __m128i,
+    mut vt: __m128i,
     old_acc_lo: __m128i,
     old_acc_md: __m128i,
     old_acc_hi: __m128i,
     mac: bool,
+    mid: bool,
 ) -> (__m128i, __m128i, __m128i, __m128i) {
+    let (vs,vt) = if mid {(vt,vs)} else {(vs,vt)};
+
     let mut acc_lo = _mm_mullo_epi16(vs, vt);
     let mut acc_md = _mm_mulhi_epi16(vs, vt);
 
@@ -52,7 +55,7 @@ pub(crate) unsafe fn internal_vmudn(
         acc_hi = new_acc_hi;
     }
 
-    let mut res = acc_lo;
+    let mut res = if mid {acc_md} else {acc_lo};
 
     // The clamping is always performed, but we can avoid doing it
     // in the non-mac case as acc_hi is always a sign-extension of acc_md,
@@ -63,45 +66,6 @@ pub(crate) unsafe fn internal_vmudn(
 
     (res, acc_lo, acc_md, acc_hi)
 }
-
-// SSE 4.1 version
-#[inline] // FIXME: for some reason, Rust doesn't allow inline(always) here
-#[target_feature(enable = "sse4.1")]
-pub(crate) unsafe fn internal_vmudm(
-    vs: __m128i,
-    vt: __m128i,
-    old_acc_lo: __m128i,
-    old_acc_md: __m128i,
-    old_acc_hi: __m128i,
-    mac: bool,
-) -> (__m128i, __m128i, __m128i, __m128i) {
-    let mut acc_lo = _mm_mullo_epi16(vs, vt);
-    let mut acc_md = _mm_mulhi_epi16(vs, vt);
-
-    let sign = _mm_srai_epi16(vt, 15);
-    acc_md = _mm_add_epi16(acc_md, _mm_and_si128(vs, sign));
-    let mut acc_hi = _mm_srai_epi16(acc_md, 15);
-
-    if mac {
-        let (new_acc_lo, new_acc_md, new_acc_hi) =
-            acc_add(old_acc_lo, old_acc_md, old_acc_hi, acc_lo, acc_md, acc_hi);
-        acc_lo = new_acc_lo;
-        acc_md = new_acc_md;
-        acc_hi = new_acc_hi;
-    }
-
-    let mut res = acc_md;
-
-    // The clamping is always performed, but we can avoid doing it
-    // in the non-mac case as acc_hi is always a sign-extension of acc_md,
-    // so there's nothing to do.
-    if mac {
-        res = acc_clamp_unsigned(res, acc_md, acc_hi);
-    }
-
-    (res, acc_lo, acc_md, acc_hi)
-}
-
 
 // SSE 4.1 version
 #[inline] // FIXME: for some reason, Rust doesn't allow inline(always) here
@@ -169,14 +133,13 @@ pub(crate) unsafe fn internal_vmudl(
     (res, acc_lo, acc_md, acc_hi)
 }
 
-gen_mul_variant!(vmudn, internal_vmudn, "sse4.1", false);
-gen_mul_variant!(vmadn, internal_vmudn, "sse4.1", true);
+gen_mul_variant!(vmudn, internal_vmudnm, "sse4.1", false, false);
+gen_mul_variant!(vmadn, internal_vmudnm, "sse4.1", true, false);
+gen_mul_variant!(vmudm, internal_vmudnm, "sse4.1", false, true);
+gen_mul_variant!(vmadm, internal_vmudnm, "sse4.1", true, true);
 
 gen_mul_variant!(vmudh, internal_vmudh, "sse4.1", false);
 gen_mul_variant!(vmadh, internal_vmudh, "sse4.1", true);
 
-gen_mul_variant!(vmudl, internal_vmudl, "sse4.1", false);
+gen_mul_variant!(vmudl, internal_vmudl, "sse4.1", false );
 gen_mul_variant!(vmadl, internal_vmudl, "sse4.1", true);
-
-gen_mul_variant!(vmudm, internal_vmudm, "sse4.1", false);
-gen_mul_variant!(vmadm, internal_vmudm, "sse4.1", true);
