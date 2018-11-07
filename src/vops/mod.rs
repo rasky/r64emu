@@ -24,23 +24,17 @@ macro_rules! gen_mul_variant {
     };
 }
 
-
 mod accumulator;
-mod vmud;
-mod vmud_sse41;
-mod vmulf;
-mod vmulf_sse41;
+mod vmul;
 
 pub(crate) use self::accumulator::*;
 
 #[allow(dead_code)]
 pub mod sse2 {
-    pub use super::vmud::*;
-    pub use super::vmulf::*;
+    pub use super::vmul::*;
 }
 
 #[allow(dead_code)]
 pub mod sse41 {
-    pub use super::vmud_sse41::*;
-    pub use super::vmulf_sse41::*;
+    pub use super::vmul::*;
 }
