@@ -1,4 +1,4 @@
-use super::acc_add;
+use super::{acc_add, acc_clamp_signed, acc_clamp_unsigned2};
 use std::arch::x86_64::*;
 
 // SSE 4.1 version
@@ -56,31 +56,10 @@ unsafe fn internal_vmulfu(
         phi = new_acc_hi;
     }
 
-    // The accumulator is now 48 effective bits: PLO, PMD and PHI.
-    // The result is computed by saturating the upper 32 bits (so PMD and PHI)
     let res = if signed {
-        // Signed saturation of ACCUM HI/MD 32bit -> RES 16bit
-        _mm_packs_epi32(_mm_unpacklo_epi16(pmd, phi), _mm_unpackhi_epi16(pmd, phi))
+        acc_clamp_signed(pmd, phi)
     } else {
-        // Unsigned saturation of ACCUM HI/MD 32bit -> RES 16bit
-        //   * Negative values: 0
-        //   * Positive values < 0x7FFF: kept as-is
-        //   * Positive values >= 0x8000: 0xFFFF
-        // See golden test "overflow" for vmulu
-
-        // In non-MAC, phi is either 0 or 0xFFFF, so we can use simplify
-        // the clamping.
-        if !mac {
-            let mut x = _mm_andnot_si128(phi, pmd); // PHI<0? X=0
-            x = _mm_or_si128(x, _mm_srai_epi16(x, 15)); // X>7FFF? X=FFFF
-            x
-        } else {
-            let mut x = pmd;
-            x = _mm_andnot_si128(_mm_cmpgt_epi16(kzero, phi), x); // PHI<0? X=0
-            x = _mm_or_si128(_mm_cmpgt_epi16(phi, kzero), x); // PHI>0? X=FFFF
-            x = _mm_or_si128(x, _mm_srai_epi16(x, 15)); // X>0x7FFF? X=FFFF
-            x
-        }
+        acc_clamp_unsigned2(pmd, phi)
     };
 
     (res, plo, pmd, phi)

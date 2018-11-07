@@ -24,46 +24,14 @@ macro_rules! gen_mul_variant {
     };
 }
 
-#[inline]
-#[target_feature(enable = "sse4.1")]
-pub(crate) unsafe fn acc_add(
-    acc1_lo: __m128i,
-    acc1_md: __m128i,
-    acc1_hi: __m128i,
-    acc2_lo: __m128i,
-    acc2_md: __m128i,
-    acc2_hi: __m128i,
-) -> (__m128i, __m128i, __m128i) {
-    let mut res_lo = _mm_add_epi16(acc1_lo, acc2_lo);
-    let mut res_md = _mm_add_epi16(acc1_md, acc2_md);
-    let mut res_hi = _mm_add_epi16(acc1_hi, acc2_hi);
 
-    let signbit = _mm_set1_epi16(0x8000);
-    let carry_lo = _mm_srli_epi16(
-        _mm_cmpgt_epi16(
-            _mm_xor_si128(acc2_lo, signbit),
-            _mm_xor_si128(res_lo, signbit),
-        ),
-        15,
-    );
-    res_md = _mm_add_epi16(res_md, carry_lo);
-
-    let carry_md = _mm_srli_epi16(
-        _mm_cmpgt_epi16(
-            _mm_xor_si128(acc2_md, signbit),
-            _mm_xor_si128(res_md, signbit),
-        ),
-        15,
-    );
-    res_hi = _mm_add_epi16(res_hi, carry_md);
-
-    (res_lo, res_md, res_hi)
-}
-
+mod accumulator;
 mod vmud;
 mod vmud_sse41;
 mod vmulf;
 mod vmulf_sse41;
+
+pub(crate) use self::accumulator::*;
 
 #[allow(dead_code)]
 pub mod sse2 {
