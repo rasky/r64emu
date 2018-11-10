@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-if [ $# -ne 2 ]; then
-	echo "Usage: run.sh <OUTPUT> <NUMBYTES>"
+if [ $# -ne 3 ]; then
+	echo "Usage: run.sh <OUTPUT_FILENAME> <OUTPUT_SIZE> <MEM_SIZE>"
 	exit 1
 fi
 
@@ -19,5 +19,5 @@ echo "Reset the N64 and press ENTER to continue..."
 read -r
 
 sleep 2
-64drive -q -o 0x1000000 -s 4096 -d golden.raw
+64drive -q -o 0x1000000 -s "$3" -d golden.raw
 head -c "$2" <golden.raw >"$1"
