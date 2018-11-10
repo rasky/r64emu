@@ -325,7 +325,7 @@ impl Cop for SpVector {
     fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         let sp = self.sp.borrow();
         let dmem = sp.dmem.buf();
-        let (base, vt, op, _element, offset) = SpVector::oploadstore(op, ctx);
+        let (base, vt, op, element, offset) = SpVector::oploadstore(op, ctx);
         match op {
             0x04 => {
                 // LQV
@@ -333,7 +333,7 @@ impl Cop for SpVector {
                 let ea_end = (ea & !0xF) + 0x10;
                 for (m, r) in dmem[ea..ea_end]
                     .iter()
-                    .zip(self.vregs.0[vt].iter_mut().rev())
+                    .zip(self.vregs.0[vt].iter_mut().rev().skip(element as usize))
                 {
                     *r = *m;
                 }
@@ -344,17 +344,22 @@ impl Cop for SpVector {
     fn swc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         let sp = self.sp.borrow();
         let mut dmem = sp.dmem.buf();
-        let (base, vt, op, _element, offset) = SpVector::oploadstore(op, ctx);
+        let (base, vt, op, mut element, mut offset) = SpVector::oploadstore(op, ctx);
         match op {
             0x04 => {
                 // SQV
-                let ea = ((base + (offset << 4)) & 0xFFF) as usize;
-                let ea_end = (ea & !0xF) + 0x10;
-                for (m, r) in dmem[ea..ea_end]
-                    .iter_mut()
-                    .zip(self.vregs.0[vt].iter().rev())
-                {
-                    *m = *r;
+                let mut ea = ((base + (offset << 4)) & 0xFFF) as usize;
+                let ea_start = (ea & !0xF);
+                let ea_end = ea_start + 0x10;
+                let mut ea_idx = ea - ea_start;
+                let vreg = &self.vregs.0[vt];
+                element = 15-element;
+                for _ in 0..16-ea_idx {
+                    dmem[ea_start+ea_idx] = vreg[element as usize];
+                    element -= 1;
+                    element &= 0xF;
+                    ea_idx += 1;
+                    ea_idx &= 0xF;
                 }
             }
             _ => panic!("unimplemented VU load opcode={}", op.hex()),

@@ -184,6 +184,11 @@ fn test_golden(testname: &str) {
 }
 
 #[test]
+fn golden_lqv1() {
+    test_golden("tests/gengolden/lqv_sqv.toml");
+}
+
+#[test]
 fn golden_vadd() {
     test_golden("tests/gengolden/vadd.toml");
 }
