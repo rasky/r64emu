@@ -5,38 +5,38 @@ input_desc = [
 ]
 
 output_desc = [
-  "v128:lqv_e0",
-  "v128:lqv_e1",
-  "v128:lqv_e2",
-  "v128:lqv_e3",
-  "v128:lqv_e4",
-  "v128:lqv_e5",
-  "v128:lqv_e6",
-  "v128:lqv_e7",
-  "v128:lqv_e8",
-  "v128:lqv_e9",
-  "v128:lqv_e10",
-  "v128:lqv_e11",
-  "v128:lqv_e12",
-  "v128:lqv_e13",
-  "v128:lqv_e14",
-  "v128:lqv_e15",
-  "v128:sqv_e0",
-  "v128:sqv_e1",
-  "v128:sqv_e2",
-  "v128:sqv_e3",
-  "v128:sqv_e4",
-  "v128:sqv_e5",
-  "v128:sqv_e6",
-  "v128:sqv_e7",
-  "v128:sqv_e8",
-  "v128:sqv_e9",
-  "v128:sqv_e10",
-  "v128:sqv_e11",
-  "v128:sqv_e12",
-  "v128:sqv_e13",
-  "v128:sqv_e14",
-  "v128:sqv_e15",
+  "v128:lrv_e0",
+  "v128:lrv_e1",
+  "v128:lrv_e2",
+  "v128:lrv_e3",
+  "v128:lrv_e4",
+  "v128:lrv_e5",
+  "v128:lrv_e6",
+  "v128:lrv_e7",
+  "v128:lrv_e8",
+  "v128:lrv_e9",
+  "v128:lrv_e10",
+  "v128:lrv_e11",
+  "v128:lrv_e12",
+  "v128:lrv_e13",
+  "v128:lrv_e14",
+  "v128:lrv_e15",
+  "v128:srv_e0",
+  "v128:srv_e1",
+  "v128:srv_e2",
+  "v128:srv_e3",
+  "v128:srv_e4",
+  "v128:srv_e5",
+  "v128:srv_e6",
+  "v128:srv_e7",
+  "v128:srv_e8",
+  "v128:srv_e9",
+  "v128:srv_e10",
+  "v128:srv_e11",
+  "v128:srv_e12",
+  "v128:srv_e13",
+  "v128:srv_e14",
+  "v128:srv_e15",
 ]
 
 rsp_code = """
@@ -73,22 +73,22 @@ ClearLoop:
   subi a2,$10
 
   add a0,t4 // add offset to disalign
-  lqv v0[e0],$00(a0)
-  lqv v1[e1],$00(a0)
-  lqv v2[e2],$00(a0)
-  lqv v3[e3],$00(a0)
-  lqv v4[e4],$00(a0)
-  lqv v5[e5],$00(a0)
-  lqv v6[e6],$00(a0)
-  lqv v7[e7],$00(a0)
-  lqv v8[e8],$00(a0)
-  lqv v9[e9],$00(a0)
-  lqv v10[e10],$00(a0)
-  lqv v11[e11],$00(a0)
-  lqv v12[e12],$00(a0)
-  lqv v13[e13],$00(a0)
-  lqv v14[e14],$00(a0)
-  lqv v15[e15],$00(a0)
+  lrv v0[e0],$00(a0)
+  lrv v1[e1],$00(a0)
+  lrv v2[e2],$00(a0)
+  lrv v3[e3],$00(a0)
+  lrv v4[e4],$00(a0)
+  lrv v5[e5],$00(a0)
+  lrv v6[e6],$00(a0)
+  lrv v7[e7],$00(a0)
+  lrv v8[e8],$00(a0)
+  lrv v9[e9],$00(a0)
+  lrv v10[e10],$00(a0)
+  lrv v11[e11],$00(a0)
+  lrv v12[e12],$00(a0)
+  lrv v13[e13],$00(a0)
+  lrv v14[e14],$00(a0)
+  lrv v15[e15],$00(a0)
 
   sqv v0[e0],$00(a1)
   sqv v1[e0],$10(a1)
@@ -111,22 +111,22 @@ ClearLoop:
   lqv v0[e0],$00(a0) // input: v0
 
   add a1,t4 // add offset to disalign
-  sqv v0[e15],$1F0(a1)
-  sqv v0[e14],$1E0(a1)
-  sqv v0[e13],$1D0(a1)
-  sqv v0[e12],$1C0(a1)
-  sqv v0[e11],$1B0(a1)
-  sqv v0[e10],$1A0(a1)
-  sqv v0[e9],$190(a1)
-  sqv v0[e8],$180(a1)
-  sqv v0[e7],$170(a1)
-  sqv v0[e6],$160(a1)
-  sqv v0[e5],$150(a1)
-  sqv v0[e4],$140(a1)
-  sqv v0[e3],$130(a1)
-  sqv v0[e2],$120(a1)
-  sqv v0[e1],$110(a1)
-  sqv v0[e0],$100(a1)
+  srv v0[e15],$1F0(a1)
+  srv v0[e14],$1E0(a1)
+  srv v0[e13],$1D0(a1)
+  srv v0[e12],$1C0(a1)
+  srv v0[e11],$1B0(a1)
+  srv v0[e10],$1A0(a1)
+  srv v0[e9],$190(a1)
+  srv v0[e8],$180(a1)
+  srv v0[e7],$170(a1)
+  srv v0[e6],$160(a1)
+  srv v0[e5],$150(a1)
+  srv v0[e4],$140(a1)
+  srv v0[e3],$130(a1)
+  srv v0[e2],$120(a1)
+  srv v0[e1],$110(a1)
+  srv v0[e0],$100(a1)
 
   break
 """

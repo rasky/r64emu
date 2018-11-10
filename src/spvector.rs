@@ -5,7 +5,7 @@ extern crate emu;
 use super::vops::sse41 as vops;
 
 use super::sp::Sp;
-use byteorder::{ByteOrder, LittleEndian};
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
 use emu::int::Numerics;
 use mips64::{Cop, CpuContext};
@@ -288,10 +288,29 @@ impl SpVector {
     }
 }
 
-unsafe fn to_u128(x: __m128i) -> u128 {
-    let v: [u8; 16] = [0u8; 16];
-    _mm_store_si128(v.as_ptr() as *mut _, x);
-    LittleEndian::read_u128(&v)
+fn write_partial_left<B: ByteOrder>(dst: &mut [u8], src: u128, skip_bits: usize) {
+    let mask = if skip_bits < 128 {
+        !0u128 << skip_bits
+    } else {
+        0
+    };
+    let src = if skip_bits < 128 { src << skip_bits } else { 0 };
+
+    let mut d = B::read_u128(dst);
+    d = (d & !mask) | (src & mask);
+    B::write_u128(dst, d);
+}
+fn write_partial_right<B: ByteOrder>(dst: &mut [u8], src: u128, skip_bits: usize) {
+    let mask = if skip_bits < 128 {
+        !0u128 >> skip_bits
+    } else {
+        0
+    };
+    let src = if skip_bits < 128 { src >> skip_bits } else { 0 };
+
+    let mut d = B::read_u128(dst);
+    d = (d & !mask) | (src & mask);
+    B::write_u128(dst, d);
 }
 
 impl Cop for SpVector {
@@ -330,13 +349,26 @@ impl Cop for SpVector {
             0x04 => {
                 // LQV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
-                let ea_end = (ea & !0xF) + 0x10;
-                for (m, r) in dmem[ea..ea_end]
-                    .iter()
-                    .zip(self.vregs.0[vt].iter_mut().rev().skip(element as usize))
-                {
-                    *r = *m;
-                }
+                let qw_start = (ea & !0xF);
+                let ea_idx = ea & 0xF;
+
+                let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
+                mem <<= (ea_idx * 8);
+
+                let regptr = &mut self.vregs.0[vt];
+                write_partial_right::<LittleEndian>(regptr, mem, element as usize * 8);
+            }
+            0x05 => {
+                // LRV
+                let ea = ((base + (offset << 4)) & 0xFFF) as usize;
+                let qw_start = (ea & !0xF);
+                let ea_idx = ea & 0xF;
+
+                let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
+                let sh = (16 - ea_idx) + element as usize;
+
+                let regptr = &mut self.vregs.0[vt];
+                write_partial_right::<LittleEndian>(regptr, mem, sh * 8);
             }
             _ => panic!("unimplemented VU load opcode={}", op.hex()),
         }
@@ -344,25 +376,35 @@ impl Cop for SpVector {
     fn swc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         let sp = self.sp.borrow();
         let mut dmem = sp.dmem.buf();
-        let (base, vt, op, mut element, mut offset) = SpVector::oploadstore(op, ctx);
+        let (base, vt, op, element, offset) = SpVector::oploadstore(op, ctx);
         match op {
             0x04 => {
                 // SQV
-                let mut ea = ((base + (offset << 4)) & 0xFFF) as usize;
-                let ea_start = (ea & !0xF);
-                let ea_end = ea_start + 0x10;
-                let mut ea_idx = ea - ea_start;
-                let vreg = &self.vregs.0[vt];
-                element = 15-element;
-                for _ in 0..16-ea_idx {
-                    dmem[ea_start+ea_idx] = vreg[element as usize];
-                    element -= 1;
-                    element &= 0xF;
-                    ea_idx += 1;
-                    ea_idx &= 0xF;
-                }
+                let ea = ((base + (offset << 4)) & 0xFFF) as usize;
+                let qw_start = (ea & !0xF);
+                let ea_idx = ea & 0xF;
+                let regptr = &self.vregs.0[vt];
+
+                let mut reg = LittleEndian::read_u128(regptr);
+                reg = reg.rotate_left(element * 8);
+
+                let memptr = &mut dmem[qw_start..qw_start + 0x10];
+                write_partial_right::<BigEndian>(memptr, reg, ea_idx * 8);
             }
-            _ => panic!("unimplemented VU load opcode={}", op.hex()),
+            0x05 => {
+                // SRV
+                let ea = ((base + (offset << 4)) & 0xFFF) as usize;
+                let qw_start = (ea & !0xF);
+                let ea_idx = ea & 0xF;
+                let regptr = &self.vregs.0[vt];
+
+                let mut reg = LittleEndian::read_u128(regptr);
+                reg = reg.rotate_left(element * 8);
+
+                let memptr = &mut dmem[qw_start..qw_start + 0x10];
+                write_partial_left::<BigEndian>(memptr, reg, (16 - ea_idx) * 8);
+            }
+            _ => panic!("unimplemented VU store opcode={}", op.hex()),
         }
     }
 
