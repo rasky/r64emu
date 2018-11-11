@@ -272,6 +272,21 @@ impl SpCop2 {
                     op.setvd(res);
                     op.setaccum(0, res);
                 }
+                0x33 => {
+                    // VMOV
+                    let de = 7 - (op.rs() & 7);
+                    let se = 7 - match op.e() {
+                        0..=1 => (op.e() & 0b000) | (op.rs() & 0b111),
+                        2..=3 => (op.e() & 0b001) | (op.rs() & 0b110),
+                        4..=7 => (op.e() & 0b011) | (op.rs() & 0b100),
+                        8..=15 => (op.e() & 0b111) | (op.rs() & 0b000),
+                        _ => unreachable!(),
+                    };
+
+                    let res = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res);
+                    // FIXME: update ACCUM with VMOV?
+                }
                 _ => panic!("unimplemented COP2 VU opcode={}", op.func().hex()),
             }
         } else {
