@@ -281,3 +281,8 @@ fn golden_vmudm() {
 fn golden_vmadm() {
     test_golden("tests/gengolden/vmadm.toml");
 }
+
+#[test]
+fn golden_compelt() {
+    test_golden("tests/gengolden/compelt.toml");
+}

@@ -111,12 +111,22 @@ impl<'a> Vectorop<'a> {
     fn vs(&self) -> __m128i {
         unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rs()].as_ptr() as *const _) }
     }
-    fn vte(&self) -> __m128i {
+    unsafe fn vte(&self) -> __m128i {
+        let vt = _mm_loadu_si128(self.spv.vregs.0[self.rt()].as_ptr() as *const _);
         let e = self.e();
-        if e != 0 {
-            unimplemented!();
+        match e {
+            0..=1 => vt,
+            2 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b11_11_01_01), 0b11_11_01_01),
+            3 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b10_10_00_00), 0b10_10_00_00),
+            4 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b11_11_11_11), 0b11_11_11_11),
+            5 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b10_10_10_10), 0b10_10_10_10),
+            6 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b01_01_01_01), 0b01_01_01_01),
+            7 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b00_00_00_00), 0b00_00_00_00),
+            8..=15 => _mm_set1_epi16(LittleEndian::read_u16(
+                &self.spv.vregs.0[self.rt()][(15 - e) * 2..],
+            ) as i16),
+            _ => vt,
         }
-        unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rt()].as_ptr() as *const _) }
     }
     fn setvd(&mut self, val: __m128i) {
         unsafe {
