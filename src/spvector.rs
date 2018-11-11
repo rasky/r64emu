@@ -7,6 +7,7 @@ use super::vops::sse41 as vops;
 use super::sp::Sp;
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
+use emu::bus::MemInt;
 use emu::int::Numerics;
 use mips64::{Cop, CpuContext};
 use slog;
@@ -317,6 +318,27 @@ fn write_partial_right<B: ByteOrder>(dst: &mut [u8], src: u128, skip_bits: usize
     B::write_u128(dst, d);
 }
 
+// Plain "load vector subword from memory"
+fn lxv<T: MemInt>(regptr: &mut [u8], element: usize, dmem: &[u8], base: u32, offset: u32) {
+    let ea = ((base + (offset << T::SIZE_LOG)) & 0xFFF) as usize;
+    let mem64: u64 = T::endian_read_from::<BigEndian>(&dmem[ea..ea + T::SIZE]).into();
+    let mut mem: u128 = mem64.into();
+    mem <<= (128 - T::SIZE * 8);
+
+    write_partial_right::<LittleEndian>(regptr, mem, element as usize * 8, T::SIZE * 8);
+}
+
+// Plain "store vector subword into memory"
+fn sxv<T: MemInt>(dmem: &mut [u8], base: u32, offset: u32, regptr: &[u8], element: usize) {
+    let ea = ((base + (offset << T::SIZE_LOG)) & 0xFFF) as usize;
+
+    let mut reg = LittleEndian::read_u128(regptr);
+    reg = reg.rotate_left(element as u32 * 8);
+    reg >>= (128 - T::SIZE * 8);
+
+    T::endian_write_to::<BigEndian>(&mut dmem[ea..ea + T::SIZE], T::truncate_from(reg as u64));
+}
+
 impl Cop for SpVector {
     fn reg(&self, idx: usize) -> u128 {
         match idx {
@@ -349,19 +371,12 @@ impl Cop for SpVector {
         let sp = self.sp.borrow();
         let dmem = sp.dmem.buf();
         let (base, vt, op, element, offset) = SpVector::oploadstore(op, ctx);
+        let regptr = &mut self.vregs.0[vt];
         match op {
-            0x03 => {
-                // LDV
-                let ea = ((base + (offset << 3)) & 0xFFF) as usize;
-                let qw_start = (ea & !0xF);
-                let ea_idx = ea & 0xF;
-
-                let mut mem = BigEndian::read_u64(&dmem[ea..ea + 0x8]) as u128;
-                mem <<= 64;
-
-                let regptr = &mut self.vregs.0[vt];
-                write_partial_right::<LittleEndian>(regptr, mem, element as usize * 8, 64);
-            }
+            0x00 => lxv::<u8>(regptr, element as usize, &dmem, base, offset), // LBV
+            0x01 => lxv::<u16>(regptr, element as usize, &dmem, base, offset), // LSV
+            0x02 => lxv::<u32>(regptr, element as usize, &dmem, base, offset), // LLV
+            0x03 => lxv::<u64>(regptr, element as usize, &dmem, base, offset), // LDV
             0x04 => {
                 // LQV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
@@ -393,20 +408,12 @@ impl Cop for SpVector {
         let sp = self.sp.borrow();
         let mut dmem = sp.dmem.buf();
         let (base, vt, op, element, offset) = SpVector::oploadstore(op, ctx);
+        let regptr = &self.vregs.0[vt];
         match op {
-            0x03 => {
-                // SDV
-                let ea = ((base + (offset << 3)) & 0xFFF) as usize;
-                let qw_start = (ea & !0x7);
-                let ea_idx = ea & 0x7;
-                let regptr = &self.vregs.0[vt];
-
-                let mut reg = LittleEndian::read_u128(regptr);
-                reg = reg.rotate_left(element * 8);
-
-                let memptr = &mut dmem[ea..ea + 0x8];
-                BigEndian::write_u64(memptr, (reg >> 64) as u64);
-            }
+            0x00 => sxv::<u8>(&mut dmem, base, offset, regptr, element as usize), // SBV
+            0x01 => sxv::<u16>(&mut dmem, base, offset, regptr, element as usize), // SSV
+            0x02 => sxv::<u32>(&mut dmem, base, offset, regptr, element as usize), // SLV
+            0x03 => sxv::<u64>(&mut dmem, base, offset, regptr, element as usize), // SDV
             0x04 => {
                 // SQV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;

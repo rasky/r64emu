@@ -15,6 +15,7 @@ pub enum AccessSize {
 pub trait MemInt: PrimInt + Into<u64> + Default {
     type Half: MemInt + Into<Self>;
     const SIZE: usize = ::std::mem::size_of::<Self>();
+    const SIZE_LOG: usize;
     const ACCESS_SIZE: AccessSize;
     fn truncate_from(v: u64) -> Self;
     fn endian_read_from<O: ByteOrder>(buf: &[u8]) -> Self;
@@ -25,6 +26,7 @@ pub trait MemInt: PrimInt + Into<u64> + Default {
 impl MemInt for u8 {
     type Half = u8;
     const ACCESS_SIZE: AccessSize = AccessSize::Size8;
+    const SIZE_LOG: usize = 0;
     #[inline(always)]
     fn truncate_from(v: u64) -> u8 {
         return v as u8;
@@ -46,6 +48,7 @@ impl MemInt for u8 {
 impl MemInt for u16 {
     type Half = u8;
     const ACCESS_SIZE: AccessSize = AccessSize::Size16;
+    const SIZE_LOG: usize = 1;
     #[inline(always)]
     fn truncate_from(v: u64) -> u16 {
         return v as u16;
@@ -67,6 +70,7 @@ impl MemInt for u16 {
 impl MemInt for u32 {
     type Half = u16;
     const ACCESS_SIZE: AccessSize = AccessSize::Size32;
+    const SIZE_LOG: usize = 2;
     #[inline(always)]
     fn truncate_from(v: u64) -> u32 {
         return v as u32;
@@ -88,6 +92,7 @@ impl MemInt for u32 {
 impl MemInt for u64 {
     type Half = u32;
     const ACCESS_SIZE: AccessSize = AccessSize::Size64;
+    const SIZE_LOG: usize = 3;
     #[inline(always)]
     fn truncate_from(v: u64) -> u64 {
         return v;

@@ -199,6 +199,21 @@ fn golden_ldv_sdv() {
 }
 
 #[test]
+fn golden_llv_slv() {
+    test_golden("tests/gengolden/llv_slv.toml");
+}
+
+#[test]
+fn golden_lsv_ssv() {
+    test_golden("tests/gengolden/lsv_ssv.toml");
+}
+
+#[test]
+fn golden_lbv_sbv() {
+    test_golden("tests/gengolden/lbv_sbv.toml");
+}
+
+#[test]
 fn golden_vadd() {
     test_golden("tests/gengolden/vadd.toml");
 }
