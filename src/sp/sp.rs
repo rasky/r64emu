@@ -99,8 +99,8 @@ impl Sp {
             //   COP2: vector unit
             let spb = sp.borrow();
             let mut cpu = spb.core_cpu.borrow_mut();
-            cpu.set_cop0(SpCop0::new(&sp));
-            cpu.set_cop2(SpCop2::new(&sp, spb.logger.new(o!())));
+            cpu.set_cop0(SpCop0::new(&sp, spb.logger.new(o!()))?);
+            cpu.set_cop2(SpCop2::new(&sp, spb.logger.new(o!()))?);
             cpu.bus_write_mask = 0xFFF;
             cpu.bus_read_mask = 0xFFF;
             cpu.bus_fetch_mask = 0xFFF;

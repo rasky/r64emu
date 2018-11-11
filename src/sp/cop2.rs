@@ -7,6 +7,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
 use emu::bus::MemInt;
 use emu::int::Numerics;
+use errors::*;
 use mips64::{Cop, CpuContext};
 use slog;
 use std::arch::x86_64::*;
@@ -40,15 +41,15 @@ impl SpCop2 {
     pub const REG_ACCUM_MD: usize = 36;
     pub const REG_ACCUM_HI: usize = 37;
 
-    pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Box<SpCop2> {
-        Box::new(SpCop2 {
+    pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Result<Box<SpCop2>> {
+        Ok(Box::new(SpCop2 {
             vregs: VectorRegs([[0u8; 16]; 32]),
             accum: [VectorReg([0u8; 16]); 3],
             vco_carry: VectorReg([0u8; 16]),
             vco_ne: VectorReg([0u8; 16]),
             sp: sp.clone(),
             logger,
-        })
+        }))
     }
 
     fn oploadstore(op: u32, ctx: &CpuContext) -> (u32, usize, u32, u32, u32) {
