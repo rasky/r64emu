@@ -467,6 +467,16 @@ impl Cop for SpCop2 {
                 let memptr = &mut dmem[qw_start..qw_start + 0x10];
                 write_partial_left::<BigEndian>(memptr, reg, (16 - ea_idx) * 8);
             }
+            0x0A => {
+                // SWV
+                let ea = (base + offset) & 0xFFF;
+                let qw_start = ea as usize & !0x7;
+
+                let mut mem = LittleEndian::read_u128(regptr);
+                mem = mem.rotate_right((ea & 7) * 8);
+                mem = mem.rotate_left(element * 8);
+                BigEndian::write_u128(&mut dmem[qw_start..qw_start + 0x10], mem);
+            }
             0x0B => {
                 // STV
                 let ea = (base + offset) & 0xFFF;

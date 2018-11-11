@@ -218,6 +218,11 @@ fn golden_stv() {
 }
 
 #[test]
+fn golden_swv() {
+    test_golden("tests/gengolden/swv.toml");
+}
+
+#[test]
 fn golden_vadd() {
     test_golden("tests/gengolden/vadd.toml");
 }

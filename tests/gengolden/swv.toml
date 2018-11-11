@@ -47,22 +47,22 @@ rsp_code = """
     lw t4,$80(a0) // input: offset
     add a1,t4
 
-    stv v0[e0],$00(a1)
+    swv v0[e0],$00(a1)
     addi a1,$20
 
-    stv v7[e0],$00(a1)
+    swv v7[e0],$00(a1)
     addi a1,$20
 
-    stv v0[e1],$00(a1)
+    swv v0[e1],$00(a1)
     addi a1,$20
 
-    stv v0[e12],$00(a1)
+    swv v0[e12],$00(a1)
     addi a1,$20
 
-    stv v0[e15],$00(a1)
+    swv v0[e15],$00(a1)
     addi a1,$20
 
-    stv v7[e15],$00(a1)
+    swv v7[e15],$00(a1)
     addi a1,$20
 
     break
