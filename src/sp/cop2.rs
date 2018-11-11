@@ -400,7 +400,7 @@ impl Cop for SpCop2 {
                 let qw_start = ea & !0xF;
                 let ea_idx = ea & 0xF;
 
-                let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
+                let mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
                 let sh = (16 - ea_idx) + element as usize;
 
                 let regptr = &mut self.vregs.0[vt];
@@ -408,7 +408,7 @@ impl Cop for SpCop2 {
             }
             0x0B => {
                 // LTV
-                let ea = (base + offset) & 0xFFF;
+                let ea = (base + (offset << 4)) & 0xFFF;
                 let qw_start = ea as usize & !0x7;
                 let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
 
@@ -469,7 +469,7 @@ impl Cop for SpCop2 {
             }
             0x0A => {
                 // SWV
-                let ea = (base + offset) & 0xFFF;
+                let ea = (base + (offset << 4)) & 0xFFF;
                 let qw_start = ea as usize & !0x7;
 
                 let mut mem = LittleEndian::read_u128(regptr);
@@ -479,7 +479,7 @@ impl Cop for SpCop2 {
             }
             0x0B => {
                 // STV
-                let ea = (base + offset) & 0xFFF;
+                let ea = (base + (offset << 4)) & 0xFFF;
                 let qw_start = ea as usize & !0x7;
                 let mut mem: u128 = 0;
 

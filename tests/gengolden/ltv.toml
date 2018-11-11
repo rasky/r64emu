@@ -1,4 +1,5 @@
 input_desc = [
+    "v128:dummy",
     "v128:v0",
     "v128:v1",
     "u32:offset",
@@ -101,48 +102,48 @@ rsp_code = """
     li a0,$0
     li a1,$800
 
-    lw t4,$80(a0) // input: reg offset
+    lw t4,$90(a0) // input: reg offset
     add a0,t4
     
     jal CleanRegs
     nop
-    ltv v0[e0],$00(a0)
+    ltv v0[e0],$10(a0)
     jal StoreOut
     nop
 
     jal CleanRegs
     nop
-    ltv v7[e0],$00(a0)
+    ltv v7[e0],$10(a0)
     jal StoreOut
     nop
 
     jal CleanRegs
     nop
-    ltv v0[e1],$00(a0)
+    ltv v0[e1],$10(a0)
     jal StoreOut
     nop
 
     jal CleanRegs
     nop
-    ltv v0[e2],$00(a0)
+    ltv v0[e2],$10(a0)
     jal StoreOut
     nop
 
     jal CleanRegs
     nop
-    ltv v0[e12],$00(a0)
+    ltv v0[e12],$10(a0)
     jal StoreOut
     nop
 
     jal CleanRegs
     nop
-    ltv v0[e15],$00(a0)
+    ltv v0[e15],$10(a0)
     jal StoreOut
     nop
 
     jal CleanRegs
     nop
-    ltv v7[e15],$00(a0)
+    ltv v7[e15],$10(a0)
     jal StoreOut
     nop
 
@@ -195,6 +196,7 @@ StoreOut:
 [[test]]
 name = "offset0"
 input = [
+    0,0,0,0, # dummy
     0x8081_8283, 0x8485_8687, 0x8889_8AAB, 0x8C8D_8E8F, # v0
     0x9091_9293, 0x9495_9697, 0x9899_9AAB, 0x9C9D_9E9F, # v1
     0, # offset
@@ -203,6 +205,7 @@ input = [
 [[test]]
 name = "offset1"
 input = [
+    0,0,0,0, # dummy
     0x8081_8283, 0x8485_8687, 0x8889_8AAB, 0x8C8D_8E8F, # v0
     0x9091_9293, 0x9495_9697, 0x9899_9AAB, 0x9C9D_9E9F, # v1
     1, # offset
@@ -211,6 +214,7 @@ input = [
 [[test]]
 name = "offset7"
 input = [
+    0,0,0,0, # dummy
     0x8081_8283, 0x8485_8687, 0x8889_8AAB, 0x8C8D_8E8F, # v0
     0x9091_9293, 0x9495_9697, 0x9899_9AAB, 0x9C9D_9E9F, # v1
     7, # offset
@@ -219,6 +223,7 @@ input = [
 [[test]]
 name = "offset8"
 input = [
+    0,0,0,0, # dummy
     0x8081_8283, 0x8485_8687, 0x8889_8AAB, 0x8C8D_8E8F, # v0
     0x9091_9293, 0x9495_9697, 0x9899_9AAB, 0x9C9D_9E9F, # v1
     8, # offset
@@ -227,6 +232,7 @@ input = [
 [[test]]
 name = "offset15"
 input = [
+    0,0,0,0, # dummy
     0x8081_8283, 0x8485_8687, 0x8889_8AAB, 0x8C8D_8E8F, # v0
     0x9091_9293, 0x9495_9697, 0x9899_9AAB, 0x9C9D_9E9F, # v1
     15, # offset

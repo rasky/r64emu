@@ -14,21 +14,27 @@ input_desc = [
 output_desc = [
     "v128:mem0e0",
     "v128:mem1e0",
+    "v128:mem2e0",
 
     "v128:s7mem0e0",
     "v128:s7mem1e0",
+    "v128:s7mem2e0",
 
     "v128:mem0e1",
     "v128:mem1e1",
+    "v128:mem2e1",
 
     "v128:mem0e12",
     "v128:mem1e12",
+    "v128:mem2e12",
 
     "v128:mem0e15",
     "v128:mem1e15",
+    "v128:mem2e15",
 
     "v128:s7mem0e15",
     "v128:s7mem1e15",
+    "v128:s7mem2e15",
 ]
 
 rsp_code = """
@@ -47,23 +53,23 @@ rsp_code = """
     lw t4,$80(a0) // input: offset
     add a1,t4
 
-    swv v0[e0],$00(a1)
-    addi a1,$20
+    swv v0[e0],$10(a1)
+    addi a1,$30
 
-    swv v7[e0],$00(a1)
-    addi a1,$20
+    swv v7[e0],$10(a1)
+    addi a1,$30
 
-    swv v0[e1],$00(a1)
-    addi a1,$20
+    swv v0[e1],$10(a1)
+    addi a1,$30
 
-    swv v0[e12],$00(a1)
-    addi a1,$20
+    swv v0[e12],$10(a1)
+    addi a1,$30
 
-    swv v0[e15],$00(a1)
-    addi a1,$20
+    swv v0[e15],$10(a1)
+    addi a1,$30
 
-    swv v7[e15],$00(a1)
-    addi a1,$20
+    swv v7[e15],$10(a1)
+    addi a1,$30
 
     break
 """
