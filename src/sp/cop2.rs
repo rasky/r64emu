@@ -467,6 +467,28 @@ impl Cop for SpCop2 {
                 let memptr = &mut dmem[qw_start..qw_start + 0x10];
                 write_partial_left::<BigEndian>(memptr, reg, (16 - ea_idx) * 8);
             }
+            0x0B => {
+                // STV
+                let ea = (base + offset) & 0xFFF;
+                let qw_start = ea as usize & !0x7;
+                let mut mem: u128 = 0;
+
+                let mut e: usize = 7;
+                let vtbase = vt & !7;
+                let mut vtoff = element as usize >> 1;
+
+                for _ in 0..8 {
+                    let r = LittleEndian::read_u16(&self.vregs.0[vtbase + vtoff][e * 2..]);
+                    mem <<= 16;
+                    mem |= r as u128;
+                    e -= 1;
+                    vtoff += 1;
+                    vtoff &= 7;
+                }
+
+                mem = mem.rotate_right((ea & 7) * 8);
+                BigEndian::write_u128(&mut dmem[qw_start..qw_start + 0x10], mem);
+            }
             _ => panic!("unimplemented VU store opcode={}", op.hex()),
         }
     }
