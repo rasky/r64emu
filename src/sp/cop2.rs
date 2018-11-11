@@ -406,6 +406,28 @@ impl Cop for SpCop2 {
                 let regptr = &mut self.vregs.0[vt];
                 write_partial_right::<LittleEndian>(regptr, mem, sh * 8, 128);
             }
+            0x0B => {
+                // LTV
+                let ea = (base + offset) & 0xFFF;
+                let qw_start = ea as usize & !0x7;
+                let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
+
+                let mut e: usize = 7;
+                let vtbase = vt & !7;
+                let mut vtoff = element as usize >> 1;
+                mem = mem.rotate_left((element + (ea & 0x8)) * 8);
+
+                for _ in 0..8 {
+                    LittleEndian::write_u16(
+                        &mut self.vregs.0[vtbase + vtoff][e * 2..],
+                        (mem >> (128 - 16)) as u16,
+                    );
+                    mem <<= 16;
+                    e -= 1;
+                    vtoff += 1;
+                    vtoff &= 7;
+                }
+            }
             _ => panic!("unimplemented VU load opcode={}", op.hex()),
         }
     }

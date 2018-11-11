@@ -24,7 +24,7 @@ output_desc = [
 rsp_code = """
     li a0,$0
     li a1,$800
-    lqv v31[e0],$00(a0) // input: offset
+    lqv v31[e0],$00(a0) // input vector
 
     vxor v0,v0
     vxor v1,v1
