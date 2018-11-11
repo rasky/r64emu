@@ -27,7 +27,6 @@ pub mod errors {
 }
 
 mod rdp;
-mod vops;
 
 pub mod ai;
 pub mod cartridge;
@@ -37,7 +36,6 @@ pub mod pi;
 pub mod ri;
 pub mod si;
 pub mod sp;
-pub mod spvector;
 pub mod vi;
 
 mod n64;

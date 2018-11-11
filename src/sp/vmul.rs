@@ -1,4 +1,4 @@
-use super::{acc_add, acc_clamp_signed, acc_clamp_unsigned2, acc_clamp_unsigned3};
+use super::accumulator::{acc_add, acc_clamp_signed, acc_clamp_unsigned2, acc_clamp_unsigned3};
 use std::arch::x86_64::*;
 
 // SSE 4.1 version
@@ -67,8 +67,8 @@ unsafe fn internal_vmulfu(
 #[inline] // FIXME: for some reason, Rust doesn't allow inline(always) here
 #[target_feature(enable = "sse2")]
 pub(crate) unsafe fn internal_vmudnm(
-    mut vs: __m128i,
-    mut vt: __m128i,
+    vs: __m128i,
+    vt: __m128i,
     old_acc_lo: __m128i,
     old_acc_md: __m128i,
     old_acc_hi: __m128i,
@@ -178,6 +178,22 @@ pub(crate) unsafe fn internal_vmudl(
     }
 
     (res, acc_lo, acc_md, acc_hi)
+}
+
+macro_rules! gen_mul_variant {
+    ($name:ident, $base:ident, $target:expr, $($arg:expr),*) => {
+        #[target_feature(enable = $target)]
+        #[inline]
+        pub unsafe fn $name(
+            vs: __m128i,
+            vt: __m128i,
+            aclo: __m128i,
+            acmd: __m128i,
+            achi: __m128i,
+        ) -> (__m128i, __m128i, __m128i, __m128i) {
+            $base(vs, vt, aclo, acmd, achi, $($arg),*)
+        }
+    };
 }
 
 gen_mul_variant!(vmudn, internal_vmudnm, "sse2", false, false);

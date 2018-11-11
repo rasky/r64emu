@@ -10,10 +10,11 @@ pub(crate) unsafe fn acc_add(
     acc2_md: __m128i,
     acc2_hi: __m128i,
 ) -> (__m128i, __m128i, __m128i) {
-    let mut res_lo = _mm_add_epi16(acc1_lo, acc2_lo);
+    let res_lo = _mm_add_epi16(acc1_lo, acc2_lo);
     let mut res_md = _mm_add_epi16(acc1_md, acc2_md);
     let mut res_hi = _mm_add_epi16(acc1_hi, acc2_hi);
 
+    #[allow(overflowing_literals)]
     let signbit = _mm_set1_epi16(0x8000);
     let carry_lo = _mm_srli_epi16(
         _mm_cmpgt_epi16(
@@ -56,6 +57,7 @@ pub(crate) unsafe fn acc_clamp_unsigned3(
     //   * Negative accum values: X=0
     //   * Positive accum values < 0x7FFF: X kept as-is
     //   * Positive accum values >= 0x8000: X=0xFFFF
+    #[allow(overflowing_literals)]
     let min = _mm_set1_epi32(0xFFFF_8000);
     let max = _mm_set1_epi32(0x0000_7FFF);
 

@@ -1,10 +1,8 @@
 extern crate emu;
 
-// Select SSE version used by RSP vector code
-// FIXME: eventually, this can be a runtime switch
-use super::vops::sse41 as vops;
-
 use super::sp::Sp;
+use super::vmul;
+
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
 use emu::bus::MemInt;
@@ -25,7 +23,7 @@ struct VectorRegs([[u8; 16]; 32]);
 #[repr(align(16))]
 struct VectorReg([u8; 16]);
 
-pub struct SpVector {
+pub(crate) struct SpCop2 {
     vregs: VectorRegs,
     accum: [VectorReg; 3],
     vco_carry: VectorReg,
@@ -34,7 +32,7 @@ pub struct SpVector {
     logger: slog::Logger,
 }
 
-impl SpVector {
+impl SpCop2 {
     pub const REG_VCO: usize = 32;
     pub const REG_VCC: usize = 33;
     pub const REG_VCE: usize = 34;
@@ -42,8 +40,8 @@ impl SpVector {
     pub const REG_ACCUM_MD: usize = 36;
     pub const REG_ACCUM_HI: usize = 37;
 
-    pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Box<SpVector> {
-        Box::new(SpVector {
+    pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Box<SpCop2> {
+        Box::new(SpCop2 {
             vregs: VectorRegs([[0u8; 16]; 32]),
             accum: [VectorReg([0u8; 16]); 3],
             vco_carry: VectorReg([0u8; 16]),
@@ -91,7 +89,7 @@ impl SpVector {
 
 struct Vectorop<'a> {
     op: u32,
-    spv: &'a mut SpVector,
+    spv: &'a mut SpCop2,
 }
 
 impl<'a> Vectorop<'a> {
@@ -112,9 +110,6 @@ impl<'a> Vectorop<'a> {
     }
     fn vs(&self) -> __m128i {
         unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rs()].as_ptr() as *const _) }
-    }
-    fn vt(&self) -> __m128i {
-        unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rt()].as_ptr() as *const _) }
     }
     fn vte(&self) -> __m128i {
         let e = self.e();
@@ -148,7 +143,7 @@ impl<'a> Vectorop<'a> {
 
 macro_rules! op_vmul {
     ($op:expr, $name:ident) => {{
-        let (res, acc_lo, acc_md, acc_hi) = vops::$name(
+        let (res, acc_lo, acc_md, acc_hi) = vmul::$name(
             $op.vs(),
             $op.vte(),
             $op.accum(0),
@@ -162,8 +157,8 @@ macro_rules! op_vmul {
     }};
 }
 
-impl SpVector {
-    #[target_feature(enable = "sse4.1")]
+impl SpCop2 {
+    #[target_feature(enable = "sse2")]
     unsafe fn uop(&mut self, cpu: &mut CpuContext, op: u32) {
         let mut op = Vectorop { op, spv: self };
         let vzero = _mm_setzero_si128();
@@ -323,7 +318,7 @@ fn lxv<T: MemInt>(regptr: &mut [u8], element: usize, dmem: &[u8], base: u32, off
     let ea = ((base + (offset << T::SIZE_LOG)) & 0xFFF) as usize;
     let mem64: u64 = T::endian_read_from::<BigEndian>(&dmem[ea..ea + T::SIZE]).into();
     let mut mem: u128 = mem64.into();
-    mem <<= (128 - T::SIZE * 8);
+    mem <<= 128 - T::SIZE * 8;
 
     write_partial_right::<LittleEndian>(regptr, mem, element as usize * 8, T::SIZE * 8);
 }
@@ -334,31 +329,31 @@ fn sxv<T: MemInt>(dmem: &mut [u8], base: u32, offset: u32, regptr: &[u8], elemen
 
     let mut reg = LittleEndian::read_u128(regptr);
     reg = reg.rotate_left(element as u32 * 8);
-    reg >>= (128 - T::SIZE * 8);
+    reg >>= 128 - T::SIZE * 8;
 
     T::endian_write_to::<BigEndian>(&mut dmem[ea..ea + T::SIZE], T::truncate_from(reg as u64));
 }
 
-impl Cop for SpVector {
+impl Cop for SpCop2 {
     fn reg(&self, idx: usize) -> u128 {
         match idx {
-            SpVector::REG_VCO => self.vco() as u128,
-            SpVector::REG_VCC => self.vcc() as u128,
-            SpVector::REG_VCE => self.vce() as u128,
-            SpVector::REG_ACCUM_LO => LittleEndian::read_u128(&self.accum[0].0),
-            SpVector::REG_ACCUM_MD => LittleEndian::read_u128(&self.accum[1].0),
-            SpVector::REG_ACCUM_HI => LittleEndian::read_u128(&self.accum[2].0),
+            SpCop2::REG_VCO => self.vco() as u128,
+            SpCop2::REG_VCC => self.vcc() as u128,
+            SpCop2::REG_VCE => self.vce() as u128,
+            SpCop2::REG_ACCUM_LO => LittleEndian::read_u128(&self.accum[0].0),
+            SpCop2::REG_ACCUM_MD => LittleEndian::read_u128(&self.accum[1].0),
+            SpCop2::REG_ACCUM_HI => LittleEndian::read_u128(&self.accum[2].0),
             _ => LittleEndian::read_u128(&self.vregs.0[idx]),
         }
     }
     fn set_reg(&mut self, idx: usize, val: u128) {
         match idx {
-            SpVector::REG_VCO => self.set_vco(val as u16),
-            SpVector::REG_VCC => self.set_vcc(val as u16),
-            SpVector::REG_VCE => self.set_vce(val as u16),
-            SpVector::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.accum[0].0, val),
-            SpVector::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.accum[1].0, val),
-            SpVector::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.accum[2].0, val),
+            SpCop2::REG_VCO => self.set_vco(val as u16),
+            SpCop2::REG_VCC => self.set_vcc(val as u16),
+            SpCop2::REG_VCE => self.set_vce(val as u16),
+            SpCop2::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.accum[0].0, val),
+            SpCop2::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.accum[1].0, val),
+            SpCop2::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.accum[2].0, val),
             _ => LittleEndian::write_u128(&mut self.vregs.0[idx], val),
         }
     }
@@ -370,7 +365,7 @@ impl Cop for SpVector {
     fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         let sp = self.sp.borrow();
         let dmem = sp.dmem.buf();
-        let (base, vt, op, element, offset) = SpVector::oploadstore(op, ctx);
+        let (base, vt, op, element, offset) = SpCop2::oploadstore(op, ctx);
         let regptr = &mut self.vregs.0[vt];
         match op {
             0x00 => lxv::<u8>(regptr, element as usize, &dmem, base, offset), // LBV
@@ -380,11 +375,11 @@ impl Cop for SpVector {
             0x04 => {
                 // LQV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
-                let qw_start = (ea & !0xF);
+                let qw_start = ea & !0xF;
                 let ea_idx = ea & 0xF;
 
                 let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
-                mem <<= (ea_idx * 8);
+                mem <<= ea_idx * 8;
 
                 let regptr = &mut self.vregs.0[vt];
                 write_partial_right::<LittleEndian>(regptr, mem, element as usize * 8, 128);
@@ -392,7 +387,7 @@ impl Cop for SpVector {
             0x05 => {
                 // LRV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
-                let qw_start = (ea & !0xF);
+                let qw_start = ea & !0xF;
                 let ea_idx = ea & 0xF;
 
                 let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
@@ -407,7 +402,7 @@ impl Cop for SpVector {
     fn swc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         let sp = self.sp.borrow();
         let mut dmem = sp.dmem.buf();
-        let (base, vt, op, element, offset) = SpVector::oploadstore(op, ctx);
+        let (base, vt, op, element, offset) = SpCop2::oploadstore(op, ctx);
         let regptr = &self.vregs.0[vt];
         match op {
             0x00 => sxv::<u8>(&mut dmem, base, offset, regptr, element as usize), // SBV
@@ -417,7 +412,7 @@ impl Cop for SpVector {
             0x04 => {
                 // SQV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
-                let qw_start = (ea & !0xF);
+                let qw_start = ea & !0xF;
                 let ea_idx = ea & 0xF;
                 let regptr = &self.vregs.0[vt];
 
@@ -430,7 +425,7 @@ impl Cop for SpVector {
             0x05 => {
                 // SRV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
-                let qw_start = (ea & !0xF);
+                let qw_start = ea & !0xF;
                 let ea_idx = ea & 0xF;
                 let regptr = &self.vregs.0[vt];
 

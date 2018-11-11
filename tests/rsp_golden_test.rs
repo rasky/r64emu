@@ -1,5 +1,3 @@
-#![feature(chunks_exact)]
-
 #[macro_use]
 extern crate slog;
 #[macro_use]
@@ -12,8 +10,7 @@ extern crate toml;
 
 use byteorder::{BigEndian, ByteOrder};
 use emu::bus::be::{Bus, DevPtr};
-use r64emu::sp::{Sp, SpCop0};
-use r64emu::spvector::SpVector;
+use r64emu::sp::Sp;
 use slog::Discard;
 use std::borrow;
 use std::cell::RefCell;
@@ -28,26 +25,22 @@ fn make_sp() -> (DevPtr<Sp>, Rc<RefCell<Box<Bus>>>) {
     let main_bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
     let sp = Sp::new(logger.new(o!()), main_bus.clone()).unwrap();
     {
-        let spb = sp.borrow();
-        let mut cpu = spb.core_cpu.borrow_mut();
-        cpu.set_cop0(SpCop0::new(&sp));
-        cpu.set_cop2(SpVector::new(&sp, logger.new(o!())));
-    }
-    {
         let mut bus = main_bus.borrow_mut();
-        bus.map_device(0x0400_0000, &sp, 0);
-        bus.map_device(0x0404_0000, &sp, 1);
-        bus.map_device(0x0408_0000, &sp, 2);
+        bus.map_device(0x0400_0000, &sp, 0).unwrap();
+        bus.map_device(0x0404_0000, &sp, 1).unwrap();
+        bus.map_device(0x0408_0000, &sp, 2).unwrap();
     }
     (sp, main_bus)
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct TestVector {
     name: String,
     input: Vec<u32>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct Testsuite {
     rsp_code: String,
@@ -68,6 +61,8 @@ impl Testsuite {
         }
         size
     }
+
+    #[allow(dead_code)]
     pub fn input_size(&self) -> usize {
         self.inout_size(&self.input_desc)
     }
@@ -135,7 +130,6 @@ fn test_golden(testname: &str) {
         goldenname.display()
     );
 
-    let input_size = test.input_size();
     let output_size = test.output_size();
     let goldenbin = fs::read(goldenname).expect("golden file not found");
     let mut golden = goldenbin.chunks_exact(output_size);

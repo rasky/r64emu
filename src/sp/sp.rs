@@ -1,7 +1,8 @@
 extern crate emu;
 extern crate slog;
 
-use super::spvector::SpVector;
+use super::cop0::SpCop0;
+use super::cop2::SpCop2;
 use emu::bus::be::{Bus, DevPtr, Mem, Reg32};
 use emu::int::Numerics;
 use errors::*;
@@ -10,7 +11,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 bitflags! {
-    struct StatusFlags: u32 {
+    pub(crate) struct StatusFlags: u32 {
         const HALT =            0b00000001;
         const BROKE =           0b00000010;
         const DMABUSY =         0b00000100;
@@ -99,7 +100,7 @@ impl Sp {
             let spb = sp.borrow();
             let mut cpu = spb.core_cpu.borrow_mut();
             cpu.set_cop0(SpCop0::new(&sp));
-            cpu.set_cop2(SpVector::new(&sp, spb.logger.new(o!())));
+            cpu.set_cop2(SpCop2::new(&sp, spb.logger.new(o!())));
             cpu.bus_write_mask = 0xFFF;
             cpu.bus_read_mask = 0xFFF;
             cpu.bus_fetch_mask = 0xFFF;
@@ -120,7 +121,7 @@ impl Sp {
         Ok(sp)
     }
 
-    fn get_status(&self) -> StatusFlags {
+    pub(crate) fn get_status(&self) -> StatusFlags {
         StatusFlags::from_bits(self.reg_status.get()).unwrap()
     }
 
@@ -209,7 +210,7 @@ impl Sp {
         self.set_status(status, cpu.ctx_mut());
     }
 
-    fn set_status(&self, status: StatusFlags, ctx: &mut mips64::CpuContext) {
+    pub(crate) fn set_status(&self, status: StatusFlags, ctx: &mut mips64::CpuContext) {
         let changed = self.get_status() ^ status;
         self.reg_status.set(status.bits());
 
@@ -304,51 +305,5 @@ impl Sp {
 
     fn cb_read_reg_rsp_pc(&self, _old: u32) -> u32 {
         self.core_cpu.borrow().ctx().get_pc() & 0xFFF
-    }
-}
-
-pub struct SpCop0 {
-    sp: DevPtr<Sp>,
-}
-
-impl SpCop0 {
-    pub fn new(sp: &DevPtr<Sp>) -> Box<SpCop0> {
-        Box::new(SpCop0 { sp: sp.clone() })
-    }
-}
-
-impl mips64::Cop0 for SpCop0 {
-    fn pending_int(&self) -> bool {
-        false // RSP generate has no interrupts
-    }
-
-    fn exception(&mut self, ctx: &mut mips64::CpuContext, exc: mips64::Exception) {
-        match exc {
-            mips64::Exception::RESET => {
-                ctx.set_pc(0);
-            }
-
-            // Breakpoint exception is used by RSP to halt itself
-            mips64::Exception::BP => {
-                let mut sp = self.sp.borrow_mut();
-                let mut status = sp.get_status();
-                status.insert(StatusFlags::HALT | StatusFlags::BROKE);
-                sp.set_status(status, ctx);
-            }
-            _ => unimplemented!(),
-        }
-    }
-}
-
-impl mips64::Cop for SpCop0 {
-    fn set_reg(&mut self, _idx: usize, _val: u128) {
-        panic!("unsupported COP0 reg access in RSP")
-    }
-    fn reg(&self, _idx: usize) -> u128 {
-        panic!("unsupported COP0 reg access in RSP")
-    }
-
-    fn op(&mut self, _cpu: &mut mips64::CpuContext, _opcode: u32) {
-        panic!("unsupported COP0 opcode in RSP")
     }
 }
