@@ -192,6 +192,7 @@ impl SpCop2 {
                     let vt = op.vte();
                     let carry = op.carry();
 
+                    // We need to compute Saturate(VS+VT+CARRY).
                     // Add the carry to the minimum value, as we need to
                     // saturate the final result and not only intermediate
                     // results:
@@ -200,6 +201,27 @@ impl SpCop2 {
                     let max = _mm_max_epi16(vs, vt);
                     op.setvd(_mm_adds_epi16(_mm_adds_epi16(min, carry), max));
                     op.setaccum(0, _mm_add_epi16(_mm_add_epi16(vs, vt), carry));
+                    op.setcarry(vzero);
+                    op.setne(vzero);
+                }
+                0x11 => {
+                    // VSUB
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let carry = op.carry();
+
+                    // We need to compute Saturate(VS-VT-CARRY).
+                    // Compute VS-(VT+CARRY), and fix the result if there
+                    // was an overflow.
+                    let zero = _mm_setzero_si128();
+                    let carry = _mm_cmpgt_epi16(carry, zero);
+
+                    let diff = _mm_sub_epi16(vt, carry);
+                    let sdiff = _mm_subs_epi16(vt, carry);
+                    let mask = _mm_cmpgt_epi16(sdiff, diff);
+
+                    op.setvd(_mm_adds_epi16(_mm_subs_epi16(vs, sdiff), mask));
+                    op.setaccum(0, _mm_sub_epi16(vs, diff));
                     op.setcarry(vzero);
                     op.setne(vzero);
                 }
