@@ -16,23 +16,19 @@ pub(crate) unsafe fn acc_add(
 
     #[allow(overflowing_literals)]
     let signbit = _mm_set1_epi16(0x8000);
-    let carry_lo = _mm_srli_epi16(
-        _mm_cmpgt_epi16(
-            _mm_xor_si128(acc2_lo, signbit),
-            _mm_xor_si128(res_lo, signbit),
-        ),
-        15,
+    let carry_lo = _mm_cmpgt_epi16(
+        _mm_xor_si128(acc2_lo, signbit),
+        _mm_xor_si128(res_lo, signbit),
     );
-    res_md = _mm_add_epi16(res_md, carry_lo);
+    let carry_md = _mm_cmpgt_epi16(
+        _mm_xor_si128(acc2_md, signbit),
+        _mm_xor_si128(res_md, signbit),
+    );
+    let carry_md2 = _mm_and_si128(carry_lo, _mm_cmpeq_epi16(res_md, carry_lo));
 
-    let carry_md = _mm_srli_epi16(
-        _mm_cmpgt_epi16(
-            _mm_xor_si128(acc2_md, signbit),
-            _mm_xor_si128(res_md, signbit),
-        ),
-        15,
-    );
-    res_hi = _mm_add_epi16(res_hi, carry_md);
+    res_md = _mm_sub_epi16(res_md, carry_lo);
+    res_hi = _mm_sub_epi16(res_hi, carry_md);
+    res_hi = _mm_sub_epi16(res_hi, carry_md2);
 
     (res_lo, res_md, res_hi)
 }
