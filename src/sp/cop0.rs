@@ -50,6 +50,9 @@ impl<'a> C0op<'a> {
     fn rt32(&self) -> u32 {
         self.rt64() as u32
     }
+    fn mrt64(&'a mut self) -> &'a mut u64 {
+        &mut self.cpu.regs[self.rt()]
+    }
 }
 
 impl mips64::Cop0 for SpCop0 {
@@ -84,16 +87,20 @@ impl mips64::Cop for SpCop0 {
     }
 
     fn op(&mut self, cpu: &mut mips64::CpuContext, opcode: u32) {
-        let op = C0op {
+        let mut op = C0op {
             opcode,
             cpu,
             cop0: self,
         };
         match op.func() {
+            0x00 => {
+                // MFC0: read from SP HW register
+                let rd = op.rd() as u32;
+                *op.mrt64() = op.cop0.reg_bus.read::<u32>(rd * 4) as u64;
+            }
             0x04 => {
                 // MTC0: write to SP HW register
                 let rd = op.rd() as u32;
-                info!(op.cop0.logger, "RSP MTC0"; "reg" => rd.hex(), "val" => op.rt32().hex());
                 op.cop0.reg_bus.write::<u32>(rd * 4, op.rt32());
             }
             _ => panic!("unimplemented RSP COP0 opcode: func={:x?}", op.func()),
