@@ -177,6 +177,18 @@ fn test_golden(testname: &str) {
     }
 }
 
+macro_rules! define_golden_test {
+    ($test:ident, $fn:expr) => {
+        #[test]
+        fn $test() {
+            test_golden(concat!("tests/gengolden/", $fn));
+        }
+    };
+}
+
+define_golden_test!(golden_vsubb, "vsubb.toml");
+define_golden_test!(golden_vsucb, "vsucb.toml");
+
 #[test]
 fn golden_lqv_sqv() {
     test_golden("tests/gengolden/lqv_sqv.toml");

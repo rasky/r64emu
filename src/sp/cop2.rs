@@ -257,6 +257,22 @@ impl SpCop2 {
                     op.setcarry(_mm_srli_epi16(carry, 15));
                     op.setne(_mm_add_epi16(_mm_cmpeq_epi16(vs, vt), _mm_set1_epi16(1)));
                 }
+                0x17 => {
+                    // VSUBB -- undocumented?
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let res = _mm_add_epi16(vs, vt);
+                    op.setvd(vzero);
+                    op.setaccum(0, res);
+                }
+                0x19 => {
+                    // VSUCB -- undocumented?
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let res = _mm_add_epi16(vs, vt);
+                    op.setvd(vzero);
+                    op.setaccum(0, res);
+                }
                 0x1D => {
                     // VSAR
                     let e = op.e();
