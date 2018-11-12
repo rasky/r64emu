@@ -243,6 +243,20 @@ impl SpCop2 {
                     let carry = _mm_cmpgt_epi16(_mm_xor_si128(mask, vs), _mm_xor_si128(mask, res));
                     op.setcarry(_mm_srli_epi16(carry, 15));
                 }
+                0x15 => {
+                    // VSUBC
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let res = _mm_sub_epi16(vs, vt);
+                    op.setvd(res);
+                    op.setaccum(0, res);
+
+                    #[allow(overflowing_literals)]
+                    let mask = _mm_set1_epi16(0x8000);
+                    let carry = _mm_cmpgt_epi16(_mm_xor_si128(mask, vt), _mm_xor_si128(mask, vs));
+                    op.setcarry(_mm_srli_epi16(carry, 15));
+                    op.setne(_mm_add_epi16(_mm_cmpeq_epi16(vs, vt), _mm_set1_epi16(1)));
+                }
                 0x1D => {
                     // VSAR
                     let e = op.e();
@@ -315,9 +329,9 @@ impl SpCop2 {
         } else {
             match op.e() {
                 0x2 => match op.rs() {
-                    0 => cpu.regs[op.rt()] = op.spv.vco() as u64,
-                    1 => cpu.regs[op.rt()] = op.spv.vcc() as u64,
-                    2 => cpu.regs[op.rt()] = op.spv.vce() as u64,
+                    0 => cpu.regs[op.rt()] = op.spv.vco().sx64(),
+                    1 => cpu.regs[op.rt()] = op.spv.vcc().sx64(),
+                    2 => cpu.regs[op.rt()] = op.spv.vce().sx64(),
                     _ => panic!("unimplement COP2 CFC2 reg:{}", op.rs()),
                 },
                 0x6 => match op.rs() {

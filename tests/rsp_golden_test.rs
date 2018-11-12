@@ -233,6 +233,11 @@ fn golden_vsub() {
 }
 
 #[test]
+fn golden_vsubc() {
+    test_golden("tests/gengolden/vsubc.toml");
+}
+
+#[test]
 fn golden_vaddc() {
     test_golden("tests/gengolden/vaddc.toml");
 }
