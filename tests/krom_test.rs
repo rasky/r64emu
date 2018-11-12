@@ -189,7 +189,7 @@ macro_rules! krom_rspcpu {
         krom!($test_name, concat!("RSPTest/CPU/", $romfn), $flags);
     };
 }
-macro_rules! krom_rsp {
+macro_rules! krom_rspcp2 {
     ($test_name:ident, $romfn:expr, $flags:expr) => {
         krom!($test_name, concat!("RSPTest/CP2/", $romfn), $flags | FPS10);
     };
@@ -202,6 +202,11 @@ macro_rules! krom_video {
 macro_rules! krom_rdp {
     ($test_name:ident, $romfn:expr, $flags:expr) => {
         krom!($test_name, concat!("RDP/", $romfn), $flags);
+    };
+}
+macro_rules! krom_rsp {
+    ($test_name:ident, $romfn:expr, $flags:expr) => {
+        krom!($test_name, concat!("RSP/", $romfn), $flags | FPS10);
     };
 }
 
@@ -295,24 +300,25 @@ krom_rspcpu!(rspcpu_add, "ADD/RSPCPUADD.N64", 0);
 krom_rspcpu!(rspcpu_or, "OR/RSPCPUOR.N64", 0);
 krom_rspcpu!(rspcpu_addu, "ADDU/RSPCPUADDU.N64", 0);
 
-krom_rsp!(rsp_vor, "VOR/RSPCP2VOR.N64", 0);
-krom_rsp!(rsp_vand, "VAND/RSPCP2VAND.N64", 0);
-krom_rsp!(rsp_vmulf, "VMULF/RSPCP2VMULF.N64", 0);
-krom_rsp!(rsp_vmudn, "VMUDN/RSPCP2VMUDN.N64", 0);
-krom_rsp!(rsp_vmudl, "VMUDL/RSPCP2VMUDL.N64", 0);
-krom_rsp!(rsp_vxor, "VXOR/RSPCP2VXOR.N64", 0);
-krom_rsp!(rsp_vmacf, "VMACF/RSPCP2VMACF.N64", 0);
-krom_rsp!(rsp_vmadn, "VMADN/RSPCP2VMADN.N64", 0);
-krom_rsp!(rsp_vmadl, "VMADL/RSPCP2VMADL.N64", 0);
-krom_rsp!(rsp_vadd, "VADD/RSPCP2VADD.N64", 0);
-krom_rsp!(rsp_ltv, "LOADSTORE/LTV/RSPCP2LTV.N64", 0);
-krom_rsp!(
-    rsp_tmat,
+krom_rspcp2!(rspcp2_vor, "VOR/RSPCP2VOR.N64", 0);
+krom_rspcp2!(rspcp2_vand, "VAND/RSPCP2VAND.N64", 0);
+krom_rspcp2!(rspcp2_vmulf, "VMULF/RSPCP2VMULF.N64", 0);
+krom_rspcp2!(rspcp2_vmudn, "VMUDN/RSPCP2VMUDN.N64", 0);
+krom_rspcp2!(rspcp2_vmudl, "VMUDL/RSPCP2VMUDL.N64", 0);
+krom_rspcp2!(rspcp2_vxor, "VXOR/RSPCP2VXOR.N64", 0);
+krom_rspcp2!(rspcp2_vmacf, "VMACF/RSPCP2VMACF.N64", 0);
+krom_rspcp2!(rspcp2_vmadn, "VMADN/RSPCP2VMADN.N64", 0);
+krom_rspcp2!(rspcp2_vmadl, "VMADL/RSPCP2VMADL.N64", 0);
+krom_rspcp2!(rspcp2_vadd, "VADD/RSPCP2VADD.N64", 0);
+krom_rspcp2!(rspcp2_ltv, "LOADSTORE/LTV/RSPCP2LTV.N64", 0);
+krom_rspcp2!(rspcp2_vsub, "VSUB/RSPCP2VSUB.N64", 0);
+krom_rspcp2!(
+    rspcp2_tmat,
     "LOADSTORE/TransposeMatrix/RSPTransposeMatrix.N64",
     0
 );
-krom_rsp!(
-    rsp_tmatvmov,
+krom_rspcp2!(
+    rspcp2_tmatvmov,
     "LOADSTORE/TransposeMatrixVMOV/RSPTransposeMatrixVMOV.N64",
     0
 );
@@ -322,59 +328,76 @@ krom_rspmem!(rspmem_imem, "IMEM/RSPIMEM.N64", RES_320);
 // ******************************************************************
 // NOT IMPLEMENTED
 // ******************************************************************
-// krom_rsp!(rsp_vlt, "VLT/RSPCP2VLT.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_lwv, "LOADSTORE/LWV/RSPCP2LWV.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_sort, "SORT/RSPSORT.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vcl, "VCL/RSPCP2VCL.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vrcp, "VRCP/RSPCP2VRCP.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(
-//     rsp_vextq,
+// krom_rspcp2!(rspcp2_vlt, "VLT/RSPCP2VLT.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_lwv, "LOADSTORE/LWV/RSPCP2LWV.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_sort, "SORT/RSPSORT.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vcl, "VCL/RSPCP2VCL.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vrcp, "VRCP/RSPCP2VRCP.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(
+//     rspcp2_vextq,
 //     "RESERVED/VEXTQ/RSPCP2VEXTQ.N64",
 //     FIX_L40 | FIX_L120
 // );
-// krom_rsp!(
-//     rsp_vsubb,
+// krom_rspcp2!(
+//     rspcp2_vsubb,
 //     "RESERVED/VSUBB/RSPCP2VSUBB.N64",
 //     FIX_L40 | FIX_L120
 // );
-// krom_rsp!(rsp_vsut, "RESERVED/VSUT/RSPCP2VSUT.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vsac, "RESERVED/VSAC/RSPCP2VSAC.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(
-//     rsp_vextt,
+// krom_rspcp2!(rspcp2_vsut, "RESERVED/VSUT/RSPCP2VSUT.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vsac, "RESERVED/VSAC/RSPCP2VSAC.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(
+//     rspcp2_vextt,
 //     "RESERVED/VEXTT/RSPCP2VEXTT.N64",
 //     FIX_L40 | FIX_L120
 // );
-// krom_rsp!(
-//     rsp_vrndp,
+// krom_rspcp2!(
+//     rspcp2_vrndp,
 //     "RESERVED/VRNDP/RSPCP2VRNDP.N64",
 //     FIX_L40 | FIX_L120
 // );
-// krom_rsp!(
-//     rsp_vextn,
+// krom_rspcp2!(
+//     rspcp2_vextn,
 //     "RESERVED/VEXTN/RSPCP2VEXTN.N64",
 //     FIX_L40 | FIX_L120
 // );
-// krom_rsp!(
-//     rsp_vmulq,
+// krom_rspcp2!(
+//     rspcp2_vmulq,
 //     "RESERVED/VMULQ/RSPCP2VMULQ.N64",
 //     FIX_L40 | FIX_L120
 // );
-// krom_rsp!(
-//     rsp_vaddb,
+// krom_rspcp2!(
+//     rspcp2_vaddb,
 //     "RESERVED/VADDB/RSPCP2VADDB.N64",
 //     FIX_L40 | FIX_L120
 // );
-// krom_rsp!(rsp_vrcpl, "VRCPL/RSPCP2VRCPL.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vcr, "VCR/RSPCP2VCR.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_veq, "VEQ/RSPCP2VEQ.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vsub, "VSUB/RSPCP2VSUB.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vnop, "VNOP/RSPCP2VNOP.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vrcph, "VRCPH/RSPCP2VRCPH.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vsar, "VSAR/RSPCP2VSAR.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vabs, "VABS/RSPCP2VABS.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_vacc, "RESERVED/VACC/RSPCP2VACC.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_v056, "RESERVED/V056/RSPCP2V056.N64", FIX_L40 | FIX_L120);
-// krom_rsp!(rsp_v073, "RESERVED/V073/RSPCP2V073.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vrcpl, "VRCPL/RSPCP2VRCPL.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vcr, "VCR/RSPCP2VCR.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_veq, "VEQ/RSPCP2VEQ.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vnop, "VNOP/RSPCP2VNOP.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vrcph, "VRCPH/RSPCP2VRCPH.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vsar, "VSAR/RSPCP2VSAR.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vabs, "VABS/RSPCP2VABS.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_vacc, "RESERVED/VACC/RSPCP2VACC.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_v056, "RESERVED/V056/RSPCP2V056.N64", FIX_L40 | FIX_L120);
+// krom_rspcp2!(rspcp2_v073, "RESERVED/V073/RSPCP2V073.N64", FIX_L40 | FIX_L120);
+
+krom_rsp!(
+    rsp_dct_fastdct,
+    "DCT/FastDCTBlockDecode/RSPFastDCTBlockDecode.N64",
+    RES_320
+);
+
+krom_rsp!(
+    rsp_dct_fastquant1,
+    "DCT/FastQuantizationBlockDecode/RSPFastQuantizationBlockDecode.N64",
+    RES_320
+);
+
+krom_rsp!(
+    rsp_dct_fastquant2,
+    "DCT/FastQuantizationMultiBlock16BIT/RSPFastQuantizationMultiBlock16BIT.N64",
+    RES_320
+);
 
 krom_video!(
     video_i4cpu,
