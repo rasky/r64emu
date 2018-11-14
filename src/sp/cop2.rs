@@ -2,6 +2,7 @@ extern crate emu;
 
 use super::sp::Sp;
 use super::vmul;
+use super::vrcp;
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
@@ -29,6 +30,8 @@ pub(crate) struct SpCop2 {
     accum: [VectorReg; 3],
     vco_carry: VectorReg,
     vco_ne: VectorReg,
+    div_in: u32,
+    div_out: u32,
     sp: DevPtr<Sp>,
     logger: slog::Logger,
 }
@@ -47,6 +50,8 @@ impl SpCop2 {
             accum: [VectorReg([0u8; 16]); 3],
             vco_carry: VectorReg([0u8; 16]),
             vco_ne: VectorReg([0u8; 16]),
+            div_in: 0,
+            div_out: 0,
             sp: sp.clone(),
             logger,
         }))
@@ -111,6 +116,9 @@ impl<'a> Vectorop<'a> {
     }
     fn vs(&self) -> __m128i {
         unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rs()].as_ptr() as *const _) }
+    }
+    fn vt(&self) -> __m128i {
+        unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rt()].as_ptr() as *const _) }
     }
     unsafe fn vte(&self) -> __m128i {
         let vt = _mm_loadu_si128(self.spv.vregs.0[self.rt()].as_ptr() as *const _);
@@ -325,6 +333,38 @@ impl SpCop2 {
                     op.setvd(res);
                     op.setaccum(0, res);
                 }
+                0x30 => {
+                    // VRCP
+                    let se = 7 - (op.e() & 7);
+                    let de = 7 - (op.rs() & 7);
+                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    let res = vrcp::vrcp(x.sx64() as u32);
+                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
+                    op.setaccum(0, op.vt());
+                    op.spv.div_out = res;
+                }
+                0x31 => {
+                    // VRCPL
+                    let se = 7 - (op.e() & 7);
+                    let de = 7 - (op.rs() & 7);
+                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    let res = vrcp::vrcp((x as u32) | op.spv.div_in);
+                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
+                    op.setaccum(0, op.vt());
+                    op.spv.div_out = res;
+                }
+                0x32 => {
+                    // VRCPH
+                    let se = 7 - (op.e() & 7);
+                    let de = 7 - (op.rs() & 7);
+                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    LittleEndian::write_u16(
+                        &mut op.spv.vregs.0[op.rd()][de * 2..],
+                        (op.spv.div_out >> 16) as u16,
+                    );
+                    op.setaccum(0, op.vt());
+                    op.spv.div_in = (x as u32) << 16;
+                }
                 0x33 => {
                     // VMOV
                     let de = 7 - (op.rs() & 7);
@@ -340,6 +380,39 @@ impl SpCop2 {
                     LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res);
                     // FIXME: update ACCUM with VMOV?
                 }
+                0x34 => {
+                    // VRSQ
+                    let se = 7 - (op.e() & 7);
+                    let de = 7 - (op.rs() & 7);
+                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    let res = vrcp::vrsq(x.sx64() as u32);
+                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
+                    op.setaccum(0, op.vt());
+                    op.spv.div_out = res;
+                }
+                0x35 => {
+                    // VRSQL
+                    let se = 7 - (op.e() & 7);
+                    let de = 7 - (op.rs() & 7);
+                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    let res = vrcp::vrsq((x as u32) | op.spv.div_in);
+                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
+                    op.setaccum(0, op.vt());
+                    op.spv.div_out = res;
+                }
+                0x36 => {
+                    // VRSQH
+                    let se = 7 - (op.e() & 7);
+                    let de = 7 - (op.rs() & 7);
+                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    LittleEndian::write_u16(
+                        &mut op.spv.vregs.0[op.rd()][de * 2..],
+                        (op.spv.div_out >> 16) as u16,
+                    );
+                    op.setaccum(0, op.vt());
+                    op.spv.div_in = (x as u32) << 16;
+                }
+
                 _ => panic!("unimplemented COP2 VU opcode={}", op.func().hex()),
             }
         } else {

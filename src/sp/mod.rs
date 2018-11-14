@@ -8,3 +8,4 @@ mod accumulator;
 mod cop0;
 mod cop2;
 mod vmul;
+mod vrcp;

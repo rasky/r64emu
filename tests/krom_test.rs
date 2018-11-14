@@ -311,7 +311,11 @@ krom_rspcp2!(rspcp2_vmadn, "VMADN/RSPCP2VMADN.N64", 0);
 krom_rspcp2!(rspcp2_vmadl, "VMADL/RSPCP2VMADL.N64", 0);
 krom_rspcp2!(rspcp2_vadd, "VADD/RSPCP2VADD.N64", 0);
 krom_rspcp2!(rspcp2_ltv, "LOADSTORE/LTV/RSPCP2LTV.N64", 0);
+krom_rspcp2!(rspcp2_vrcp, "VRCP/RSPCP2VRCP.N64", 0);
+krom_rspcp2!(rspcp2_vrcph, "VRCPH/RSPCP2VRCPH.N64", 0);
+krom_rspcp2!(rspcp2_vrcpl, "VRCPL/RSPCP2VRCPL.N64", 0);
 krom_rspcp2!(rspcp2_vsub, "VSUB/RSPCP2VSUB.N64", 0);
+krom_rspcp2!(rspcp2_vsubb, "RESERVED/VSUBB/RSPCP2VSUBB.N64", 0);
 krom_rspcp2!(
     rspcp2_tmat,
     "LOADSTORE/TransposeMatrix/RSPTransposeMatrix.N64",
@@ -332,15 +336,9 @@ krom_rspmem!(rspmem_imem, "IMEM/RSPIMEM.N64", RES_320);
 // krom_rspcp2!(rspcp2_lwv, "LOADSTORE/LWV/RSPCP2LWV.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_sort, "SORT/RSPSORT.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_vcl, "VCL/RSPCP2VCL.N64", FIX_L40 | FIX_L120);
-// krom_rspcp2!(rspcp2_vrcp, "VRCP/RSPCP2VRCP.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(
 //     rspcp2_vextq,
 //     "RESERVED/VEXTQ/RSPCP2VEXTQ.N64",
-//     FIX_L40 | FIX_L120
-// );
-// krom_rspcp2!(
-//     rspcp2_vsubb,
-//     "RESERVED/VSUBB/RSPCP2VSUBB.N64",
 //     FIX_L40 | FIX_L120
 // );
 // krom_rspcp2!(rspcp2_vsut, "RESERVED/VSUT/RSPCP2VSUT.N64", FIX_L40 | FIX_L120);
@@ -370,11 +368,9 @@ krom_rspmem!(rspmem_imem, "IMEM/RSPIMEM.N64", RES_320);
 //     "RESERVED/VADDB/RSPCP2VADDB.N64",
 //     FIX_L40 | FIX_L120
 // );
-// krom_rspcp2!(rspcp2_vrcpl, "VRCPL/RSPCP2VRCPL.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_vcr, "VCR/RSPCP2VCR.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_veq, "VEQ/RSPCP2VEQ.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_vnop, "VNOP/RSPCP2VNOP.N64", FIX_L40 | FIX_L120);
-// krom_rspcp2!(rspcp2_vrcph, "VRCPH/RSPCP2VRCPH.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_vsar, "VSAR/RSPCP2VSAR.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_vabs, "VABS/RSPCP2VABS.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_vacc, "RESERVED/VACC/RSPCP2VACC.N64", FIX_L40 | FIX_L120);
@@ -398,6 +394,9 @@ krom_rsp!(
     "DCT/FastQuantizationMultiBlock16BIT/RSPFastQuantizationMultiBlock16BIT.N64",
     RES_320
 );
+
+krom_rsp!(rsp_dmastride, "DMAStride/RSPDMAStride.N64", RES_320);
+krom_rsp!(rsp_gradient, "Gradient/RSPGradient.N64", RES_320);
 
 krom_video!(
     video_i4cpu,

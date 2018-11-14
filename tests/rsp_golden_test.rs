@@ -188,6 +188,8 @@ macro_rules! define_golden_test {
 
 define_golden_test!(golden_vsubb, "vsubb.toml");
 define_golden_test!(golden_vsucb, "vsucb.toml");
+define_golden_test!(golden_vrcp, "vrcp.toml");
+define_golden_test!(golden_vrsq, "vrsq.toml");
 
 #[test]
 fn golden_lqv_sqv() {
