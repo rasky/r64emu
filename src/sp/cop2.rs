@@ -16,17 +16,43 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 // Vector registers as array of u8.
-// We define a separate structure for this array to be able
-// to specify alignment, since these will be used with SSE intrinsics.
-#[repr(align(16))]
-struct VectorRegs([[u8; 16]; 32]);
-
+// Kept as little endian so that it's easier to directly load into SSE registers
 #[derive(Debug, Copy, Clone)]
 #[repr(align(16))]
 struct VectorReg([u8; 16]);
 
+impl VectorReg {
+    fn byte(&self, idx: usize) -> u8 {
+        self.0[7 - idx]
+    }
+    fn setbyte(&mut self, idx: usize, val: u8) {
+        self.0[7 - idx] = val;
+    }
+
+    fn lane(&self, idx: usize) -> u16 {
+        LittleEndian::read_u16(&self.0[(7 - idx) * 2..])
+    }
+    fn setlane(&mut self, idx: usize, val: u16) {
+        LittleEndian::write_u16(&mut self.0[(7 - idx) * 2..], val);
+    }
+
+    fn u128(&self) -> u128 {
+        LittleEndian::read_u128(&self.0)
+    }
+    fn setu128(&mut self, val: u128) {
+        LittleEndian::write_u128(&mut self.0, val);
+    }
+
+    fn m128(&self) -> __m128i {
+        unsafe { _mm_loadu_si128(self.0.as_ptr() as *const _) }
+    }
+    fn setm128(&mut self, val: __m128i) {
+        unsafe { _mm_store_si128(self.0.as_ptr() as *mut _, val) };
+    }
+}
+
 pub(crate) struct SpCop2 {
-    vregs: VectorRegs,
+    vregs: [VectorReg; 32],
     accum: [VectorReg; 3],
     vco_carry: VectorReg,
     vco_ne: VectorReg,
@@ -46,7 +72,7 @@ impl SpCop2 {
 
     pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Result<Box<SpCop2>> {
         Ok(Box::new(SpCop2 {
-            vregs: VectorRegs([[0u8; 16]; 32]),
+            vregs: [VectorReg([0u8; 16]); 32],
             accum: [VectorReg([0u8; 16]); 3],
             vco_carry: VectorReg([0u8; 16]),
             vco_ne: VectorReg([0u8; 16]),
@@ -115,33 +141,28 @@ impl<'a> Vectorop<'a> {
         ((self.op >> 6) & 0x1F) as usize
     }
     fn vs(&self) -> __m128i {
-        unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rs()].as_ptr() as *const _) }
+        self.spv.vregs[self.rs()].m128()
     }
     fn vt(&self) -> __m128i {
-        unsafe { _mm_loadu_si128(self.spv.vregs.0[self.rt()].as_ptr() as *const _) }
+        self.spv.vregs[self.rt()].m128()
     }
     unsafe fn vte(&self) -> __m128i {
-        let vt = _mm_loadu_si128(self.spv.vregs.0[self.rt()].as_ptr() as *const _);
+        let vt = self.spv.vregs[self.rt()];
         let e = self.e();
         match e {
-            0..=1 => vt,
-            2 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b11_11_01_01), 0b11_11_01_01),
-            3 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b10_10_00_00), 0b10_10_00_00),
-            4 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b11_11_11_11), 0b11_11_11_11),
-            5 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b10_10_10_10), 0b10_10_10_10),
-            6 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b01_01_01_01), 0b01_01_01_01),
-            7 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt, 0b00_00_00_00), 0b00_00_00_00),
-            8..=15 => _mm_set1_epi16(LittleEndian::read_u16(
-                &self.spv.vregs.0[self.rt()][(15 - e) * 2..],
-            ) as i16),
-            _ => vt,
+            0..=1 => vt.m128(),
+            2 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt.m128(), 0b11_11_01_01), 0b11_11_01_01),
+            3 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt.m128(), 0b10_10_00_00), 0b10_10_00_00),
+            4 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt.m128(), 0b11_11_11_11), 0b11_11_11_11),
+            5 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt.m128(), 0b10_10_10_10), 0b10_10_10_10),
+            6 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt.m128(), 0b01_01_01_01), 0b01_01_01_01),
+            7 => _mm_shufflehi_epi16(_mm_shufflelo_epi16(vt.m128(), 0b00_00_00_00), 0b00_00_00_00),
+            8..=15 => _mm_set1_epi16(vt.lane(e - 8) as i16),
+            _ => unreachable!(),
         }
     }
     fn setvd(&mut self, val: __m128i) {
-        unsafe {
-            let rd = self.rd();
-            _mm_store_si128(self.spv.vregs.0[rd].as_ptr() as *mut _, val);
-        }
+        self.spv.vregs[self.rd()].setm128(val);
     }
     fn accum(&self, idx: usize) -> __m128i {
         unsafe { _mm_loadu_si128(self.spv.accum[idx].0.as_ptr() as *const _) }
@@ -157,6 +178,14 @@ impl<'a> Vectorop<'a> {
     }
     fn setne(&self, val: __m128i) {
         unsafe { _mm_store_si128(self.spv.vco_ne.0.as_ptr() as *mut _, val) }
+    }
+
+    fn vt_lane(&self, idx: usize) -> u16 {
+        self.spv.vregs[self.rt()].lane(idx)
+    }
+
+    fn setvd_lane(&mut self, idx: usize, val: u16) {
+        self.spv.vregs[self.rd()].setlane(idx, val);
     }
 }
 
@@ -335,44 +364,34 @@ impl SpCop2 {
                 }
                 0x30 => {
                     // VRCP
-                    let se = 7 - (op.e() & 7);
-                    let de = 7 - (op.rs() & 7);
-                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    let x = op.vt_lane(op.e() & 7);
                     let res = vrcp::vrcp(x.sx32());
-                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
+                    op.setvd_lane(op.rs() & 7, res as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_out = res;
                 }
                 0x31 => {
                     // VRCPL
-                    let se = 7 - (op.e() & 7);
-                    let de = 7 - (op.rs() & 7);
-                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    let x = op.vt_lane(op.e() & 7);
                     let res = match op.spv.div_in {
                         Some(div_in) => vrcp::vrcp((x as u32) | div_in),
                         None => vrcp::vrcp(x.sx32()),
                     };
-                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
+                    op.setvd_lane(op.rs() & 7, res as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_out = res;
                     op.spv.div_in = None;
                 }
                 0x32 => {
                     // VRCPH
-                    let se = 7 - (op.e() & 7);
-                    let de = 7 - (op.rs() & 7);
-                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
-                    LittleEndian::write_u16(
-                        &mut op.spv.vregs.0[op.rd()][de * 2..],
-                        (op.spv.div_out >> 16) as u16,
-                    );
+                    let x = op.vt_lane(op.e() & 7);
+                    op.setvd_lane(op.rs() & 7, (op.spv.div_out >> 16) as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_in = Some((x as u32) << 16);
                 }
                 0x33 => {
                     // VMOV
-                    let de = 7 - (op.rs() & 7);
-                    let se = 7 - match op.e() {
+                    let se = match op.e() {
                         0..=1 => (op.e() & 0b000) | (op.rs() & 0b111),
                         2..=3 => (op.e() & 0b001) | (op.rs() & 0b110),
                         4..=7 => (op.e() & 0b011) | (op.rs() & 0b100),
@@ -380,43 +399,34 @@ impl SpCop2 {
                         _ => unreachable!(),
                     };
 
-                    let res = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
-                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res);
+                    let res = op.vt_lane(se);
+                    op.setvd_lane(op.rs() & 7, res);
                     // FIXME: update ACCUM with VMOV?
                 }
                 0x34 => {
                     // VRSQ
-                    let se = 7 - (op.e() & 7);
-                    let de = 7 - (op.rs() & 7);
-                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    let x = op.vt_lane(op.e() & 7);
                     let res = vrcp::vrsq(x.sx32());
-                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
+                    op.setvd_lane(op.rs() & 7, res as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_out = res;
                 }
                 0x35 => {
                     // VRSQL
-                    let se = 7 - (op.e() & 7);
-                    let de = 7 - (op.rs() & 7);
-                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
+                    let x = op.vt_lane(op.e() & 7);
                     let res = match op.spv.div_in {
                         Some(div_in) => vrcp::vrsq((x as u32) | div_in),
                         None => vrcp::vrsq(x.sx32()),
                     };
-                    LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
+                    op.setvd_lane(op.rs() & 7, res as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_out = res;
                     op.spv.div_in = None;
                 }
                 0x36 => {
                     // VRSQH
-                    let se = 7 - (op.e() & 7);
-                    let de = 7 - (op.rs() & 7);
-                    let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
-                    LittleEndian::write_u16(
-                        &mut op.spv.vregs.0[op.rd()][de * 2..],
-                        (op.spv.div_out >> 16) as u16,
-                    );
+                    let x = op.vt_lane(op.e() & 7);
+                    op.setvd_lane(op.rs() & 7, (op.spv.div_out >> 16) as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_in = Some((x as u32) << 16);
                 }
@@ -473,20 +483,20 @@ fn write_partial_right<B: ByteOrder>(dst: &mut [u8], src: u128, skip_bits: usize
 }
 
 // Plain "load vector subword from memory"
-fn lxv<T: MemInt>(regptr: &mut [u8], element: usize, dmem: &[u8], base: u32, offset: u32) {
+fn lxv<T: MemInt>(reg: &mut VectorReg, element: usize, dmem: &[u8], base: u32, offset: u32) {
     let ea = ((base + (offset << T::SIZE_LOG)) & 0xFFF) as usize;
     let mem64: u64 = T::endian_read_from::<BigEndian>(&dmem[ea..ea + T::SIZE]).into();
     let mut mem: u128 = mem64.into();
     mem <<= 128 - T::SIZE * 8;
 
-    write_partial_right::<LittleEndian>(regptr, mem, element as usize * 8, T::SIZE * 8);
+    write_partial_right::<LittleEndian>(&mut reg.0, mem, element as usize * 8, T::SIZE * 8);
 }
 
 // Plain "store vector subword into memory"
-fn sxv<T: MemInt>(dmem: &mut [u8], base: u32, offset: u32, regptr: &[u8], element: usize) {
+fn sxv<T: MemInt>(dmem: &mut [u8], base: u32, offset: u32, reg: &VectorReg, element: usize) {
     let ea = ((base + (offset << T::SIZE_LOG)) & 0xFFF) as usize;
 
-    let mut reg = LittleEndian::read_u128(regptr);
+    let mut reg = reg.u128();
     reg = reg.rotate_left(element as u32 * 8);
     reg >>= 128 - T::SIZE * 8;
 
@@ -502,7 +512,7 @@ impl Cop for SpCop2 {
             SpCop2::REG_ACCUM_LO => LittleEndian::read_u128(&self.accum[0].0),
             SpCop2::REG_ACCUM_MD => LittleEndian::read_u128(&self.accum[1].0),
             SpCop2::REG_ACCUM_HI => LittleEndian::read_u128(&self.accum[2].0),
-            _ => LittleEndian::read_u128(&self.vregs.0[idx]),
+            _ => self.vregs[idx].u128(),
         }
     }
     fn set_reg(&mut self, idx: usize, val: u128) {
@@ -513,7 +523,7 @@ impl Cop for SpCop2 {
             SpCop2::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.accum[0].0, val),
             SpCop2::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.accum[1].0, val),
             SpCop2::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.accum[2].0, val),
-            _ => LittleEndian::write_u128(&mut self.vregs.0[idx], val),
+            _ => self.vregs[idx].setu128(val),
         }
     }
 
@@ -524,13 +534,13 @@ impl Cop for SpCop2 {
     fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         let sp = self.sp.borrow();
         let dmem = sp.dmem.buf();
-        let (base, vt, op, element, offset) = SpCop2::oploadstore(op, ctx);
-        let regptr = &mut self.vregs.0[vt];
+        let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
+        let vt = &mut self.vregs[vtidx];
         match op {
-            0x00 => lxv::<u8>(regptr, element as usize, &dmem, base, offset), // LBV
-            0x01 => lxv::<u16>(regptr, element as usize, &dmem, base, offset), // LSV
-            0x02 => lxv::<u32>(regptr, element as usize, &dmem, base, offset), // LLV
-            0x03 => lxv::<u64>(regptr, element as usize, &dmem, base, offset), // LDV
+            0x00 => lxv::<u8>(vt, element as usize, &dmem, base, offset), // LBV
+            0x01 => lxv::<u16>(vt, element as usize, &dmem, base, offset), // LSV
+            0x02 => lxv::<u32>(vt, element as usize, &dmem, base, offset), // LLV
+            0x03 => lxv::<u64>(vt, element as usize, &dmem, base, offset), // LDV
             0x04 => {
                 // LQV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
@@ -539,9 +549,7 @@ impl Cop for SpCop2 {
 
                 let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
                 mem <<= ea_idx * 8;
-
-                let regptr = &mut self.vregs.0[vt];
-                write_partial_right::<LittleEndian>(regptr, mem, element as usize * 8, 128);
+                write_partial_right::<LittleEndian>(&mut vt.0, mem, element as usize * 8, 128);
             }
             0x05 => {
                 // LRV
@@ -551,9 +559,7 @@ impl Cop for SpCop2 {
 
                 let mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
                 let sh = (16 - ea_idx) + element as usize;
-
-                let regptr = &mut self.vregs.0[vt];
-                write_partial_right::<LittleEndian>(regptr, mem, sh * 8, 128);
+                write_partial_right::<LittleEndian>(&mut vt.0, mem, sh * 8, 128);
             }
             0x0B => {
                 // LTV
@@ -561,18 +567,13 @@ impl Cop for SpCop2 {
                 let qw_start = ea as usize & !0x7;
                 let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
 
-                let mut e: usize = 7;
-                let vtbase = vt & !7;
+                let vtbase = vtidx & !7;
                 let mut vtoff = element as usize >> 1;
                 mem = mem.rotate_left((element + (ea & 0x8)) * 8);
 
-                for _ in 0..8 {
-                    LittleEndian::write_u16(
-                        &mut self.vregs.0[vtbase + vtoff][e * 2..],
-                        (mem >> (128 - 16)) as u16,
-                    );
+                for e in 0..8 {
+                    self.vregs[vtbase + vtoff].setlane(e, (mem >> (128 - 16)) as u16);
                     mem <<= 16;
-                    e -= 1;
                     vtoff += 1;
                     vtoff &= 7;
                 }
@@ -583,21 +584,20 @@ impl Cop for SpCop2 {
     fn swc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         let sp = self.sp.borrow();
         let mut dmem = sp.dmem.buf();
-        let (base, vt, op, element, offset) = SpCop2::oploadstore(op, ctx);
-        let regptr = &self.vregs.0[vt];
+        let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
+        let vt = &self.vregs[vtidx];
         match op {
-            0x00 => sxv::<u8>(&mut dmem, base, offset, regptr, element as usize), // SBV
-            0x01 => sxv::<u16>(&mut dmem, base, offset, regptr, element as usize), // SSV
-            0x02 => sxv::<u32>(&mut dmem, base, offset, regptr, element as usize), // SLV
-            0x03 => sxv::<u64>(&mut dmem, base, offset, regptr, element as usize), // SDV
+            0x00 => sxv::<u8>(&mut dmem, base, offset, vt, element as usize), // SBV
+            0x01 => sxv::<u16>(&mut dmem, base, offset, vt, element as usize), // SSV
+            0x02 => sxv::<u32>(&mut dmem, base, offset, vt, element as usize), // SLV
+            0x03 => sxv::<u64>(&mut dmem, base, offset, vt, element as usize), // SDV
             0x04 => {
                 // SQV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
                 let qw_start = ea & !0xF;
                 let ea_idx = ea & 0xF;
-                let regptr = &self.vregs.0[vt];
 
-                let mut reg = LittleEndian::read_u128(regptr);
+                let mut reg = vt.u128();
                 reg = reg.rotate_left(element * 8);
 
                 let memptr = &mut dmem[qw_start..qw_start + 0x10];
@@ -608,9 +608,8 @@ impl Cop for SpCop2 {
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
                 let qw_start = ea & !0xF;
                 let ea_idx = ea & 0xF;
-                let regptr = &self.vregs.0[vt];
 
-                let mut reg = LittleEndian::read_u128(regptr);
+                let mut reg = vt.u128();
                 reg = reg.rotate_left(element * 8);
 
                 let memptr = &mut dmem[qw_start..qw_start + 0x10];
@@ -621,10 +620,10 @@ impl Cop for SpCop2 {
                 let ea = (base + (offset << 4)) & 0xFFF;
                 let qw_start = ea as usize & !0x7;
 
-                let mut mem = LittleEndian::read_u128(regptr);
-                mem = mem.rotate_right((ea & 7) * 8);
-                mem = mem.rotate_left(element * 8);
-                BigEndian::write_u128(&mut dmem[qw_start..qw_start + 0x10], mem);
+                let mut reg = vt.u128();
+                reg = reg.rotate_right((ea & 7) * 8);
+                reg = reg.rotate_left(element * 8);
+                BigEndian::write_u128(&mut dmem[qw_start..qw_start + 0x10], reg);
             }
             0x0B => {
                 // STV
@@ -632,15 +631,13 @@ impl Cop for SpCop2 {
                 let qw_start = ea as usize & !0x7;
                 let mut mem: u128 = 0;
 
-                let mut e: usize = 7;
-                let vtbase = vt & !7;
+                let vtbase = vtidx & !7;
                 let mut vtoff = element as usize >> 1;
 
-                for _ in 0..8 {
-                    let r = LittleEndian::read_u16(&self.vregs.0[vtbase + vtoff][e * 2..]);
+                for e in 0..8 {
+                    let r = self.vregs[vtbase + vtoff].lane(e);
                     mem <<= 16;
                     mem |= r as u128;
-                    e -= 1;
                     vtoff += 1;
                     vtoff &= 7;
                 }
