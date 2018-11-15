@@ -105,16 +105,20 @@ impl SpCop2 {
     fn vco(&self) -> u16 {
         let mut res = 0u16;
         for i in 0..8 {
-            res |= LittleEndian::read_u16(&self.vco_carry.0[(7 - i) * 2..]) << i;
-            res |= LittleEndian::read_u16(&self.vco_ne.0[(7 - i) * 2..]) << (i + 8);
+            res |= (self.vco_carry.lane(i) & 1) << i;
+            res |= (self.vco_ne.lane(i) & 1) << (i + 8);
         }
         res
     }
 
     fn set_vco(&mut self, vco: u16) {
         for i in 0..8 {
-            LittleEndian::write_u16(&mut self.vco_carry.0[(7 - i) * 2..], (vco >> i) & 1);
-            LittleEndian::write_u16(&mut self.vco_ne.0[(7 - i) * 2..], (vco >> (i + 8)) & 1);
+            let carry = (vco >> i) & 1;
+            let ne = (vco >> (i + 8)) & 1;
+
+            self.vco_carry
+                .setlane(i, if carry != 0 { 0xFFFF } else { 0 });
+            self.vco_ne.setlane(i, if ne != 0 { 0xFFFF } else { 0 });
         }
     }
 }
@@ -171,13 +175,13 @@ impl<'a> Vectorop<'a> {
         unsafe { _mm_store_si128(self.spv.accum[idx].0.as_ptr() as *mut _, val) }
     }
     fn carry(&self) -> __m128i {
-        unsafe { _mm_loadu_si128(self.spv.vco_carry.0.as_ptr() as *const _) }
+        self.spv.vco_carry.m128()
     }
-    fn setcarry(&self, val: __m128i) {
-        unsafe { _mm_store_si128(self.spv.vco_carry.0.as_ptr() as *mut _, val) }
+    fn setcarry(&mut self, val: __m128i) {
+        self.spv.vco_carry.setm128(val);
     }
-    fn setne(&self, val: __m128i) {
-        unsafe { _mm_store_si128(self.spv.vco_ne.0.as_ptr() as *mut _, val) }
+    fn setne(&mut self, val: __m128i) {
+        self.spv.vco_ne.setm128(val);
     }
 
     fn vt_lane(&self, idx: usize) -> u16 {
@@ -210,6 +214,9 @@ impl SpCop2 {
     unsafe fn uop(&mut self, cpu: &mut CpuContext, op: u32) {
         let mut op = Vectorop { op, spv: self };
         let vzero = _mm_setzero_si128();
+        #[allow(overflowing_literals)]
+        let vones = _mm_set1_epi16(0xFFFF);
+
         if op.op & (1 << 25) != 0 {
             match op.func() {
                 0x00 => op_vmul!(op, vmulf), // VMULF
@@ -235,10 +242,12 @@ impl SpCop2 {
                     // saturate the final result and not only intermediate
                     // results:
                     //     0x8000 + 0x8000 + 0x1 must be 0x8000, not 0x8001
+                    // NOTE: the carry register is either 0x0 or 0xFFFF (-1), so add/sub
+                    // operations are reversed.
                     let min = _mm_min_epi16(vs, vt);
                     let max = _mm_max_epi16(vs, vt);
-                    op.setvd(_mm_adds_epi16(_mm_adds_epi16(min, carry), max));
-                    op.setaccum(0, _mm_add_epi16(_mm_add_epi16(vs, vt), carry));
+                    op.setvd(_mm_adds_epi16(_mm_subs_epi16(min, carry), max));
+                    op.setaccum(0, _mm_sub_epi16(_mm_add_epi16(vs, vt), carry));
                     op.setcarry(vzero);
                     op.setne(vzero);
                 }
@@ -251,8 +260,9 @@ impl SpCop2 {
                     // We need to compute Saturate(VS-VT-CARRY).
                     // Compute VS-(VT+CARRY), and fix the result if there
                     // was an overflow.
+                    // NOTE: the carry register is either 0x0 or 0xFFFF (-1), so add/sub
+                    // operations are reversed.
                     let zero = _mm_setzero_si128();
-                    let carry = _mm_cmpgt_epi16(carry, zero);
 
                     let diff = _mm_sub_epi16(vt, carry);
                     let sdiff = _mm_subs_epi16(vt, carry);
@@ -277,8 +287,10 @@ impl SpCop2 {
                     // the unsigned result.
                     #[allow(overflowing_literals)]
                     let mask = _mm_set1_epi16(0x8000);
-                    let carry = _mm_cmpgt_epi16(_mm_xor_si128(mask, vs), _mm_xor_si128(mask, res));
-                    op.setcarry(_mm_srli_epi16(carry, 15));
+                    op.setcarry(_mm_cmpgt_epi16(
+                        _mm_xor_si128(mask, vs),
+                        _mm_xor_si128(mask, res),
+                    ));
                 }
                 0x15 => {
                     // VSUBC
@@ -290,8 +302,10 @@ impl SpCop2 {
 
                     #[allow(overflowing_literals)]
                     let mask = _mm_set1_epi16(0x8000);
-                    let carry = _mm_cmpgt_epi16(_mm_xor_si128(mask, vt), _mm_xor_si128(mask, vs));
-                    op.setcarry(_mm_srli_epi16(carry, 15));
+                    op.setcarry(_mm_cmpgt_epi16(
+                        _mm_xor_si128(mask, vt),
+                        _mm_xor_si128(mask, vs),
+                    ));
                     op.setne(_mm_add_epi16(_mm_cmpeq_epi16(vs, vt), _mm_set1_epi16(1)));
                 }
                 0x17 => {
