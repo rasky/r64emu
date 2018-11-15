@@ -30,7 +30,7 @@ pub(crate) struct SpCop2 {
     accum: [VectorReg; 3],
     vco_carry: VectorReg,
     vco_ne: VectorReg,
-    div_in: u32,
+    div_in: Option<u32>,
     div_out: u32,
     sp: DevPtr<Sp>,
     logger: slog::Logger,
@@ -50,7 +50,7 @@ impl SpCop2 {
             accum: [VectorReg([0u8; 16]); 3],
             vco_carry: VectorReg([0u8; 16]),
             vco_ne: VectorReg([0u8; 16]),
-            div_in: 0,
+            div_in: None,
             div_out: 0,
             sp: sp.clone(),
             logger,
@@ -338,7 +338,7 @@ impl SpCop2 {
                     let se = 7 - (op.e() & 7);
                     let de = 7 - (op.rs() & 7);
                     let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
-                    let res = vrcp::vrcp(x.sx64() as u32);
+                    let res = vrcp::vrcp(x.sx32());
                     LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_out = res;
@@ -348,10 +348,14 @@ impl SpCop2 {
                     let se = 7 - (op.e() & 7);
                     let de = 7 - (op.rs() & 7);
                     let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
-                    let res = vrcp::vrcp((x as u32) | op.spv.div_in);
+                    let res = match op.spv.div_in {
+                        Some(div_in) => vrcp::vrcp((x as u32) | div_in),
+                        None => vrcp::vrcp(x.sx32()),
+                    };
                     LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_out = res;
+                    op.spv.div_in = None;
                 }
                 0x32 => {
                     // VRCPH
@@ -363,7 +367,7 @@ impl SpCop2 {
                         (op.spv.div_out >> 16) as u16,
                     );
                     op.setaccum(0, op.vt());
-                    op.spv.div_in = (x as u32) << 16;
+                    op.spv.div_in = Some((x as u32) << 16);
                 }
                 0x33 => {
                     // VMOV
@@ -385,7 +389,7 @@ impl SpCop2 {
                     let se = 7 - (op.e() & 7);
                     let de = 7 - (op.rs() & 7);
                     let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
-                    let res = vrcp::vrsq(x.sx64() as u32);
+                    let res = vrcp::vrsq(x.sx32());
                     LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_out = res;
@@ -395,10 +399,14 @@ impl SpCop2 {
                     let se = 7 - (op.e() & 7);
                     let de = 7 - (op.rs() & 7);
                     let x = LittleEndian::read_u16(&op.spv.vregs.0[op.rt()][se * 2..]);
-                    let res = vrcp::vrsq((x as u32) | op.spv.div_in);
+                    let res = match op.spv.div_in {
+                        Some(div_in) => vrcp::vrsq((x as u32) | div_in),
+                        None => vrcp::vrsq(x.sx32()),
+                    };
                     LittleEndian::write_u16(&mut op.spv.vregs.0[op.rd()][de * 2..], res as u16);
                     op.setaccum(0, op.vt());
                     op.spv.div_out = res;
+                    op.spv.div_in = None;
                 }
                 0x36 => {
                     // VRSQH
@@ -410,7 +418,7 @@ impl SpCop2 {
                         (op.spv.div_out >> 16) as u16,
                     );
                     op.setaccum(0, op.vt());
-                    op.spv.div_in = (x as u32) << 16;
+                    op.spv.div_in = Some((x as u32) << 16);
                 }
 
                 _ => panic!("unimplemented COP2 VU opcode={}", op.func().hex()),
