@@ -1,6 +1,10 @@
 pub trait Numerics: Sized {
     type Unsigned: Numerics;
 
+    fn isx32(self) -> i32;
+    fn sx32(self) -> u32 {
+        self.isx32() as u32
+    }
     fn isx64(self) -> i64;
     fn sx64(self) -> u64 {
         self.isx64() as u64
@@ -12,6 +16,10 @@ pub trait Numerics: Sized {
 impl Numerics for u8 {
     type Unsigned = u8;
 
+    #[inline(always)]
+    fn isx32(self) -> i32 {
+        self as i8 as i32
+    }
     #[inline(always)]
     fn isx64(self) -> i64 {
         self as i8 as i64
@@ -30,6 +38,10 @@ impl Numerics for u16 {
     type Unsigned = u16;
 
     #[inline(always)]
+    fn isx32(self) -> i32 {
+        self as i16 as i32
+    }
+    #[inline(always)]
     fn isx64(self) -> i64 {
         self as i16 as i64
     }
@@ -46,6 +58,10 @@ impl Numerics for u16 {
 impl Numerics for i32 {
     type Unsigned = u32;
 
+    #[inline(always)]
+    fn isx32(self) -> i32 {
+        self
+    }
     #[inline(always)]
     fn isx64(self) -> i64 {
         self as i64
@@ -64,6 +80,10 @@ impl Numerics for u32 {
     type Unsigned = u32;
 
     #[inline(always)]
+    fn isx32(self) -> i32 {
+        self as i32
+    }
+    #[inline(always)]
     fn isx64(self) -> i64 {
         self as i32 as i64
     }
@@ -80,6 +100,10 @@ impl Numerics for u32 {
 impl Numerics for i64 {
     type Unsigned = u64;
 
+    #[inline(always)]
+    fn isx32(self) -> i32 {
+        panic!("isx32 for i64")
+    }
     #[inline(always)]
     fn isx64(self) -> i64 {
         self
@@ -98,6 +122,10 @@ impl Numerics for u64 {
     type Unsigned = u64;
 
     #[inline(always)]
+    fn isx32(self) -> i32 {
+        panic!("isx32 for u64")
+    }
+    #[inline(always)]
     fn isx64(self) -> i64 {
         self as i64
     }
@@ -115,6 +143,10 @@ impl Numerics for i128 {
     type Unsigned = u128;
 
     #[inline(always)]
+    fn isx32(self) -> i32 {
+        panic!("isx32 for i128")
+    }
+    #[inline(always)]
     fn isx64(self) -> i64 {
         panic!("i128 isx64")
     }
@@ -131,6 +163,10 @@ impl Numerics for i128 {
 impl Numerics for u128 {
     type Unsigned = u128;
 
+    #[inline(always)]
+    fn isx32(self) -> i32 {
+        panic!("isx32 for u128")
+    }
     #[inline(always)]
     fn isx64(self) -> i64 {
         panic!("u128 isx64")
