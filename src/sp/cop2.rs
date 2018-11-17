@@ -56,6 +56,9 @@ pub(crate) struct SpCop2 {
     accum: [VectorReg; 3],
     vco_carry: VectorReg,
     vco_ne: VectorReg,
+    vce: VectorReg,
+    vcc_normal: VectorReg,
+    vcc_clip: VectorReg,
     div_in: Option<u32>,
     div_out: u32,
     sp: DevPtr<Sp>,
@@ -76,6 +79,9 @@ impl SpCop2 {
             accum: [VectorReg([0u8; 16]); 3],
             vco_carry: VectorReg([0u8; 16]),
             vco_ne: VectorReg([0u8; 16]),
+            vce: VectorReg([0u8; 16]),
+            vcc_normal: VectorReg([0u8; 16]),
+            vcc_clip: VectorReg([0u8; 16]),
             div_in: None,
             div_out: 0,
             sp: sp.clone(),
@@ -92,15 +98,38 @@ impl SpCop2 {
         (base, vt, opcode, element, offset)
     }
 
-    fn vce(&self) -> u16 {
-        0
+    fn vce(&self) -> u8 {
+        let mut res = 0u8;
+        for i in 0..8 {
+            res |= ((self.vce.lane(i) & 1) << i) as u8;
+        }
+        res
     }
-    fn set_vce(&self, _vec: u16) {}
+    fn set_vce(&mut self, vce: u8) {
+        for i in 0..8 {
+            let vce = (vce >> i) & 1;
+            self.vce.setlane(i, if vce != 0 { 0xFFFF } else { 0 });
+        }
+    }
 
     fn vcc(&self) -> u16 {
-        0
+        let mut res = 0u16;
+        for i in 0..8 {
+            res |= (self.vcc_normal.lane(i) & 1) << i;
+            res |= (self.vcc_clip.lane(i) & 1) << (i + 8);
+        }
+        res
     }
-    fn set_vcc(&self, _vec: u16) {}
+    fn set_vcc(&mut self, vcc: u16) {
+        for i in 0..8 {
+            let normal = (vcc >> i) & 1;
+            let clip = (vcc >> (i + 8)) & 1;
+
+            self.vcc_normal
+                .setlane(i, if normal != 0 { 0xFFFF } else { 0 });
+            self.vcc_clip.setlane(i, if clip != 0 { 0xFFFF } else { 0 });
+        }
+    }
 
     fn vco(&self) -> u16 {
         let mut res = 0u16;
@@ -182,6 +211,19 @@ impl<'a> Vectorop<'a> {
     }
     fn setne(&mut self, val: __m128i) {
         self.spv.vco_ne.setm128(val);
+    }
+
+    fn vce(&self) -> __m128i {
+        self.spv.vce.m128()
+    }
+    fn setvce(&mut self, val: __m128i) {
+        self.spv.vce.setm128(val);
+    }
+    fn setvccnormal(&mut self, val: __m128i) {
+        self.spv.vcc_normal.setm128(val);
+    }
+    fn setvccclipl(&mut self, val: __m128i) {
+        self.spv.vcc_clip.setm128(val);
     }
 
     fn vt_lane(&self, idx: usize) -> u16 {
@@ -340,6 +382,38 @@ impl SpCop2 {
                         _ => unimplemented!(),
                     }
                 }
+                0x21 => {
+                    // VEQ
+                    let vcc = _mm_and_si128(_mm_cmpeq_epi16(op.vs(), op.vte()), vones);
+                    op.setvccnormal(vcc);
+                    let res =
+                        _mm_or_si128(_mm_and_si128(vcc, op.vs()), _mm_andnot_si128(vcc, op.vt()));
+                    op.setaccum(0, res);
+                    op.setvd(res);
+                    op.setcarry(vzero);
+                    op.setne(vzero);
+                    op.setvce(vzero);
+                }
+                0x22 => {
+                    // VNE
+                    let vs = op.vs();
+                    let vt = op.vte();
+
+                    let vcc = _mm_or_si128(
+                        _mm_or_si128(_mm_cmpgt_epi16(vt, vs), _mm_cmpgt_epi16(vs, vt)),
+                        _mm_andnot_si128(vones, _mm_cmpeq_epi16(vs, vt)),
+                    );
+
+                    op.setvccnormal(vcc);
+                    op.setvccclipl(vzero);
+
+                    let res =
+                        _mm_or_si128(_mm_and_si128(vcc, op.vs()), _mm_andnot_si128(vcc, op.vt()));
+                    op.setaccum(0, res);
+                    op.setvd(res);
+                    op.setcarry(vzero);
+                    op.setvce(vzero);
+                }
                 0x28 => {
                     // VAND
                     let res = _mm_and_si128(op.vs(), op.vte());
@@ -348,7 +422,7 @@ impl SpCop2 {
                 }
                 0x29 => {
                     // VNAND
-                    let res = _mm_xor_si128(_mm_and_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
+                    let res = _mm_xor_si128(_mm_and_si128(op.vs(), op.vte()), vones);
                     op.setvd(res);
                     op.setaccum(0, res);
                 }
@@ -360,7 +434,7 @@ impl SpCop2 {
                 }
                 0x2B => {
                     // VNOR
-                    let res = _mm_xor_si128(_mm_or_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
+                    let res = _mm_xor_si128(_mm_or_si128(op.vs(), op.vte()), vones);
                     op.setvd(res);
                     op.setaccum(0, res);
                 }
@@ -372,7 +446,7 @@ impl SpCop2 {
                 }
                 0x2D => {
                     // VNXOR
-                    let res = _mm_xor_si128(_mm_xor_si128(op.vs(), op.vte()), _mm_set1_epi16(-1));
+                    let res = _mm_xor_si128(_mm_xor_si128(op.vs(), op.vte()), vones);
                     op.setvd(res);
                     op.setaccum(0, res);
                 }
@@ -444,6 +518,8 @@ impl SpCop2 {
                     op.setaccum(0, op.vt());
                     op.spv.div_in = Some((x as u32) << 16);
                 }
+                0x37 => {} // VNOP
+                0x3f => {} // VNULL
 
                 _ => panic!("unimplemented COP2 VU opcode={}", op.func().hex()),
             }
@@ -458,7 +534,7 @@ impl SpCop2 {
                 0x6 => match op.rs() {
                     0 => op.spv.set_vco(cpu.regs[op.rt()] as u16),
                     1 => op.spv.set_vcc(cpu.regs[op.rt()] as u16),
-                    2 => op.spv.set_vce(cpu.regs[op.rt()] as u16),
+                    2 => op.spv.set_vce(cpu.regs[op.rt()] as u8),
                     _ => panic!("unimplement COP2 CTC2 reg:{}", op.rd()),
                 },
                 _ => panic!("unimplemented COP2 non-VU opcode={:x}", op.e()),
@@ -533,7 +609,7 @@ impl Cop for SpCop2 {
         match idx {
             SpCop2::REG_VCO => self.set_vco(val as u16),
             SpCop2::REG_VCC => self.set_vcc(val as u16),
-            SpCop2::REG_VCE => self.set_vce(val as u16),
+            SpCop2::REG_VCE => self.set_vce(val as u8),
             SpCop2::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.accum[0].0, val),
             SpCop2::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.accum[1].0, val),
             SpCop2::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.accum[2].0, val),
