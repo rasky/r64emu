@@ -40,9 +40,11 @@ specific portions of the register, we use the following convention:
   bit 15 is the highest), and thus they are written as `(high..low)`.
 
 Ranges are specified using the `beg..end` inclusive notation (that is, both
-`beg` and `end` are part of the range). The concatenation of disjoint ranges
-is written with a `,`, for instance: `[0..3,8..11]` means 8 bytes formed by
-concatenating 4 bytes starting at 0 with 4 bytes starting at 8.
+`beg` and `end` are part of the range).
+
+The concatenation of disjoint ranges is written with a `,`, for instance:
+`[0..3,8..11]` means 8 bytes formed by concatenating 4 bytes starting at 0
+with 4 bytes starting at 8.
 
 Accumulator
 ===========
@@ -238,7 +240,7 @@ think of it as a special-case. Pseudo-code:
 
 	de(2..0) = vd_elem(2..0)
 	msb = highest_set_bit(vt_elem)
-	se(2..0) = vt_elem(2..msb) || vd_elem(msb..0)
+	se(2..0) = vd_elem(2..msb) || vt_elem(msb-1..0)
 
 TODO: complete analysis for `vt_elem(4)` == 1.
 
@@ -256,7 +258,7 @@ Pseudo-code:
 
 VRCP
 ----
-Computes a 32-bit reciprocal of the input lane, and store it into the output lane:
+Computes a 32-bit reciprocal of the 16-bit input lane, and store it into the output lane:
 
 	VRCP vd[de],vs[se]
 
@@ -277,7 +279,7 @@ Pseudo-code:
 		x = abs(input)
 		scale_out = highest_set_bit(x)
 		scale_in = 32 - scale_out
-		result(scale_out..scale_out-16) = 1 || RCP_ROM[x(scale_in-1..scale_in-10)]
+		result(scale_out..scale_out-16) = 1 || RCP_ROM[x(scale_in-1..scale_in-9)]
 		if input < 0
 			result = NOT result
 		endif
@@ -286,6 +288,11 @@ Pseudo-code:
 	result = rcp(sign_extend(VT<se>))
 	VD<de> = result(15..0)
 	DIV_OUT = result(31..16)
+	for i in 0..7
+		ACCUM<i>(15..0) = VT<i>(15..0)
+	endfor
+
+As a side-effect, `ACCUM_LO` is loaded with `VT` (all lanes).
 
 This is the `RCP_ROM` table:
 
@@ -345,7 +352,7 @@ Pseudo-code:
 		scale_out = highest_set_bit(x)
 		scale_in = 32 - scale_out
 		scale_out = scale_out / 2
-		result(scale_out..scale_out-16) = 1 || RSQ_ROM[scale_in(0) || x(scale_in-1..scale_in-9)]
+		result(scale_out..scale_out-16) = 1 || RSQ_ROM[scale_in(0) || x(scale_in-1..scale_in-8)]
 		if input < 0
 			result = NOT result
 		endif
@@ -391,6 +398,59 @@ a20b  a180  a0f6  a06c  9fe2  9f59  9ed1  9e49  9dc2  9d3b  9cb4  9c2f  9ba9  9b
 0865  081e  07d8  0792  074d  0707  06c2  067d  0638  05f3  05af  056a  0526  04e2  049f  045b
 0418  03d5  0392  0350  030d  02cb  0289  0247  0206  01c4  0183  0142  0101  00c0  0080  0040
 ```
+
+VRCPH/VRSQH
+-----------
+Reads the higher part of the result of a previous 32-bit reciprocal instruction, and
+stores the higher part of the input for a following 32-bit reciprocal.
+
+	VRCPH vd[de],vs[se]
+
+`VRSPH` is meant to be used for the recriprocal of square root, but its beahvior
+is identical to `VRCPH`, as neither perform an actual calculation, and there is
+a single couple of `DIV_IN` and `DIV_OUT` registers that are used for both kind of
+reciprocals.
+
+This opcode performs two separate steps: first, the output of a previous reciprocal
+is read from `DIV_OUT` and stored into the output lane `VD<de>`; second, the input
+lane `VS<se>` is loaded into the special register `DIV_IN`, ready for a following
+full-width 32-bit reciprocal that can be invoked with `VRCPL`.
+
+Pseudo-code:
+
+	VD<de>(15..0) = DIV_OUT(15..0)
+	DIV_IN(15..0) = VT<se>(15..0)
+	for i in 0..7
+		ACCUM<i>(15..0) = VT<i>(15..0)
+	endfor
+
+As a side-effect, `ACCUM_LO` is loaded with `VT` (all lanes).
+
+
+VRCPL/VRSQL
+-----------
+Performs a full 32-bit reciprocal combining the input lane with the special register
+`DIV_IN` that must have been loaded with a previous `VRCPH`/`VRSPH` instruction.
+
+	VRCPL vd[de],vs[se]
+	VRSQL vd[de],vs[se]
+
+The RSP remembers whether `DIV_IN` was loaded or not, by a previous `VRCPH` or `VRSQH`
+instruction. If `VRCPL`/`VRSQL` is executed without `DIV_IN` being loaded, they perform
+exactly like their 16-bit counterparts `VRCP`/`VRSQ` instructions (that is, the input
+lane is sign extended). After `VRCPL`/`VRSQL`, `DIV_IN` is unloaded.
+
+Pseudo-code:
+
+	result = rcp(DIV_IN(15..0) || VT<se>(15..0))  // or rsq()
+	VD<de> = result(15..0)
+	DIV_OUT = result(31..16)
+	DIV_IN = <null>
+	for i in 0..7
+		ACCUM<i>(15..0) = VT<i>(15..0)
+	endfor
+
+As a side-effect, `ACCUM_LO` is loaded with `VT` (all lanes).
 
 
 Computational instructions
