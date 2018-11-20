@@ -191,6 +191,10 @@ define_golden_test!(golden_vsucb, "vsucb.toml");
 define_golden_test!(golden_vrcp, "vrcp.toml");
 define_golden_test!(golden_vrcpl, "vrcpl.toml");
 define_golden_test!(golden_vrsq, "vrsq.toml");
+define_golden_test!(golden_veq, "veq.toml");
+define_golden_test!(golden_vne, "vne.toml");
+define_golden_test!(golden_vge, "vge.toml");
+define_golden_test!(golden_vlt, "vlt.toml");
 
 #[test]
 fn golden_lqv_sqv() {

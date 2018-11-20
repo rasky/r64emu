@@ -209,6 +209,9 @@ impl<'a> Vectorop<'a> {
     fn setcarry(&mut self, val: __m128i) {
         self.spv.vco_carry.setm128(val);
     }
+    fn ne(&self) -> __m128i {
+        self.spv.vco_ne.m128()
+    }
     fn setne(&mut self, val: __m128i) {
         self.spv.vco_ne.setm128(val);
     }
@@ -348,7 +351,7 @@ impl SpCop2 {
                         _mm_xor_si128(mask, vt),
                         _mm_xor_si128(mask, vs),
                     ));
-                    op.setne(_mm_add_epi16(_mm_cmpeq_epi16(vs, vt), _mm_set1_epi16(1)));
+                    op.setne(_mm_xor_si128(_mm_cmpeq_epi16(vs, vt), vones));
                 }
                 0x17 => {
                     // VSUBB -- undocumented?
@@ -382,17 +385,35 @@ impl SpCop2 {
                         _ => unimplemented!(),
                     }
                 }
+                0x20 => {
+                    // VLT
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let vcc = _mm_or_si128(
+                        _mm_cmpgt_epi16(vt, vs),
+                        _mm_and_si128(op.ne(), _mm_and_si128(op.carry(), _mm_cmpeq_epi16(vs, vt))),
+                    );
+                    let res = _mm_or_si128(_mm_and_si128(vcc, vs), _mm_andnot_si128(vcc, vt));
+                    op.setaccum(0, res);
+                    op.setvd(res);
+                    op.setvccnormal(vcc);
+                    op.setvccclipl(vzero);
+                    op.setcarry(vzero);
+                    op.setne(vzero);
+                }
                 0x21 => {
                     // VEQ
-                    let vcc = _mm_and_si128(_mm_cmpeq_epi16(op.vs(), op.vte()), vones);
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let vcc = _mm_andnot_si128(op.ne(), _mm_cmpeq_epi16(vs, vt));
+                    let res = _mm_or_si128(_mm_and_si128(vcc, vs), _mm_andnot_si128(vcc, vt));
+
                     op.setvccnormal(vcc);
-                    let res =
-                        _mm_or_si128(_mm_and_si128(vcc, op.vs()), _mm_andnot_si128(vcc, op.vt()));
+                    op.setvccclipl(vzero);
                     op.setaccum(0, res);
                     op.setvd(res);
                     op.setcarry(vzero);
                     op.setne(vzero);
-                    op.setvce(vzero);
                 }
                 0x22 => {
                     // VNE
@@ -401,18 +422,36 @@ impl SpCop2 {
 
                     let vcc = _mm_or_si128(
                         _mm_or_si128(_mm_cmpgt_epi16(vt, vs), _mm_cmpgt_epi16(vs, vt)),
-                        _mm_andnot_si128(vones, _mm_cmpeq_epi16(vs, vt)),
+                        _mm_and_si128(op.ne(), _mm_cmpeq_epi16(vs, vt)),
                     );
+                    let res =
+                        _mm_or_si128(_mm_and_si128(vcc, op.vs()), _mm_andnot_si128(vcc, op.vt()));
 
                     op.setvccnormal(vcc);
                     op.setvccclipl(vzero);
-
-                    let res =
-                        _mm_or_si128(_mm_and_si128(vcc, op.vs()), _mm_andnot_si128(vcc, op.vt()));
                     op.setaccum(0, res);
                     op.setvd(res);
                     op.setcarry(vzero);
-                    op.setvce(vzero);
+                    op.setne(vzero);
+                }
+                0x23 => {
+                    // VGE
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let vcc = _mm_or_si128(
+                        _mm_cmpgt_epi16(vs, vt),
+                        _mm_andnot_si128(
+                            _mm_and_si128(op.carry(), op.ne()),
+                            _mm_cmpeq_epi16(vs, vt),
+                        ),
+                    );
+                    let res = _mm_or_si128(_mm_and_si128(vcc, vs), _mm_andnot_si128(vcc, vt));
+                    op.setvccnormal(vcc);
+                    op.setvccclipl(vzero);
+                    op.setaccum(0, res);
+                    op.setvd(res);
+                    op.setcarry(vzero);
+                    op.setne(vzero);
                 }
                 0x28 => {
                     // VAND
@@ -528,7 +567,7 @@ impl SpCop2 {
                 0x2 => match op.rs() {
                     0 => cpu.regs[op.rt()] = op.spv.vco().sx64(),
                     1 => cpu.regs[op.rt()] = op.spv.vcc().sx64(),
-                    2 => cpu.regs[op.rt()] = op.spv.vce().sx64(),
+                    2 => cpu.regs[op.rt()] = op.spv.vce() as u64,
                     _ => panic!("unimplement COP2 CFC2 reg:{}", op.rs()),
                 },
                 0x6 => match op.rs() {
