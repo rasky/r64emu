@@ -80,19 +80,30 @@ impl N64 {
             bus.map_device(0x1FC0_0000, &pi, 1)?;
         }
 
-        const MAIN_CLOCK: i64 = 187488000; // TODO: guessed
+        // N64 timings
+        // https://assemblergames.com/threads/mapping-n64-overclockability-achieved-3-0x-multiplier-but-not-3-0x-speed.51656/
+
+        // Oscillators
+        const X1: i64 = 14_705_000;
+        const X2: i64 = 14_318_000;
+
+        const RDRAM_CLOCK: i64 = X1 * 17;
+        const MAIN_CLOCK: i64 = RDRAM_CLOCK / 4;
+        const PIF_CLOCK: i64 = MAIN_CLOCK / 4;
+        const CARTRIDGE_CLOCK: i64 = PIF_CLOCK / 8; // 1.953 MHZ
+        const VCLK: i64 = X2 * 17 / 5; // 48.6812 MHZ
 
         let mut sync = sync::Sync::new(sync::Config {
-            main_clock: MAIN_CLOCK,
-            dot_clock_divider: 8,
-            hdots: 744,
-            vdots: 525,
+            main_clock: VCLK,
+            dot_clock_divider: 4,
+            hdots: 773, // 773.5...
+            vdots: 263,
             hsyncs: vec![0], // sync at the beginning of each line
             vsyncs: vec![],
         });
-        sync.register(cpu.clone(), MAIN_CLOCK / 2);
-        sync.register(sp.borrow().core_cpu.clone(), MAIN_CLOCK / 3);
-        sync.register(dp.clone().unwrap(), MAIN_CLOCK / 3);
+        sync.register(cpu.clone(), MAIN_CLOCK + MAIN_CLOCK / 2); // FIXME: uses DIVMOD
+        sync.register(sp.borrow().core_cpu.clone(), MAIN_CLOCK);
+        sync.register(dp.clone().unwrap(), MAIN_CLOCK);
 
         return Ok(N64 {
             logger,
