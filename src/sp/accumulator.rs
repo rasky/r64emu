@@ -10,10 +10,13 @@ pub(crate) unsafe fn acc_add(
     acc2_md: __m128i,
     acc2_hi: __m128i,
 ) -> (__m128i, __m128i, __m128i) {
+    // Add the three parts to produce partial results (without carry).
     let res_lo = _mm_add_epi16(acc1_lo, acc2_lo);
     let mut res_md = _mm_add_epi16(acc1_md, acc2_md);
     let mut res_hi = _mm_add_epi16(acc1_hi, acc2_hi);
 
+    // Check whether there was a carry generated while adding
+    // the low and mid part. Carry is materialized as 0xFFFF (-1).
     #[allow(overflowing_literals)]
     let signbit = _mm_set1_epi16(0x8000);
     let carry_lo = _mm_cmpgt_epi16(
@@ -24,8 +27,14 @@ pub(crate) unsafe fn acc_add(
         _mm_xor_si128(acc2_md, signbit),
         _mm_xor_si128(res_md, signbit),
     );
+
+    // Tricky: check whether the carry from the low part (if any)
+    // generates an overflow in the mid part. This only happens when
+    // there is a carry (carry_lo=0xFFFF) and the midpart result is 0xFFFF.
     let carry_md2 = _mm_and_si128(carry_lo, _mm_cmpeq_epi16(res_md, carry_lo));
 
+    // Add the three carries into the result. Since they are materialized
+    // as -1, we use a subtraction to add them.
     res_md = _mm_sub_epi16(res_md, carry_lo);
     res_hi = _mm_sub_epi16(res_hi, carry_md);
     res_hi = _mm_sub_epi16(res_hi, carry_md2);
