@@ -33,6 +33,7 @@ pub struct Sync {
     subs: Vec<SubPtr>,
     sub_scaler: Vec<f64>,
     current_sub: Option<*const Subsystem>,
+    current_scaler: Option<f64>,
 
     frames: i64,
     cycles: i64,
@@ -53,6 +54,7 @@ impl Sync {
             frame_cycles: 0,
             frame_syncs: vec![],
             current_sub: None,
+            current_scaler: None,
         };
         s.calc();
         s
@@ -91,7 +93,7 @@ impl Sync {
 
     pub fn cycles(&self) -> i64 {
         match self.current_sub {
-            Some(sub) => unsafe { &*sub }.cycles(),
+            Some(sub) => (unsafe { &*sub }.cycles() as f64 * self.current_scaler.unwrap()) as i64,
             None => self.cycles,
         }
     }
@@ -123,7 +125,9 @@ impl Sync {
         for (sub, scaler) in self.subs.iter().zip(self.sub_scaler.iter()) {
             let mut sub = sub.borrow_mut();
             self.current_sub = Some(&*sub);
+            self.current_scaler = Some(*scaler);
             sub.run((target as f64 / scaler) as i64);
+            self.current_scaler = None;
             self.current_sub = None;
         }
         self.cycles = target;
