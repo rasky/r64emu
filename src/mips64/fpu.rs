@@ -103,8 +103,18 @@ macro_rules! approx {
 }
 
 macro_rules! cond {
-    ($op:ident, $cond:expr) => {{
-        let cond = $cond;
+    ($op:ident, $func:expr) => {{
+        let fs = $op.fs();
+        let ft = $op.ft();
+        let nan = fs.is_nan() || ft.is_nan();
+        let less = if !nan { fs < ft } else { false };
+        let equal = if !nan { fs == ft } else { false };
+        if nan && $func & 8 != 0 {
+            panic!("signal FPU NaN in comparison");
+        }
+
+        let cond =
+            (less && ($func & 4) != 0) || (equal && ($func & 2) != 0) || (nan && ($func & 1) != 0);
         let cc = $op.cc();
         $op.fpu.set_cc(cc, cond);
     }};
@@ -180,6 +190,11 @@ impl Fpu {
                 let v = op.fs().abs();
                 op.set_fd(v)
             }
+            0x06 => {
+                // MOV.fmt
+                let v = op.fs();
+                op.set_fd(v);
+            }
             0x07 => {
                 // NEG.fmt
                 let v = op.fs().neg();
@@ -194,10 +209,22 @@ impl Fpu {
             0x0E => approx!(op, ceil, to_i32),          // CEIL.W.fmt
             0x0F => approx!(op, floor, to_i32),         // FLOOR.W.fmt
 
-            0x30 => cond!(op, false),              // C.F.fmt
-            0x32 => cond!(op, op.fs() == op.ft()), // C.EQ.fmt
-            0x34 => cond!(op, op.fs() < op.ft()),  // C.OLT.fmt
-            0x36 => cond!(op, op.fs() <= op.ft()), // C.OLE.fmt
+            0x30 => cond!(op, 0x30),
+            0x31 => cond!(op, 0x31),
+            0x32 => cond!(op, 0x32),
+            0x33 => cond!(op, 0x33),
+            0x34 => cond!(op, 0x34),
+            0x35 => cond!(op, 0x35),
+            0x36 => cond!(op, 0x36),
+            0x37 => cond!(op, 0x37),
+            0x38 => cond!(op, 0x38),
+            0x39 => cond!(op, 0x39),
+            0x3A => cond!(op, 0x3A),
+            0x3B => cond!(op, 0x3B),
+            0x3C => cond!(op, 0x3C),
+            0x3D => cond!(op, 0x3D),
+            0x3E => cond!(op, 0x3E),
+            0x3F => cond!(op, 0x3F),
 
             _ => panic!("unimplemented COP1 opcode: func={:x?}", op.func()),
         }
