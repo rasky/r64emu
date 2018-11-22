@@ -2,6 +2,7 @@ extern crate num;
 
 use self::num::Float;
 use super::cpu::{Cop, CpuContext};
+use emu::int::Numerics;
 use slog;
 use std::marker::PhantomData;
 
@@ -243,7 +244,7 @@ impl Cop for Fpu {
         let fmt = (opcode >> 21) & 0x1F;
         match fmt {
             8 => {
-                let tgt = cpu.pc + ((opcode & 0xffff) as i16 as i32 as u32) * 4;
+                let tgt = cpu.pc + (opcode & 0xffff).sx64() * 4;
                 let cc = ((opcode >> 18) & 3) as usize;
                 let nd = opcode & (1 << 17) != 0;
                 let tf = opcode & (1 << 16) != 0;

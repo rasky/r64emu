@@ -6,6 +6,7 @@ use self::emu::int::Numerics;
 use self::emu::sync;
 use slog;
 use std::cell::RefCell;
+use std::fs;
 use std::rc::Rc;
 
 /// Cop is a MIPS64 coprocessor that can be installed within the core.
@@ -81,8 +82,8 @@ pub struct CpuContext {
     pub regs: [u64; 32],
     pub hi: u64,
     pub lo: u64,
-    pub(crate) pc: u32,
-    pub(crate) branch_pc: u32,
+    pub(crate) pc: u64,
+    pub(crate) branch_pc: u64,
     pub clock: i64,
     pub tight_exit: bool,
     lines: Lines,
@@ -129,11 +130,11 @@ impl<'a> Mipsop<'a> {
     fn sa(&self) -> usize {
         ((self.opcode >> 6) & 0x1f) as usize
     }
-    fn btgt(&self) -> u32 {
-        self.cpu.ctx.pc + self.sximm32() as u32 * 4
+    fn btgt(&self) -> u64 {
+        self.cpu.ctx.pc + self.sximm64() as u64 * 4
     }
-    fn jtgt(&self) -> u32 {
-        (self.cpu.ctx.pc & 0xF000_0000) + ((self.opcode & 0x03FF_FFFF) * 4)
+    fn jtgt(&self) -> u64 {
+        (self.cpu.ctx.pc & 0xFFFF_FFFF_F000_0000) + ((self.opcode & 0x03FF_FFFF) * 4) as u64
     }
     fn rs(&self) -> usize {
         ((self.opcode >> 21) & 0x1f) as usize
@@ -190,7 +191,7 @@ impl<'a> Mipsop<'a> {
 
 impl CpuContext {
     #[inline]
-    pub fn branch(&mut self, cond: bool, tgt: u32, likely: bool) {
+    pub fn branch(&mut self, cond: bool, tgt: u64, likely: bool) {
         if cond {
             self.branch_pc = tgt;
             self.tight_exit = true;
@@ -207,12 +208,12 @@ impl CpuContext {
         self.tight_exit = true;
     }
 
-    pub fn set_pc(&mut self, pc: u32) {
+    pub fn set_pc(&mut self, pc: u64) {
         self.pc = pc;
         self.branch_pc = 0;
     }
 
-    pub fn get_pc(&self) -> u32 {
+    pub fn get_pc(&self) -> u64 {
         self.pc
     }
 }
@@ -229,7 +230,7 @@ macro_rules! branch {
     }};
     ($op:ident, $cond:expr, $tgt:expr,link($link:expr),likely($lkl:expr)) => {{
         if $link {
-            $op.cpu.ctx.regs[31] = ($op.cpu.ctx.pc + 4) as u64;
+            $op.cpu.ctx.regs[31] = $op.cpu.ctx.pc + 4;
         }
         let (cond, tgt) = ($cond, $tgt);
         $op.cpu.ctx.branch(cond, tgt, $lkl);
@@ -274,7 +275,7 @@ impl Cpu {
                 regs: [0u64; 32],
                 hi: 0,
                 lo: 0,
-                pc: 0x1FC0_0000, // FIXME
+                pc: 0xFFFF_FFFF_BFC0_0000, // FIXME
                 branch_pc: 0,
                 clock: 0,
                 tight_exit: false,
@@ -346,8 +347,8 @@ impl Cpu {
                 0x04 => *op.mrd64() = (op.rt32() << (op.rs32() & 0x1F)).sx64(), // SLLV
                 0x06 => *op.mrd64() = (op.rt32() >> (op.rs32() & 0x1F)).sx64(), // SRLV
                 0x07 => *op.mrd64() = (op.irt32() >> (op.rs32() & 0x1F)).sx64(), // SRAV
-                0x08 => branch!(op, true, op.rs32(), link(false)),   // JR
-                0x09 => branch!(op, true, op.rs32(), link(true)),    // JALR
+                0x08 => branch!(op, true, op.rs64(), link(false)),   // JR
+                0x09 => branch!(op, true, op.rs64(), link(true)),    // JALR
                 0x0D => op.cpu.exception(Exception::BP),             // BREAK
                 0x0F => {}                                           // SYNC
 
@@ -499,11 +500,25 @@ impl Cpu {
             0x3E => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SDC2
             0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),                          // SD
 
-            _ => panic!(
-                "unimplemented opcode: func=0x{:x?}, pc={}",
-                op.op(),
-                op.cpu.ctx.pc.hex()
-            ),
+            _ => {
+                println!("regs: {:?}", op.cpu.ctx.regs);
+
+                {
+                    use std::io::Write;
+                    let mut f = std::fs::File::create("rdram.dump").unwrap();
+                    f.write(op.cpu.fetch(0xa4000000).mem().unwrap());
+                    f.write(op.cpu.fetch(0xa4001000).mem().unwrap());
+                    f.write(op.cpu.fetch(0xa4002000).mem().unwrap());
+                    f.write(op.cpu.fetch(0xa4003000).mem().unwrap());
+                    f.write(op.cpu.fetch(0xa4004000).mem().unwrap());
+                }
+
+                panic!(
+                    "unimplemented opcode: func=0x{:x?}, pc={}",
+                    op.op(),
+                    op.cpu.ctx.pc.hex()
+                );
+            }
         }
     }
 
@@ -535,8 +550,9 @@ impl Cpu {
         (mem & mask) | ((reg << shift) & !mask)
     }
 
-    fn fetch(&mut self, addr: u32) -> &MemIoR<u32> {
+    fn fetch(&mut self, addr: u64) -> &MemIoR<u32> {
         // Save last fetched memio, to speed up hot loops
+        let addr = addr as u32;
         if self.last_fetch_addr != addr {
             self.last_fetch_addr = addr;
             self.last_fetch_mem = self.bus.borrow().fetch_read::<u32>(

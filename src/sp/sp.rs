@@ -297,10 +297,10 @@ impl Sp {
 
     fn cb_write_reg_rsp_pc(&self, _old: u32, val: u32) {
         info!(self.logger, "RSP set PC"; o!("pc" => val.hex()));
-        self.core_cpu.borrow_mut().ctx_mut().set_pc(val);
+        self.core_cpu.borrow_mut().ctx_mut().set_pc(val as u64);
     }
 
     fn cb_read_reg_rsp_pc(&self, _old: u32) -> u32 {
-        self.core_cpu.borrow().ctx().get_pc() & 0xFFF
+        self.core_cpu.borrow().ctx().get_pc() as u32 & 0xFFF
     }
 }
