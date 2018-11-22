@@ -6,13 +6,8 @@ use emu::int::Numerics;
 /// RDRAM
 #[derive(DeviceBE)]
 pub struct Ri {
-    #[mem(
-        bank = 0,
-        size = 4194304,
-        offset = 0x0000_0000,
-        vsize = 0x03F0_0000
-    )]
-    rdram: Mem,
+    #[mem(bank = 0, size = 4194304, offset = 0x0000_0000, vsize = 0x03F0_0000)]
+    pub(crate) rdram: Mem,
 
     #[reg(bank = 1, offset = 0x00)]
     reg_rdram_config: Reg32,
