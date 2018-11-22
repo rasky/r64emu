@@ -124,8 +124,8 @@ impl Pi {
         let mut raddr = self.dma_rom_addr.get();
         let mut waddr = self.dma_ram_addr.get();
         info!(self.logger, "DMA xfer"; o!(
-            "src" => raddr.hex(),
-            "dst" => waddr.hex(),
+            "src(rom)" => raddr.hex(),
+            "dst(ram)" => waddr.hex(),
             "len" => val+1));
 
         let bus = self.bus.borrow();
@@ -140,7 +140,25 @@ impl Pi {
         self.dma_ram_addr.set(waddr);
     }
 
-    fn cb_write_dma_rd_len(&mut self, _old: u32, _new: u32) {
+    fn cb_write_dma_rd_len(&mut self, _old: u32, val: u32) {
+        let mut raddr = self.dma_ram_addr.get();
+        let mut waddr = self.dma_rom_addr.get();
+        info!(self.logger, "DMA xfer"; o!(
+            "src(ram)" => raddr.hex(),
+            "dst(rom)" => waddr.hex(),
+            "len" => val+1));
+
+        let bus = self.bus.borrow();
+        let mut i = 0;
+        while i < val + 1 {
+            let v = bus.read::<u32>(raddr);
+            info!(self.logger, "DMA DATA"; "data" => v.hex());
+
+            raddr = raddr + 4;
+            waddr = waddr + 4;
+            i += 4;
+        }
+
         unimplemented!()
     }
 }
