@@ -257,22 +257,19 @@ impl Sp {
         let count = ((val >> 12) & 0xFF) as usize + 1;
         let skip = ((val >> 20) & 0xFFF) as usize;
 
+        // Addresses are treated as 64-bit aligned.
+        let src = self.reg_dma_rdram_addr.get() & !0x7;
+        let dst = self.reg_dma_rsp_addr.get() & !0x7;
+
         info!(self.logger, "DMA xfer: RDRAM -> RSP"; o!(
-            "rdram" => self.reg_dma_rdram_addr.get().hex(),
-            "rsp" =>  self.reg_dma_rsp_addr.get().hex(),
+            "rdram" => src.hex(),
+            "rsp" =>  dst.hex(),
             "width" => width,
             "count" => count,
             "skip" => skip,
         ));
 
-        self.dma_xfer(
-            self.reg_dma_rdram_addr.get(),
-            self.reg_dma_rsp_addr.get() + 0x0400_0000,
-            width,
-            count,
-            skip,
-            0,
-        );
+        self.dma_xfer(src, dst + 0x0400_0000, width, count, skip, 0);
     }
 
     fn cb_write_reg_dma_wr_len(&self, _old: u32, val: u32) {
