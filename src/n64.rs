@@ -97,8 +97,8 @@ impl N64 {
             main_clock: VCLK,
             dot_clock_divider: 4,
             hdots: 773, // 773.5...
-            vdots: 263,
-            hsyncs: vec![0, 257, 514], // sync three times per line
+            vdots: 525,
+            hsyncs: vec![0, 773 / 2], // sync two times per line
             vsyncs: vec![],
         });
         sync.register(cpu.clone(), MAIN_CLOCK + MAIN_CLOCK / 2); // FIXME: uses DIVMOD
