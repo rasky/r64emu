@@ -1,4 +1,5 @@
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
+use emu::int::Numerics;
 use slog;
 
 pub struct Cp0 {
@@ -108,7 +109,7 @@ impl Cop for Cp0 {
                     _ => warn!(
                         op.cop0.logger,
                         "unimplemented COP0 write32";
-                        "reg" => op.rd()
+                        "reg" => op.rd(), "val" => op.rt64().hex(),
                     ),
                 }
             }
