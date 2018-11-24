@@ -98,7 +98,7 @@ impl N64 {
             dot_clock_divider: 4,
             hdots: 773, // 773.5...
             vdots: 263,
-            hsyncs: vec![0], // sync at the beginning of each line
+            hsyncs: vec![0, 257, 514], // sync three times per line
             vsyncs: vec![],
         });
         sync.register(cpu.clone(), MAIN_CLOCK + MAIN_CLOCK / 2); // FIXME: uses DIVMOD
@@ -144,7 +144,7 @@ impl hw::OutputProducer for N64 {
             sync::Event::HSync(x, y) if x == 0 => {
                 vi.borrow_mut().set_line(y);
             }
-            _ => panic!("unexpected sync event: {:?}", evt),
+            _ => {}
         });
 
         self.vi.borrow().draw_frame(screen);
