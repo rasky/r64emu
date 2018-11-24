@@ -453,6 +453,139 @@ impl SpCop2 {
                     op.setcarry(vzero);
                     op.setne(vzero);
                 }
+                0x24 => {
+                    // VCL
+                }
+                0x25 => {
+                    // VCH
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let sign = _mm_srai_epi16(_mm_xor_si128(vs, vt), 15);
+                    let notsign = _mm_xor_si128(vones, sign);
+
+                    // GE is computed as follows:
+                    //   SIGN=-1 => VT < 0
+                    //   SIGN=0  => VS-VT >= 0
+                    //
+                    // Optimize as:
+                    //   VT - (VS &~ SIGN) + ~SIGN < 0
+                    // (with saturation on last addition to avoid overflow)
+                    let ge = _mm_srai_epi16(
+                        _mm_adds_epi16(notsign, _mm_sub_epi16(vt, _mm_andnot_si128(sign, vs))),
+                        15,
+                    );
+
+                    // LE is computed as follows:
+                    //   SIGN=-1 => VS+VT <= 0
+                    //   SIGN=0  => VT < 0
+                    //
+                    // Optimize as:
+                    //   (VS & SIGN) + VT + SIGN < 0
+                    // (with saturation on last addition to avoid overflow)
+                    let le = _mm_srai_epi16(
+                        _mm_adds_epi16(sign, _mm_add_epi16(_mm_and_si128(sign, vs), vt)),
+                        15,
+                    );
+
+                    // VCE is computed as follows:
+                    //  SIGN=-1 => VS+VT = -1
+                    //  SIGN=0  => 0
+                    //
+                    // Optimize as:
+                    //  ((VS + VT) == SIGN) & SIGN
+                    let vce = _mm_and_si128(sign, _mm_cmpeq_epi16(sign, _mm_add_epi16(vs, vt)));
+
+                    // NE is computed as follows:
+                    //  SIGN=-1 => VS+VT != 0
+                    //  SIGN=0  => VS-VT != 0
+                    //
+                    // Optimize as:
+                    //  VS + (VT & SIGN) - (VT & ~SIGN) != 0
+                    let ne = _mm_xor_si128(
+                        vones,
+                        _mm_cmpeq_epi16(
+                            vzero,
+                            _mm_sub_epi16(
+                                _mm_add_epi16(vs, _mm_and_si128(sign, vt)),
+                                _mm_andnot_si128(sign, vt),
+                            ),
+                        ),
+                    );
+
+                    let res = _mm_or_si128(
+                        _mm_and_si128(
+                            sign,
+                            _mm_or_si128(
+                                _mm_and_si128(le, _mm_mullo_epi16(vones, vt)),
+                                _mm_andnot_si128(le, vs),
+                            ),
+                        ),
+                        _mm_andnot_si128(
+                            sign,
+                            _mm_or_si128(_mm_and_si128(ge, vt), _mm_andnot_si128(ge, vs)),
+                        ),
+                    );
+
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                    op.setvccnormal(le);
+                    op.setvccclipl(ge);
+                    op.setvce(vce);
+                    op.setcarry(sign);
+                    op.setne(ne);
+                }
+                0x26 => {
+                    // VCR
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let sign = _mm_srai_epi16(_mm_xor_si128(vs, vt), 15);
+                    let notsign = _mm_xor_si128(vones, sign);
+
+                    // GE is computed as follows:
+                    //   SIGN=-1 => VT < 0
+                    //   SIGN=0  => VS-VT >= 0
+                    //
+                    // Optimize as:
+                    //   VT - (VS &~ SIGN) + ~SIGN < 0
+                    // (with saturation on last addition to avoid overflow)
+                    let ge = _mm_srai_epi16(
+                        _mm_adds_epi16(notsign, _mm_sub_epi16(vt, _mm_andnot_si128(sign, vs))),
+                        15,
+                    );
+
+                    // LE is computed as follows:
+                    //   SIGN=-1 => VS+VT+1 <= 0
+                    //   SIGN=0  => VT < 0
+                    //
+                    // Optimize as:
+                    //   (VS & SIGN) + VT < 0
+                    // (with saturation on last addition to avoid overflow)
+
+                    // FIXME: missing test! MUST REMOVE ADDS(SIGN)
+                    let le = _mm_srai_epi16(_mm_add_epi16(_mm_and_si128(sign, vs), vt), 15);
+
+                    let res = _mm_or_si128(
+                        _mm_and_si128(
+                            sign,
+                            _mm_or_si128(
+                                _mm_and_si128(le, _mm_mullo_epi16(vones, vt)),
+                                _mm_andnot_si128(le, vs),
+                            ),
+                        ),
+                        _mm_andnot_si128(
+                            sign,
+                            _mm_or_si128(_mm_and_si128(ge, vt), _mm_andnot_si128(ge, vs)),
+                        ),
+                    );
+
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                    op.setvccnormal(le);
+                    op.setvccclipl(ge);
+                    op.setvce(vzero);
+                    op.setcarry(vzero);
+                    op.setne(vzero);
+                }
                 0x28 => {
                     // VAND
                     let res = _mm_and_si128(op.vs(), op.vte());

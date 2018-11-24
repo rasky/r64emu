@@ -195,6 +195,9 @@ define_golden_test!(golden_veq, "veq.toml");
 define_golden_test!(golden_vne, "vne.toml");
 define_golden_test!(golden_vge, "vge.toml");
 define_golden_test!(golden_vlt, "vlt.toml");
+define_golden_test!(golden_vcl, "vcl.toml");
+define_golden_test!(golden_vch, "vch.toml");
+define_golden_test!(golden_vcr, "vcr.toml");
 
 #[test]
 fn golden_lqv_sqv() {

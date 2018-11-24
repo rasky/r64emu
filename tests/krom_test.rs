@@ -21,11 +21,6 @@ use std::io;
 
 static KROM_PATH: &'static str = "roms/tests";
 
-const FIX_L40: u32 = 0x1;
-const FIX_L120: u32 = 0x2;
-const FIX_L160: u32 = 0x4;
-const FIX_L360: u32 = 0x8;
-const FIX_LINES: u32 = FIX_L40 | FIX_L120 | FIX_L360;
 const FPS10: u32 = 0x10;
 const RES_320: u32 = 0x20;
 const APPROX: u32 = 0x40;
@@ -53,19 +48,6 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let mut screen = OwnedGfxBufferLE::<Rgb888>::new(resw, resh);
     let mut y1 = 0;
     for y in 0..resh {
-        if (flags & FIX_L40) != 0 && y == 40 {
-            y1 -= 1;
-        }
-        if (flags & FIX_L120) != 0 && y == 119 {
-            y1 -= 1;
-        }
-        if (flags & FIX_L160) != 0 && y == 160 {
-            y1 -= 1;
-        }
-        if (flags & FIX_L360) != 0 && y == 360 {
-            y1 -= 1;
-        }
-
         let mut screen1_buf = screen1.buf_mut();
         let src = screen1_buf.line(y1 * scale);
         let mut screen_buf = screen.buf_mut();
@@ -127,7 +109,7 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
             .is_some()
         {
             print!(
-                "\x1b]1337;File=width=40%;inline=1:{}\x07",
+                "\x1b]1337;File=width=80%;inline=1:{}\x07\n",
                 base64::encode(&pngout)
             );
         }
@@ -148,9 +130,9 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
             .filter(|s| s == "iTerm.app")
             .is_some()
         {
-            print!("\x08\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A"); // put images side by side
+            //print!("\x08\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A\x1b[1A"); // put images side by side
             print!(
-                "\x1b]1337;File=width=40%;inline=1:{}\x07",
+                "\x1b]1337;File=width=80%;inline=1:{}\x07\n",
                 base64::encode(&pngout)
             );
             println!();
@@ -326,16 +308,20 @@ krom_rspcp2!(
     "LOADSTORE/TransposeMatrixVMOV/RSPTransposeMatrixVMOV.N64",
     0
 );
+krom_rspcp2!(rspcp2_vnop, "VNOP/RSPCP2VNOP.N64", 0);
+krom_rspcp2!(rspcp2_veq, "VEQ/RSPCP2VEQ.N64", 0);
+krom_rspcp2!(rspcp2_vlt, "VLT/RSPCP2VLT.N64", 0);
+krom_rspcp2!(rspcp2_sort, "SORT/RSPSORT.N64", RES_320);
+krom_rspcp2!(rspcp2_vsar, "VSAR/RSPCP2VSAR.N64", 0);
+krom_rspcp2!(rspcp2_vabs, "VABS/RSPCP2VABS.N64", 0);
+krom_rspcp2!(rspcp2_vcl, "VCL/RSPCP2VCL.N64", 0);
 
 krom_rspmem!(rspmem_imem, "IMEM/RSPIMEM.N64", RES_320);
 
 // ******************************************************************
 // NOT IMPLEMENTED
 // ******************************************************************
-// krom_rspcp2!(rspcp2_vlt, "VLT/RSPCP2VLT.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_lwv, "LOADSTORE/LWV/RSPCP2LWV.N64", FIX_L40 | FIX_L120);
-// krom_rspcp2!(rspcp2_sort, "SORT/RSPSORT.N64", FIX_L40 | FIX_L120);
-// krom_rspcp2!(rspcp2_vcl, "VCL/RSPCP2VCL.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(
 //     rspcp2_vextq,
 //     "RESERVED/VEXTQ/RSPCP2VEXTQ.N64",
@@ -369,10 +355,6 @@ krom_rspmem!(rspmem_imem, "IMEM/RSPIMEM.N64", RES_320);
 //     FIX_L40 | FIX_L120
 // );
 // krom_rspcp2!(rspcp2_vcr, "VCR/RSPCP2VCR.N64", FIX_L40 | FIX_L120);
-// krom_rspcp2!(rspcp2_veq, "VEQ/RSPCP2VEQ.N64", FIX_L40 | FIX_L120);
-// krom_rspcp2!(rspcp2_vnop, "VNOP/RSPCP2VNOP.N64", FIX_L40 | FIX_L120);
-// krom_rspcp2!(rspcp2_vsar, "VSAR/RSPCP2VSAR.N64", FIX_L40 | FIX_L120);
-// krom_rspcp2!(rspcp2_vabs, "VABS/RSPCP2VABS.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_vacc, "RESERVED/VACC/RSPCP2VACC.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_v056, "RESERVED/V056/RSPCP2V056.N64", FIX_L40 | FIX_L120);
 // krom_rspcp2!(rspcp2_v073, "RESERVED/V073/RSPCP2V073.N64", FIX_L40 | FIX_L120);
@@ -416,14 +398,14 @@ krom_video!(
     RES_320 | APPROX
 );
 
-krom_rdp!(
-    rdp_32bpp_fillrect_320,
-    "32BPP/Rectangle/FillRectangle/FillRectangle320x240/FillRectangle32BPP320X240.N64",
-    RES_320 | FIX_LINES | FIX_L160
-);
+// krom_rdp!(
+//     rdp_32bpp_fillrect_320,
+//     "32BPP/Rectangle/FillRectangle/FillRectangle320x240/FillRectangle32BPP320X240.N64",
+//     RES_320 | FIX_LINES | FIX_L160
+// );
 
-krom_rdp!(
-    rdp_32bpp_fillrect_320_1cycle,
-    "32BPP/Rectangle/FillRectangle/Cycle1FillRectangle320x240/Cycle1FillRectangle32BPP320X240.N64",
-    RES_320 | FIX_LINES
-);
+// krom_rdp!(
+//     rdp_32bpp_fillrect_320_1cycle,
+//     "32BPP/Rectangle/FillRectangle/Cycle1FillRectangle320x240/Cycle1FillRectangle32BPP320X240.N64",
+//     RES_320 | FIX_LINES
+// );
