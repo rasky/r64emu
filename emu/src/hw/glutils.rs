@@ -14,13 +14,17 @@ where
 }
 
 pub trait ColorForTexture: ColorFormat {
-    fn gl_enum() -> GLenum;
+    fn src_format() -> GLenum;
+    fn dst_format() -> GLenum;
     fn byte_size() -> i32;
 }
 
 impl ColorForTexture for Rgb888 {
-    fn gl_enum() -> GLenum {
+    fn src_format() -> GLenum {
         gl::RGBA
+    }
+    fn dst_format() -> GLenum {
+        gl::RGB
     }
     fn byte_size() -> i32 {
         return 3;
@@ -28,7 +32,10 @@ impl ColorForTexture for Rgb888 {
 }
 
 impl ColorForTexture for Rgba8888 {
-    fn gl_enum() -> GLenum {
+    fn src_format() -> GLenum {
+        gl::RGBA
+    }
+    fn dst_format() -> GLenum {
         gl::RGBA
     }
     fn byte_size() -> i32 {
@@ -36,37 +43,45 @@ impl ColorForTexture for Rgba8888 {
     }
 }
 
-struct Texture {
+pub struct Texture {
     id: GLuint,
 }
 
 impl Texture {
-    unsafe fn new() -> Self {
-        let id = return_param(|x| gl::GenTextures(1, x as *mut u32));
-        Self { id }
+    pub fn new() -> Self {
+        unsafe {
+            let id = return_param(|x| gl::GenTextures(1, x as *mut u32));
+            Self { id }
+        }
     }
 
-    unsafe fn copy_from_buffer<CF: ColorForTexture>(&self, buffer: &GfxBufferLE<CF>) {
-        gl::BindTexture(gl::TEXTURE_2D, self.id);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
+    pub fn id(&self) -> usize {
+        self.id as usize
+    }
 
+    pub fn copy_from_buffer<CF: ColorForTexture>(&self, buffer: &GfxBufferLE<CF>) {
         let width = buffer.width() as i32;
         let height = buffer.height() as i32;
         let (pixels, _pitch) = buffer.raw();
-        gl::TexImage2D(
-            gl::TEXTURE_2D,
-            0,
-            gl::RGBA as i32,
-            width,
-            height,
-            0,
-            CF::gl_enum(),
-            gl::UNSIGNED_BYTE,
-            pixels.as_ptr() as *mut ffi::c_void,
-        );
+
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+            gl::TexImage2D(
+                gl::TEXTURE_2D,
+                0,
+                CF::dst_format() as i32,
+                width,
+                height,
+                0,
+                CF::src_format(),
+                gl::UNSIGNED_BYTE,
+                pixels.as_ptr() as *mut ffi::c_void,
+            );
+        }
     }
 }
 
@@ -140,7 +155,7 @@ pub struct SurfaceRenderer {
     vbo_pos: VertexBuffer,
     vbo_tex: VertexBuffer,
     program: Program,
-    tex: Texture,
+    pub tex: Texture,
 
     // Backend storage for vertex buffers (must be heap allocated)
     pos_data: Vec<GLfloat>,
@@ -271,9 +286,8 @@ impl SurfaceRenderer {
     pub fn render<C: ColorForTexture>(&self, buffer: &GfxBufferLE<C>) {
         unsafe {
             gl::UseProgram(self.program.id);
-
-            self.tex.copy_from_buffer(buffer);
             gl::ActiveTexture(gl::TEXTURE0);
+            self.tex.copy_from_buffer(buffer);
             gl::BindTexture(gl::TEXTURE_2D, self.tex.id);
 
             gl::BindVertexArray(self.vao.id);

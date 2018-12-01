@@ -2,7 +2,7 @@ extern crate byteorder;
 extern crate gl;
 extern crate sdl2;
 
-mod glutils;
+pub mod glutils;
 
 use self::glutils::SurfaceRenderer;
 use self::sdl2::event::Event;
@@ -11,7 +11,6 @@ use self::sdl2::video::{GLContext, GLProfile, Window};
 use self::sdl2::VideoSubsystem;
 use super::dbg::{Debugger, DebuggerModel};
 use super::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
-use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
@@ -33,8 +32,6 @@ struct VideoDebugger {
 struct Video {
     video: VideoSubsystem,
     window: Window,
-    // canvas: WindowCanvas,
-    // creator: TextureCreator<WindowContext>,
     renderer: SurfaceRenderer,
     dbg: Option<VideoDebugger>,
     gl_context: GLContext,
@@ -87,7 +84,6 @@ impl Video {
 
     fn render_frame(&mut self, frame: &GfxBufferLE<Rgb888>) {
         self.renderer.render(frame);
-        self.update_fps();
     }
 
     fn update_fps(&mut self) {
@@ -116,6 +112,7 @@ pub struct Output {
     cfg: Rc<OutputConfig>,
     context: sdl2::Sdl,
     video: Option<Video>,
+    debug: bool,
 }
 
 impl Output {
@@ -124,6 +121,7 @@ impl Output {
             cfg: Rc::new(cfg),
             context: sdl2::init()?,
             video: None,
+            debug: false,
         })
     }
 
@@ -151,8 +149,12 @@ impl Output {
                     Event::KeyDown {
                         keycode: Some(Keycode::Escape),
                         ..
+                    } => {
+                        if debugger.is_some() {
+                            self.debug = !self.debug
+                        }
                     }
-                    | Event::Quit { .. } => return,
+                    Event::Quit { .. } => return,
                     _ => {}
                 }
             }
@@ -161,13 +163,21 @@ impl Output {
             producer.render_frame(&mut screen.buf_mut());
 
             if let Some(v) = self.video.as_mut() {
-                v.render_frame(&screen.buf());
-
-                debugger.as_mut().map(|dbg| {
-                    dbg.render_frame(&v.window, &event_pump, producer);
-                });
-
+                if !self.debug {
+                    v.render_frame(&screen.buf());
+                } else {
+                    debugger.as_mut().map(|dbg| {
+                        dbg.render_frame(
+                            &v.window,
+                            &event_pump,
+                            producer,
+                            &screen.buf(),
+                            v.renderer.tex.id(),
+                        );
+                    });
+                }
                 v.window.gl_swap_window();
+                v.update_fps();
             }
         }
     }
@@ -224,6 +234,7 @@ impl Output {
         if let Some(v) = self.video.as_mut() {
             v.render_frame(&screen);
             v.window.gl_swap_window();
+            v.update_fps();
         }
     }
 }

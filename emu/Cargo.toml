@@ -13,9 +13,10 @@ array-macro = "1.0"
 emu_derive = { path="emu-derive" }
 slog-term = "2.4.0"
 typenum = "1.10.0"
-imgui = "0.0.20"
-imgui-sdl2 = "*"
-imgui-opengl-renderer = "*"
+imgui = "0.0.21"
+imgui-sys = "0.0.21"
+imgui-sdl2 = "0.3.0"
+imgui-opengl-renderer = "0.3.0"
 gl = "0.10.0"
 
 [dependencies.sdl2]

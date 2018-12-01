@@ -9,7 +9,6 @@ emu_derive = {path =  "./emu/emu-derive"}
 num = "0.1.42"
 error-chain = "0.12.0"
 pretty-hex = "0.1.0"
-#slog = "2.4.1"
 slog-term = "2.4.0"
 crc = "^1.0.0"
 lazy_static = "1.0"
@@ -39,7 +38,6 @@ features = ["nothreads"]
 
 [patch.crates-io]
 "slog" = { path = "./vendor/slog" }
-"imgui-glium-renderer" = { path = "./vendor/imgui-rs/imgui-glium-renderer" }
 
 [profile.dev]
 overflow-checks = false
