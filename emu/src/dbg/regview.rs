@@ -20,7 +20,7 @@ pub trait RegisterView {
 }
 
 pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(ui: &'a Ui<'ui>, v: &mut RV) {
-    ui.window(im_str!("[{}] Register View", v.name()))
+    ui.window(im_str!("[{}] Registers", v.name()))
         .size(RV::WINDOW_SIZE, ImGuiCond::FirstUseEver)
         .build(|| {
             ui.columns(RV::COLUMNS as _, im_str!("columns"), true);

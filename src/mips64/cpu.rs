@@ -1,9 +1,12 @@
+extern crate byteorder;
 extern crate emu;
 
+use self::byteorder::ByteOrder;
 use self::emu::bus::be::{Bus, MemIoR};
 use self::emu::bus::MemInt;
 use self::emu::int::Numerics;
 use self::emu::sync;
+use super::decode::DecodedInsn;
 use slog;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -713,16 +716,17 @@ impl sync::Subsystem for Box<Cpu> {
 impl DebuggerModel for Box<Cpu> {
     fn render_debug<'a, 'ui>(&mut self, dr: DebuggerRenderer<'a, 'ui>) {
         dr.render_regview(self);
+        dr.render_disasmview(self);
     }
 }
 
-use self::emu::dbg::{DebuggerModel, DebuggerRenderer, RegisterSize, RegisterView};
+use self::emu::dbg::{DebuggerModel, DebuggerRenderer, DisasmView, RegisterSize, RegisterView};
 
 impl RegisterView for Box<Cpu> {
     const WINDOW_SIZE: (f32, f32) = (380.0, 400.0);
     const COLUMNS: usize = 2;
 
-    fn name<'a>(&'a self) -> &'a str {
+    fn name(&self) -> &str {
         "R4300"
     }
 
@@ -743,5 +747,42 @@ impl RegisterView for Box<Cpu> {
             }
             _ => unreachable!(),
         };
+    }
+}
+
+impl DisasmView for Box<Cpu> {
+    fn name(&self) -> &str {
+        "R4300"
+    }
+
+    fn pc(&self) -> u64 {
+        self.ctx.pc & (self.bus_fetch_mask as u64) | (self.bus_fetch_fixed as u64)
+    }
+
+    fn pc_range(&self) -> (u64, u64) {
+        (
+            0x0 | self.bus_fetch_fixed as u64,
+            0xFFFF_FFFF_FFFF_FFFF & (self.bus_fetch_mask as u64) | (self.bus_fetch_fixed as u64),
+        )
+    }
+
+    fn disasm_block<Func: Fn(u64, &[u8], &str)>(&self, pc_range: (u64, u64), f: Func) {
+        let mut pc = pc_range.0 as u32;
+        let mem = self
+            .bus
+            .borrow()
+            .fetch_read::<u32>((pc & 0xFFFF_FFFC & self.bus_fetch_mask) | self.bus_fetch_fixed);
+        let mut iter = mem.iter().unwrap();
+
+        let mut buf = vec![0u8, 0u8, 0u8, 0u8];
+        while pc < pc_range.1 as u32 {
+            let opcode = iter.next().unwrap();
+            byteorder::BigEndian::write_u32(&mut buf, opcode);
+
+            let dis = DecodedInsn::decode(opcode, pc.into()).humanize().disasm();
+            f(pc as u64, &buf, &dis);
+
+            pc += 4;
+        }
     }
 }

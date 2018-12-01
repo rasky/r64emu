@@ -12,11 +12,14 @@ use self::imgui_opengl_renderer::Renderer;
 use self::imgui_sdl2::ImguiSdl2;
 mod uisupport;
 
-mod regview;
-pub use self::regview::*;
-
 use std::cell::RefCell;
 use std::rc::Rc;
+
+// Views
+mod regview;
+pub use self::regview::*;
+mod disasmview;
+pub use self::disasmview::*;
 
 pub trait DebuggerModel {
     fn render_debug<'a, 'ui>(&mut self, dr: DebuggerRenderer<'a, 'ui>);
@@ -68,7 +71,7 @@ impl Debugger {
         let ui = self.imgui_sdl2.frame(&window, &mut imgui, &event_pump);
 
         self.render_main(&ui, screen, tex_id);
-        //ui.show_demo_window(&mut true);
+        // ui.show_demo_window(&mut true);
 
         {
             let dr = DebuggerRenderer { ui: &ui };
@@ -113,7 +116,10 @@ pub struct DebuggerRenderer<'a, 'ui> {
 }
 
 impl<'a, 'ui> DebuggerRenderer<'a, 'ui> {
-    pub fn render_regview<RV: RegisterView>(&self, v: &mut RV) {
+    pub fn render_regview<V: RegisterView>(&self, v: &mut V) {
         render_regview(self.ui, v)
+    }
+    pub fn render_disasmview<V: DisasmView>(&self, v: &mut V) {
+        render_disasmview(self.ui, v)
     }
 }
