@@ -719,22 +719,29 @@ impl DebuggerModel for Box<Cpu> {
 use self::emu::dbg::{DebuggerModel, DebuggerRenderer, RegisterSize, RegisterView};
 
 impl RegisterView for Box<Cpu> {
+    const WINDOW_SIZE: (f32, f32) = (380.0, 400.0);
+    const COLUMNS: usize = 2;
+
     fn name<'a>(&'a self) -> &'a str {
         "R4300"
     }
 
-    fn visit_regs<'s, F>(&'s mut self, mut visit: F)
+    fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)
     where
         F: for<'a> FnMut(&'a str, RegisterSize<'a>),
     {
-        let regs = vec![
-            "zr", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5",
-            "t6", "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1",
-            "gp", "sp", "fp", "ra",
-        ];
-
-        for (n, v) in regs.iter().zip(&mut self.ctx.regs) {
-            visit(n, RegisterSize::Reg64(v));
-        }
+        match col {
+            0 | 1 => {
+                let regs = vec![
+                    "zr", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4",
+                    "t5", "t6", "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9",
+                    "k0", "k1", "gp", "sp", "fp", "ra",
+                ];
+                for (n, v) in regs.iter().zip(&mut self.ctx.regs).skip(col * 16).take(16) {
+                    visit(n, RegisterSize::Reg64(v));
+                }
+            }
+            _ => unreachable!(),
+        };
     }
 }
