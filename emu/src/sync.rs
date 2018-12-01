@@ -1,3 +1,5 @@
+extern crate slog;
+use int::Numerics;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -24,16 +26,26 @@ pub trait Subsystem {
     // Notice that this might be called from within run(), and it's supposed
     // to always hold the updated value
     fn cycles(&self) -> i64;
+
+    // Return the program counter for this subsystem (if any)
+    fn pc(&self) -> Option<u64>;
 }
 
 type SubPtr = Rc<RefCell<Subsystem>>;
 
+#[derive(Clone)]
+struct SubInfo {
+    name: String,
+    sub: SubPtr,
+    scaler: f64,
+}
+
 pub struct Sync {
     pub cfg: Config,
-    subs: Vec<SubPtr>,
-    sub_scaler: Vec<f64>,
+    subs: Vec<SubInfo>,
     current_sub: Option<*const Subsystem>,
-    current_scaler: Option<f64>,
+    current_subinfo: Option<SubInfo>,
+    logger: slog::Logger,
 
     frames: i64,
     cycles: i64,
@@ -43,27 +55,52 @@ pub struct Sync {
 }
 
 impl Sync {
-    pub fn new(cfg: Config) -> Sync {
-        let mut s = Sync {
+    pub fn new(logger: slog::Logger, cfg: Config) -> Box<Sync> {
+        let mut s = Box::new(Sync {
             cfg,
+            logger: logger,
             subs: vec![],
-            sub_scaler: vec![],
             frames: 0,
             cycles: 0,
             line_cycles: 0,
             frame_cycles: 0,
             frame_syncs: vec![],
             current_sub: None,
-            current_scaler: None,
-        };
+            current_subinfo: None,
+        });
         s.calc();
         s
     }
 
-    pub fn register(&mut self, sub: SubPtr, freq: i64) {
-        self.subs.push(sub);
-        self.sub_scaler
-            .push(self.cfg.main_clock as f64 / freq as f64);
+    pub fn new_logger(&self) -> slog::Logger {
+        // FIXME: add context logging current PC.
+        // It's currently impossible with slog because it requires
+        // context to be Send+Sync, which Subsytem is not.
+        let sync2: *const Sync = &*self;
+        let sync3: *const Sync = &*self;
+        self.logger.new(o!("pc" => slog::FnValue(move |_| {
+            let sync2 = unsafe { &*sync2 };
+            sync2.current_pc().map_or("[none]".to_owned(), |pc| {
+                if (pc as u32).sx64() == pc {
+                    (pc as u32).hex()
+                } else {
+                    pc.hex()
+                }
+            })
+        }), 
+        "sub" => slog::FnValue(move |_| {
+            let sync3 = unsafe { &*sync3 };
+            sync3.current_subinfo.as_ref().map_or("[none]", |i| &i.name)
+        }),
+        ))
+    }
+
+    pub fn register(&mut self, name: &str, sub: SubPtr, freq: i64) {
+        self.subs.push(SubInfo {
+            name: name.to_owned(),
+            sub: sub,
+            scaler: self.cfg.main_clock as f64 / freq as f64,
+        });
     }
 
     fn calc(&mut self) {
@@ -91,9 +128,16 @@ impl Sync {
         self.frame_syncs.sort_by_key(|k| k.0);
     }
 
+    pub fn current_pc(&self) -> Option<u64> {
+        self.current_sub.map_or(None, |sub| unsafe { &*sub }.pc())
+    }
+
     pub fn cycles(&self) -> i64 {
+        let scaler : f64 = self.current_subinfo.as_ref().map_or(0.0, |i| i.scaler);
         match self.current_sub {
-            Some(sub) => (unsafe { &*sub }.cycles() as f64 * self.current_scaler.unwrap()) as i64,
+            Some(sub) => {
+                (unsafe { &*sub }.cycles() as f64 * scaler) as i64
+            }
             None => self.cycles,
         }
     }
@@ -122,13 +166,13 @@ impl Sync {
     }
 
     fn run_until(&mut self, target: i64) {
-        for (sub, scaler) in self.subs.iter().zip(self.sub_scaler.iter()) {
-            let mut sub = sub.borrow_mut();
+        for info in &self.subs {
+            self.current_subinfo = Some(info.clone());
+            let mut sub = info.sub.borrow_mut();
             self.current_sub = Some(&*sub);
-            self.current_scaler = Some(*scaler);
-            sub.run((target as f64 / scaler) as i64);
-            self.current_scaler = None;
+            sub.run((target as f64 / info.scaler) as i64);
             self.current_sub = None;
+            self.current_subinfo = None;
         }
         self.cycles = target;
     }

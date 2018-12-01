@@ -99,6 +99,7 @@ pub struct Vi {
 
     logger: slog::Logger,
     bus: Rc<RefCell<Box<Bus>>>,
+    framecount: usize,
 }
 
 impl Vi {
@@ -120,10 +121,13 @@ impl Vi {
             y_scale: Reg32::default(),
             logger,
             bus,
+            framecount: 0,
         }
     }
 
     pub fn set_line(&self, y: usize) {
+        // FIXME: handle interleaved mode (LSB is fixed within the same field)
+        // FIXME: NTSC has 525 lines, what happens to this 9-bit register when line > 512?
         self.current_line.set(y as u32);
     }
 
@@ -131,7 +135,9 @@ impl Vi {
         error!(self.logger, "write VI current line"; o!("val" => new.hex()));
     }
 
-    pub fn draw_frame(&self, screen: &mut GfxBufferMutLE<Rgb888>) {
+    pub fn draw_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>) {
+        self.framecount += 1;
+
         let bpp = self.status.get() & 3;
 
         // display disable -> clear screen

@@ -6,7 +6,6 @@ use self::emu::int::Numerics;
 use self::emu::sync;
 use slog;
 use std::cell::RefCell;
-use std::fs;
 use std::rc::Rc;
 
 /// Cop is a MIPS64 coprocessor that can be installed within the core.
@@ -704,5 +703,38 @@ impl sync::Subsystem for Box<Cpu> {
 
     fn cycles(&self) -> i64 {
         self.ctx.clock
+    }
+
+    fn pc(&self) -> Option<u64> {
+        Some(self.ctx.pc)
+    }
+}
+
+impl DebuggerModel for Box<Cpu> {
+    fn render_debug<'a, 'ui>(&mut self, dr: DebuggerRenderer<'a, 'ui>) {
+        dr.render_regview(self);
+    }
+}
+
+use self::emu::dbg::{DebuggerModel, DebuggerRenderer, RegisterSize, RegisterView};
+
+impl RegisterView for Box<Cpu> {
+    fn name<'a>(&'a self) -> &'a str {
+        "R4300"
+    }
+
+    fn visit_regs<'s, F>(&'s mut self, mut visit: F)
+    where
+        F: for<'a> FnMut(&'a str, RegisterSize<'a>),
+    {
+        let regs = vec![
+            "zr", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5",
+            "t6", "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1",
+            "gp", "sp", "fp", "ra",
+        ];
+
+        for (n, v) in regs.iter().zip(&mut self.ctx.regs) {
+            visit(n, RegisterSize::Reg64(v));
+        }
     }
 }

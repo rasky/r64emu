@@ -3,7 +3,6 @@ extern crate error_chain;
 
 #[macro_use]
 extern crate slog;
-extern crate slog_async;
 extern crate slog_term;
 
 extern crate emu;
@@ -26,15 +25,14 @@ fn log_build_sync() -> slog::Logger {
     slog::Logger::root(drain, o!("module" => slog::FnValue(module_and_line)))
 }
 
-#[allow(dead_code)]
-fn log_build_async() -> slog::Logger {
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
-    slog::Logger::root(drain, o!("module" => slog::FnValue(module_and_line)))
-}
-
 quick_main!(run);
+
+fn create_n64(romfn: &str) -> Result<N64> {
+    let logger = log_build_sync();
+    let n64 = N64::new(logger, romfn).unwrap();
+    n64.setup_cic().unwrap();
+    Ok(n64)
+}
 
 fn run() -> Result<()> {
     let logger = log_build_sync();
@@ -55,13 +53,14 @@ fn run() -> Result<()> {
     })?;
     out.enable_video()?;
 
-    let logger1 = logger.clone();
     let romfn = args[1].clone();
-    out.run(move || {
-        let n64 = Box::new(N64::new(logger1, &romfn).unwrap());
-        n64.setup_cic().unwrap();
-        Ok(n64)
-    });
+
+    if true {
+        let mut n64 = create_n64(&romfn).unwrap();
+        out.run_and_debug(&mut n64);
+    } else {
+        out.run_threaded(move || Ok(Box::new(create_n64(&romfn).unwrap())));
+    }
 
     Ok(())
 }

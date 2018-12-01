@@ -1,4 +1,5 @@
 use emu::bus::be::{Bus, DevPtr, Mem};
+use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
 use emu::sync;
@@ -19,7 +20,7 @@ use super::vi::Vi;
 
 pub struct N64 {
     logger: slog::Logger,
-    sync: sync::Sync,
+    sync: Box<sync::Sync>,
     bus: Rc<RefCell<Box<Bus>>>,
     cpu: Rc<RefCell<Box<mips64::Cpu>>>,
     cart: DevPtr<Cartridge>,
@@ -35,30 +36,59 @@ pub struct N64 {
 
 impl N64 {
     pub fn new(logger: slog::Logger, romfn: &str) -> Result<N64> {
-        let bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
-        let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
+        // N64 timings
+        // https://assemblergames.com/threads/mapping-n64-overclockability-achieved-3-0x-multiplier-but-not-3-0x-speed.51656/
+
+        // Oscillators
+        const X1: i64 = 14_705_000;
+        const X2: i64 = 14_318_000;
+
+        const RDRAM_CLOCK: i64 = X1 * 17;
+        const MAIN_CLOCK: i64 = RDRAM_CLOCK / 4;
+        const PIF_CLOCK: i64 = MAIN_CLOCK / 4;
+        const CARTRIDGE_CLOCK: i64 = PIF_CLOCK / 8; // 1.953 MHZ
+        const VCLK: i64 = X2 * 17 / 5; // 48.6812 MHZ
+
+        let mut sync = sync::Sync::new(
             logger.new(o!()),
+            sync::Config {
+                main_clock: VCLK,
+                dot_clock_divider: 4,
+                hdots: 773, // 773.5...
+                vdots: 525,
+                hsyncs: vec![0, 773 / 2], // sync two times per line
+                vsyncs: vec![],
+            },
+        );
+
+        let bus = Rc::new(RefCell::new(Bus::new(sync::Sync::new_logger(&sync))));
+        let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
+            sync::Sync::new_logger(&sync),
             bus.clone(),
         ))));
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
         let pi = DevPtr::new(
-            Pi::new(logger.new(o!()), bus.clone(), "bios/pifdata.bin")
-                .chain_err(|| "cannot open BIOS file")?,
+            Pi::new(
+                sync::Sync::new_logger(&sync),
+                bus.clone(),
+                "bios/pifdata.bin",
+            )
+            .chain_err(|| "cannot open BIOS file")?,
         );
-        let sp = Sp::new(logger.new(o!()), bus.clone())?;
-        let si = DevPtr::new(Si::new(logger.new(o!())));
-        let dp = DevPtr::new(Dp::new(logger.new(o!()), bus.clone()));
-        let vi = DevPtr::new(Vi::new(logger.new(o!()), bus.clone()));
-        let ai = DevPtr::new(Ai::new(logger.new(o!())));
-        let ri = DevPtr::new(Ri::new(logger.new(o!())));
+        let sp = Sp::new(sync::Sync::new_logger(&sync), bus.clone())?;
+        let si = DevPtr::new(Si::new(sync::Sync::new_logger(&sync)));
+        let dp = DevPtr::new(Dp::new(sync::Sync::new_logger(&sync), bus.clone()));
+        let vi = DevPtr::new(Vi::new(sync::Sync::new_logger(&sync), bus.clone()));
+        let ai = DevPtr::new(Ai::new(sync::Sync::new_logger(&sync)));
+        let ri = DevPtr::new(Ri::new(sync::Sync::new_logger(&sync)));
 
         {
             // Install CPU coprocessors
             //   COP0 -> standard MIPS64 CP0
             //   COP1 -> standard MIPS64 FPU
             let mut cpu = cpu.borrow_mut();
-            cpu.set_cop0(mips64::Cp0::new(logger.new(o!())));
-            cpu.set_cop1(mips64::Fpu::new(logger.new(o!())));
+            cpu.set_cop0(mips64::Cp0::new(sync::Sync::new_logger(&sync)));
+            cpu.set_cop1(mips64::Fpu::new(sync::Sync::new_logger(&sync)));
         }
 
         {
@@ -80,30 +110,12 @@ impl N64 {
             bus.map_device(0x1FC0_0000, &pi, 1)?;
         }
 
-        // N64 timings
-        // https://assemblergames.com/threads/mapping-n64-overclockability-achieved-3-0x-multiplier-but-not-3-0x-speed.51656/
-
-        // Oscillators
-        const X1: i64 = 14_705_000;
-        const X2: i64 = 14_318_000;
-
-        const RDRAM_CLOCK: i64 = X1 * 17;
-        const MAIN_CLOCK: i64 = RDRAM_CLOCK / 4;
-        const PIF_CLOCK: i64 = MAIN_CLOCK / 4;
-        const CARTRIDGE_CLOCK: i64 = PIF_CLOCK / 8; // 1.953 MHZ
-        const VCLK: i64 = X2 * 17 / 5; // 48.6812 MHZ
-
-        let mut sync = sync::Sync::new(sync::Config {
-            main_clock: VCLK,
-            dot_clock_divider: 4,
-            hdots: 773, // 773.5...
-            vdots: 525,
-            hsyncs: vec![0, 773 / 2], // sync two times per line
-            vsyncs: vec![],
-        });
-        sync.register(cpu.clone(), MAIN_CLOCK + MAIN_CLOCK / 2); // FIXME: uses DIVMOD
-        sync.register(sp.borrow().core_cpu.clone(), MAIN_CLOCK);
-        sync.register(dp.clone().unwrap(), MAIN_CLOCK);
+        // Register subsystems into sync
+        {
+            sync.register("cpu", cpu.clone(), MAIN_CLOCK + MAIN_CLOCK / 2); // FIXME: uses DIVMOD
+            sync.register("sp", sp.borrow().core_cpu.clone(), MAIN_CLOCK);
+            sync.register("dp", dp.clone().unwrap(), MAIN_CLOCK);
+        }
 
         return Ok(N64 {
             logger,
@@ -147,10 +159,16 @@ impl hw::OutputProducer for N64 {
             _ => {}
         });
 
-        self.vi.borrow().draw_frame(screen);
+        self.vi.borrow_mut().draw_frame(screen);
     }
 
     fn finish(&mut self) {
         info!(self.logger, "finish"; o!("pc" => format!("{:x}", self.cpu.borrow().ctx().get_pc())));
+    }
+}
+
+impl DebuggerModel for N64 {
+    fn render_debug<'a, 'ui>(&mut self, dr: DebuggerRenderer<'a, 'ui>) {
+        self.cpu.borrow_mut().render_debug(dr);
     }
 }

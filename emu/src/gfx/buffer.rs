@@ -4,8 +4,8 @@ extern crate typenum;
 use self::byteorder::{BigEndian, ByteOrder, LittleEndian};
 #[allow(unused_imports)]
 use self::typenum::{
-    U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2, U20, U21, U22, U23, U24, U25,
-    U26, U27, U28, U29, U3, U30, U31, U4, U5, U6, U7, U8, U9, Unsigned,
+    Unsigned, U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2, U20, U21, U22, U23,
+    U24, U25, U26, U27, U28, U29, U3, U30, U31, U4, U5, U6, U7, U8, U9,
 };
 use super::super::bus::MemInt;
 use super::{Color, ColorConverter, ColorFormat};
@@ -74,6 +74,14 @@ impl<'a: 's, 's, CF: ColorFormat + Sized, O: ByteOrder> GfxBuffer<'a, CF, O> {
             pitch,
             phantom: PhantomData,
         })
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
     }
 
     pub fn raw(&'s self) -> (&'a [u8], usize) {
@@ -358,7 +366,8 @@ impl<CF: ColorFormat + Sized, O: ByteOrder> OwnedGfxBuffer<CF, O> {
             self.width,
             self.height,
             self.width * CF::BITS::to_usize() / 8,
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     pub fn buf_mut<'a>(&'a mut self) -> GfxBufferMut<'a, CF, O> {
@@ -367,7 +376,8 @@ impl<CF: ColorFormat + Sized, O: ByteOrder> OwnedGfxBuffer<CF, O> {
             self.width,
             self.height,
             self.width * CF::BITS::to_usize() / 8,
-        ).unwrap()
+        )
+        .unwrap()
     }
 }
 
@@ -380,7 +390,7 @@ pub type OwnedGfxBufferBE<CF> = OwnedGfxBuffer<CF, BigEndian>;
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Abgr8888, ColorConverter, I4, Rgb565, Rgb888, Rgba8888};
+    use super::super::{Abgr8888, ColorConverter, Rgb565, Rgb888, Rgba8888, I4};
     use super::byteorder::ByteOrder;
     use super::*;
 

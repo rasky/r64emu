@@ -170,4 +170,8 @@ impl sync::Subsystem for Dp {
     fn cycles(&self) -> i64 {
         self.cycles
     }
+
+    fn pc(&self) -> Option<u64> {
+        None
+    }
 }
