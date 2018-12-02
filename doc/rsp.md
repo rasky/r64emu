@@ -207,10 +207,65 @@ vector. For instance:
 
 128-bit vector transpose
 ------------------------
+These instructions are used to read/write lanes across a group of registers,
+to help implementing the transposition of a matrix:
 
-The address in DMEM is composed with `GPR[base] + offset` (no scaling of offset),
-and is truncated to align to 64-bit boundary (even if it's actually a 128-bit
-access, it's 64-bit aligned).
+| Insn | `opcode` | Desc |
+| :---: | :---: | --- |
+| LTV | 0x08 | load 8 lanes from 8 different registers |
+| STV | 0x08 | store 8 lanes to 8 different registers  |
+
+The 8-registers group is identified by `vt`, ignoring the last 3 bits. This means
+that the 32 registers are logically divided into 4 groups (0-7, 8-15, 16-23, 24-31).
+
+The lanes affected within the register group are laid out in *diagonal* layout; for
+instance, if `vt` is zero, the lanes will be: `VREG[0]<0>`, `VREG[1]<1>`, ...,
+`VREG[7]<7>`. `element(3..1)` specifies the lane affected in the first register of
+the register group, and thus identifies the diagonal (`element(0)` is ignored). 
+
+The following table shows the numbering of the 8 diagonals present in a 8-registers
+group; each cell of the table contains the diagonal that lane belongs to:
+
+| Reg | Lane 0 | Lane 1 | Lane 2 | Lane 3 | Lane 4 | Lane 5 | Lane 6 | Lane 7 |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `v0` | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+| `v1` | 7 | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+| `v2` | 6 | 7 | 0 | 1 | 2 | 3 | 4 | 5 |
+| `v3` | 5 | 6 | 7 | 0 | 1 | 2 | 3 | 4 |
+| `v4` | 4 | 5 | 6 | 7 | 0 | 1 | 2 | 3 |
+| `v5` | 3 | 4 | 5 | 6 | 7 | 0 | 1 | 2 |
+| `v6` | 2 | 3 | 4 | 5 | 6 | 7 | 0 | 1 |
+| `v7` | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 0 |
+
+The address in DMEM from which the first lane is read/write is `GPR[base] + offset*16`;
+following lanes are read/written from subsequent memory addresses, wrapping around at the
+second 64-bit boundary. For instance, `LTV v0[e0],$1E(r0)` reads the lanes from the
+following addresses: `$1E`, `$20`, `$22`, `$24`, `$26`, `$18`, `$1C`.
+
+By combining `LTV` and `STV`, it is possible to transpose a matrix because diagonals
+are symmetric; for instance, assuming a 8x8 matrix is stored in `VPR[0..7]<0..7>`,
+the following sequence transposes it:
+
+	STV v0[e2],$10(a0)  // store diagonal 1
+	STV v0[e4],$20(a0)  // store diagonal 2
+	STV v0[e6],$30(a0)  // store diagonal 3
+	STV v0[e8],$40(a0)  // store diagonal 4
+	STV v0[e10],$50(a0) // store diagonal 5
+	STV v0[e12],$60(a0) // store diagonal 6
+	STV v0[e14],$70(a0) // store diagonal 7
+
+	LTV v0[e2],$12(a0)  // load back diagonal 1 into diagonal 7
+	LTV v0[e4],$24(a0)  // load back diagonal 2 into diagonal 6
+	LTV v0[e6],$36(a0)  // load back diagonal 3 into diagonal 5
+	LTV v0[e8],$48(a0)  // load back diagonal 4 into diagonal 4
+	LTV v0[e10],$5a(a0)  // load back diagonal 5 into diagonal 3
+	LTV v0[e12],$6c(a0)  // load back diagonal 6 into diagonal 2
+	LTV v0[e14],$7e(a0)  // load back diagonal 7 into diagonal 1
+
+128-bit vector rotated store
+----------------------------
+
+
 
 
 Single-lane instructions
@@ -592,43 +647,104 @@ Pseudo-code for all instructions:
 	endfor
 
 
-VMACF/VMACU
------------
-**TODO** DOCUMENT
-
 VMULF
 -----
 Vector multiply of signed fractions:
 
     vmulf vd, vs, vt[e]
 
+For each lane, this instructions multiplies 2 fixed-point 1.15 operands (in
+the range [-1, 1]) and produces a 1.15 result (rounding to nearest).
+Overflow can happen when doing 0x8000*0x8000, but it's correctly handled
+by saturating to the positive max (0x7FFF).
+
 Pseudo-code:
 
     for i in 0..7
-		prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-		ACC<i>(47..0) = sign_extend(prod(31..0) + 0x8000)
+		prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+		ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
 		VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
-
 VMULU
 -----
-Vector multiply of unsigned fractions:
+Vector multiply of signed fractions with unsigned result:
 
-    vmulf vd, vs, vt[e]
+    vmulu vd, vs, vt[e]
+
+For each lane, this instructions multiplies 2 fixed-point 1.15 operands (in
+the range [-1, 1]) and produces a 0.15 result (rounding to nearest). Negative
+results are clipped to zero. Overflow can only happen when doing 0x8000*0x8000,
+and it produces 0xFFFF.
 
 Pseudo-code:
 
 	for i in 0..7
-		prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-		ACC<i>(47..0) = sign_extend(prod(31..0) + 0x8000)
+		prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+		ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
 		VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
 	endfor
 
 NOTE: name notwithstanding, this opcode performs a *signed* multiplication
-of the incoming vectors. The only difference with VMULF is the clamping step.
+of the incoming vectors. The only difference with `VMULF` is the clamping step.
+
+VMACF
+-----
+Vector multiply of signed fractions with accumulation:
+
+    vmacf vd, vs, vt[e]
+
+For each lane, this instructions multiplies 2 fixed-point 1.15 operands (in
+the range [-1, 1]) and adds the 1.31 result into the accumulator
+(treated as 17.31). The current value of the accumulator is then returned
+as a 1.15 result (with saturation), but the full-width value is not discarded
+in case subsequent `VMACF` are issued.
+
+Notice that, contrary to `VMULF`, there is no rounding-to-nearest performed
+while saturating the intermediate high-precision value into the result.
+
+    for i in 0..7
+		prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+		ACC<i>(47..0) += sign_extend(prod(32..0))
+		VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
+    endfor
+
+VMACU
+-----
+Vector multiply of signed fractions with accumulation and unsigned result:
+
+    vmacu vd, vs, vt[e]
+
+For each lane, this instructions multiplies 2 fixed-point 1.15 operands (in
+the range [-1, 1]) and adds the 1.31 result into the accumulator
+(treated as 17.31). The current value of the accumulator is then returned
+as a 0.15 result, clipping negative results to zero, and reporting positive
+overflow with the out-of-band value 0xFFFF.
+
+Notice that, contrary to `VMULU`, there is no rounding-to-nearest performed
+while saturating the intermediate high-precision value into the result.
+
+	for i in 0..7
+		prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+		ACC<i>(47..0) += sign_extend(prod(32..0))
+		VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
+	endfor
+
+NOTE: name notwithstanding, this opcode performs a *signed* multiplication
+of the incoming vectors. The only difference with `VMACU` is the clamping step.
+
+VMUDN
+-----
+Vector multiplication:
+
+	vmudn vd, vs, vt[e]
+
+For each lane, this instruction mulitplies an unsigned fixed-point number
+with a signed fixed-point number, returning a result after removing 16
+bits of precision. A 
 
 
 
 
 TODO: CFC2 sign extends
+TODO: VMACF/VMACU saturate the accumulator?
