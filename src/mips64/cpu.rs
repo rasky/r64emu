@@ -85,9 +85,10 @@ pub struct CpuContext {
     pub hi: u64,
     pub lo: u64,
     pub(crate) pc: u64,
-    pub(crate) branch_pc: u64,
+    pub(crate) next_pc: u64,
     pub clock: i64,
     pub tight_exit: bool,
+    pub delay_slot: bool,
     lines: Lines,
 }
 
@@ -195,11 +196,12 @@ impl CpuContext {
     #[inline]
     pub fn branch(&mut self, cond: bool, tgt: u64, likely: bool) {
         if cond {
-            self.branch_pc = tgt;
-            self.tight_exit = true;
+            self.next_pc = tgt;
+            self.delay_slot = true;
         } else if likely {
             // branch not taken; if likely, skip delay slot
             self.pc += 4;
+            self.next_pc = self.pc + 4;
             self.clock += 1;
             self.tight_exit = true;
         }
@@ -212,7 +214,7 @@ impl CpuContext {
 
     pub fn set_pc(&mut self, pc: u64) {
         self.pc = pc;
-        self.branch_pc = 0;
+        self.next_pc = pc + 4;
     }
 
     pub fn get_pc(&self) -> u64 {
@@ -272,15 +274,17 @@ macro_rules! if_cop {
 
 impl Cpu {
     pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>) -> Cpu {
+        let reset_vector = 0xFFFF_FFFF_BFC0_0000; // FIXME
         return Cpu {
             ctx: CpuContext {
                 regs: [0u64; 32],
                 hi: 0,
                 lo: 0,
-                pc: 0xFFFF_FFFF_BFC0_0000, // FIXME
-                branch_pc: 0,
+                pc: reset_vector,
+                next_pc: reset_vector + 4,
                 clock: 0,
                 tight_exit: false,
+                delay_slot: false,
                 lines: Lines { halt: false },
             },
             bus: bus,
@@ -503,18 +507,6 @@ impl Cpu {
             0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),                          // SD
 
             _ => {
-                println!("regs: {:?}", op.cpu.ctx.regs);
-
-                {
-                    use std::io::Write;
-                    let mut f = std::fs::File::create("rdram.dump").unwrap();
-                    f.write(op.cpu.fetch(0xa4000000).mem().unwrap());
-                    f.write(op.cpu.fetch(0xa4001000).mem().unwrap());
-                    f.write(op.cpu.fetch(0xa4002000).mem().unwrap());
-                    f.write(op.cpu.fetch(0xa4003000).mem().unwrap());
-                    f.write(op.cpu.fetch(0xa4004000).mem().unwrap());
-                }
-
                 panic!(
                     "unimplemented opcode: func=0x{:x?}, pc={}",
                     op.op(),
@@ -591,113 +583,22 @@ impl Cpu {
                 }
             }
 
-            let pc = self.ctx.pc;
-            let mut iter = self.fetch(pc).iter().unwrap();
+            let mut iter = self.fetch(self.ctx.pc).iter().unwrap();
 
             // Tight loop: go through continuous memory, no branches, no IRQs
-            self.ctx.tight_exit = false;
             while let Some(op) = iter.next() {
-                self.ctx.pc += 4;
+                self.ctx.tight_exit = self.ctx.delay_slot;
+                self.ctx.delay_slot = false;
+                self.ctx.pc = self.ctx.next_pc;
+                self.ctx.next_pc += 4;
                 self.op(op);
                 if self.ctx.clock >= self.until || self.ctx.tight_exit {
                     break;
                 }
             }
-
-            if self.ctx.branch_pc != 0 {
-                let pc = self.ctx.pc;
-                let op = iter.next().unwrap_or_else(|| self.fetch(pc).read());
-                self.ctx.pc = self.ctx.branch_pc;
-                self.ctx.branch_pc = 0;
-                self.op(op);
-            }
         }
     }
 }
-
-/*
-pub trait Executor<'a, 'c: 'a> {
-    type Ctx;
-
-    fn exec_begin(&'a mut self) -> (&'a mut Self, Self::Ctx);
-    fn exec_step(&mut self, ectx: &mut Self::Ctx) -> bool;
-    fn exec_finish(&mut self, ectx: Self::Ctx);
-}
-
-use emu::bus::MemIoRIterator;
-
-pub struct ExecContext<'c> {
-    iter: MemIoRIterator<'c, u32>,
-}
-
-impl<'a, 'c: 'a> Executor<'a, 'c> for Box<Cpu> {
-    type Ctx = ExecContext<'c>;
-
-    #[inline(always)]
-    fn exec_begin(&'a mut self) -> (&'a mut Self, ExecContext<'static>) {
-        let pc = self.ctx.pc;
-        let iter = self
-            .bus
-            .borrow()
-            .fetch_read::<u32>(pc & 0x1FFF_FFFC)
-            .iter()
-            .unwrap();
-        self.ctx.tight_exit = false;
-        (self, ExecContext { iter })
-    }
-
-    #[inline(always)]
-    fn exec_step(&mut self, ectx: &mut ExecContext) -> bool {
-        if let Some(op) = ectx.iter.next() {
-            self.ctx.pc += 4;
-            self.op(op);
-            return !self.ctx.tight_exit;
-        }
-        return false;
-    }
-    #[inline(always)]
-    fn exec_finish(&mut self, mut ectx: ExecContext) {
-        if self.ctx.branch_pc != 0 {
-            let pc = self.ctx.pc;
-            let op = ectx.iter.next().unwrap_or_else(|| self.fetch(pc).read());
-            self.ctx.pc = self.ctx.branch_pc;
-            self.ctx.branch_pc = 0;
-            self.op(op);
-        }
-        // if let Some(ref mut cop0) = self.cop0 {
-        //     if cop0.pending_int() {
-        //         cop0.exception(&mut self.ctx, Exception::INT);
-        //     }
-        // }
-    }
-}
-
-pub fn run_two<'a, 'c: 'a, E1: Executor<'a, 'c>, E2: Executor<'a, 'c>>(
-    e1: &'a mut E1,
-    n1: usize,
-    e2: &'a mut E2,
-    n2: usize,
-) {
-    let (e1, mut ectx1) = e1.exec_begin();
-    let (e2, mut ectx2) = e2.exec_begin();
-
-    'iloop: loop {
-        for _ in 0..n1 {
-            if !e1.exec_step(&mut ectx1) {
-                break 'iloop;
-            }
-        }
-        for _ in 0..n2 {
-            if !e2.exec_step(&mut ectx2) {
-                break 'iloop;
-            }
-        }
-    }
-
-    e1.exec_finish(ectx1);
-    e2.exec_finish(ectx2);
-}
-*/
 
 impl sync::Subsystem for Box<Cpu> {
     fn run(&mut self, until: i64) {
