@@ -256,12 +256,12 @@ where
     }
 
     #[inline(never)]
-    fn fetch_read_nolog<U: MemInt + 'a>(&self, addr: u32) -> MemIoR<Order, U> {
+    pub fn fetch_read_nolog<U: MemInt + 'a>(&self, addr: u32) -> MemIoR<Order, U> {
         self.internal_fetch_read::<U>(addr, false).at(addr)
     }
 
     #[inline(never)]
-    fn fetch_write_nolog<U: MemInt + 'a>(&self, addr: u32) -> MemIoW<Order, U> {
+    pub fn fetch_write_nolog<U: MemInt + 'a>(&self, addr: u32) -> MemIoW<Order, U> {
         self.internal_fetch_write::<U>(addr, false).at(addr)
     }
 
