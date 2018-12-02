@@ -1,5 +1,9 @@
 extern crate imgui;
+extern crate imgui_sys;
+extern crate sdl2;
 use self::imgui::*;
+use self::sdl2::keyboard::Scancode;
+use super::uisupport::*;
 
 /// A trait for an object that can display register contents to
 /// a debugger view.
@@ -17,6 +21,8 @@ pub trait DisasmView {
     /// Disassemble a single instruction at the specified program counter;
     /// Returns the bytes composing the instruction and the string representation.
     fn disasm_block<Func: Fn(u64, &[u8], &str)>(&self, pc_range: (u64, u64), f: Func);
+
+    fn step(&mut self);
 }
 
 struct ByteBuf<'a>(&'a [u8]);
@@ -29,17 +35,120 @@ impl<'a> std::fmt::LowerHex for ByteBuf<'a> {
         Ok(())
     }
 }
+
+fn color(r: usize, g: usize, b: usize) -> ImVec4 {
+    ImVec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0)
+}
+
 pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(ui: &'a Ui<'ui>, v: &mut DV) {
     ui.window(im_str!("[{}] Disassembly", v.name()))
         .size((450.0, 400.0), ImGuiCond::FirstUseEver)
         .build(|| {
-            let pc = 0x1000; //v.pc() - 16 * 4;
-            v.disasm_block((pc, pc + 32 * 4), |pc, mem, text| {
-                ui.text(im_str!("{:08x}", pc));
-                ui.same_line(80.0);
-                ui.text(im_str!("{:x}", ByteBuf(mem)));
-                ui.same_line(170.0);
-                ui.text(im_str!("{}", text));
+            let cur_pc = v.pc();
+            let mut force_pc: Option<u64> = None; // if Some, jump to this PC this frame
+
+            // *******************************************
+            // Goto popup
+            // *******************************************
+            ui.popup(im_str!("###goto"), || {
+                let mut s = ImString::new("00000000");
+                ui.text(im_str!("Insert PC:"));
+                if ui
+                    .input_text(im_str!("###goto#input"), &mut s)
+                    .chars_hexadecimal(true)
+                    .enter_returns_true(true)
+                    .auto_select_all(true)
+                    .build()
+                {
+                    force_pc = u64::from_str_radix(s.as_ref(), 16).ok();
+                    ui.close_current_popup();
+                }
             });
+
+            // *******************************************
+            // Button toolbar
+            // *******************************************
+            if ui.small_button(im_str!("Goto")) {
+                ui.open_popup(im_str!("###goto"));
+            }
+            ui.same_line(0.0);
+            if ui.small_button(im_str!("Center"))
+                || (ui.is_window_focused() && ui.imgui().is_key_pressed(Scancode::C as _))
+            {
+                force_pc = Some(cur_pc.saturating_sub(10 * 4));
+            }
+            ui.same_line(0.0);
+            if ui.small_button(im_str!("Step"))
+                || (ui.is_window_focused() && ui.imgui().is_key_pressed(Scancode::S as _))
+            {
+                v.step();
+            }
+
+            // *******************************************
+            // Main scroll view with disasm
+            // *******************************************
+            ui.child_frame(im_str!("###scrolling"), (0.0, 0.0))
+                .always_show_vertical_scroll_bar(true)
+                .build(|| {
+                    // Get the full extent of PC. Notice that the range is *inclusive*.
+                    let mut pc_range = v.pc_range();
+
+                    // Calculate a range of PC that will be used in the disasm
+                    // view, that could be smaller than the full extent. We select
+                    // up to 1M lines around the current PC.
+                    // Notice that this is the full range of the listbox, not just
+                    // the display range.
+                    const MAX_LINES: u64 = 1024 * 1024;
+                    pc_range.0 =
+                        (cur_pc.saturating_sub(4 * MAX_LINES / 2) / 1024 * 1024).max(pc_range.0);
+                    pc_range.1 = pc_range.0.saturating_add(4 * MAX_LINES - 1).min(pc_range.1);
+                    let num_lines = pc_range.1 - pc_range.0 + 1;
+
+                    // Check if we were asked to scroll to a specific PC.
+                    if let Some(start_pc) = force_pc {
+                        let start_pc = start_pc.max(pc_range.0).min(pc_range.1);
+                        let row_height = ui.get_text_line_height_with_spacing();
+                        unsafe {
+                            imgui_sys::igSetScrollY(
+                                row_height * ((start_pc - pc_range.0) / 4) as f32,
+                            );
+                        }
+                    }
+
+                    // Display the non-clipped part of the listbox
+                    ImGuiListClipper::new(num_lines as usize).build(|start, end| {
+                        v.disasm_block(
+                            (pc_range.0 + start as u64 * 4, pc_range.0 + end as u64 * 4),
+                            |pc, mem, text| {
+                                // Highlight this line if it is PC.
+                                if pc == cur_pc {
+                                    let wsize = ui.get_content_region_avail();
+                                    let dl = ui.get_window_draw_list();
+                                    let pos = ui.get_cursor_screen_pos();
+                                    let end = (pos.0 + wsize.0, pos.1 + 15.0);
+                                    let c1 = color(41, 65, 100);
+                                    dl.add_rect_filled_multicolor(pos, end, c1, c1, c1, c1);
+                                }
+
+                                let fields: Vec<&str> = text.splitn(2, "\t").collect();
+
+                                // Address
+                                ui.text_colored(color(174, 129, 255), im_str!("{:08x}", pc));
+
+                                // Hex dump
+                                ui.same_line(80.0);
+                                ui.text_colored(color(102, 99, 83), im_str!("{:x}", ByteBuf(mem)));
+
+                                // Opcode
+                                ui.same_line(170.0);
+                                ui.text_colored(color(165, 224, 46), im_str!("{}", fields[0]));
+
+                                // Args
+                                ui.same_line(220.0);
+                                ui.text_colored(color(230, 219, 116), im_str!("{}", fields[1]));
+                            },
+                        );
+                    })
+                })
         });
 }

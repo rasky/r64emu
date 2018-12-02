@@ -152,14 +152,14 @@ impl Drop for Program {
 
 pub struct SurfaceRenderer {
     vao: VertexArray,
-    vbo_pos: VertexBuffer,
-    vbo_tex: VertexBuffer,
+    _vbo_pos: VertexBuffer, // saved here for Drop
+    _vbo_tex: VertexBuffer, // saved here for Drop
     program: Program,
-    pub tex: Texture,
+    tex: Texture,
 
     // Backend storage for vertex buffers (must be heap allocated)
-    pos_data: Vec<GLfloat>,
-    tex_data: Vec<GLfloat>,
+    _pos_data: Vec<GLfloat>,
+    _tex_data: Vec<GLfloat>,
 }
 
 impl SurfaceRenderer {
@@ -272,11 +272,11 @@ impl SurfaceRenderer {
             let surf = Self {
                 tex: Texture::new(),
                 vao: vao,
-                vbo_pos,
-                vbo_tex,
+                _vbo_pos: vbo_pos,
+                _vbo_tex: vbo_tex,
+                _pos_data: pos_data,
+                _tex_data: tex_data,
                 program: program,
-                pos_data,
-                tex_data,
             };
 
             surf

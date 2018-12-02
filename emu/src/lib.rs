@@ -17,9 +17,6 @@ extern crate array_macro;
 #[macro_use]
 extern crate slog;
 
-#[macro_use]
-extern crate imgui;
-
 pub mod bus;
 pub mod dbg;
 pub mod fp;

@@ -7,7 +7,7 @@ pub mod glutils;
 use self::glutils::SurfaceRenderer;
 use self::sdl2::event::Event;
 use self::sdl2::keyboard::Keycode;
-use self::sdl2::video::{GLContext, GLProfile, Window};
+use self::sdl2::video::{GLContext, GLProfile, Window, WindowPos};
 use self::sdl2::VideoSubsystem;
 use super::dbg::{Debugger, DebuggerModel};
 use super::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
@@ -24,17 +24,11 @@ pub struct OutputConfig {
     pub enforce_speed: bool,
 }
 
-struct VideoDebugger {
-    window: Window,
-    gl_context: GLContext,
-}
-
 struct Video {
     video: VideoSubsystem,
     window: Window,
     renderer: SurfaceRenderer,
-    dbg: Option<VideoDebugger>,
-    gl_context: GLContext,
+    _gl_context: GLContext,
 
     cfg: Rc<OutputConfig>,
     fps_clock: SystemTime,
@@ -55,7 +49,7 @@ impl Video {
         }
 
         let window = video
-            .window(&cfg.window_title, 800, 600)
+            .window(&cfg.window_title, 640 * 2, 480 * 2)
             .resizable()
             .position_centered()
             .opengl()
@@ -75,8 +69,7 @@ impl Video {
             video,
             window,
             renderer,
-            gl_context,
-            dbg: None,
+            _gl_context: gl_context,
             fps_clock: SystemTime::now(),
             fps_counter: 0,
         })
@@ -113,6 +106,7 @@ pub struct Output {
     context: sdl2::Sdl,
     video: Option<Video>,
     debug: bool,
+    framecount: i64,
 }
 
 impl Output {
@@ -122,6 +116,7 @@ impl Output {
             context: sdl2::init()?,
             video: None,
             debug: false,
+            framecount: 0,
         })
     }
 
@@ -167,17 +162,24 @@ impl Output {
                     v.render_frame(&screen.buf());
                 } else {
                     debugger.as_mut().map(|dbg| {
-                        dbg.render_frame(
-                            &v.window,
-                            &event_pump,
-                            producer,
-                            &screen.buf(),
-                            v.renderer.tex.id(),
-                        );
+                        dbg.render_frame(&v.window, &event_pump, producer, &screen.buf());
                     });
                 }
                 v.window.gl_swap_window();
                 v.update_fps();
+
+                // Workaround for SDL on Mac bug: the GL context is not visible until
+                // the window is moved or resized.
+                // TODO: remove this once rust-sdl2 is upgraded to SDL 2.0.9.
+                if self.framecount == 0 {
+                    #[cfg(target_os = "macos")]
+                    let (x, y) = v.window.position();
+                    #[cfg(target_os = "macos")]
+                    v.window
+                        .set_position(WindowPos::Positioned(x), WindowPos::Positioned(y));
+                }
+
+                self.framecount += 1;
             }
         }
     }

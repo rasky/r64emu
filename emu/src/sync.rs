@@ -180,11 +180,19 @@ impl Sync {
 
 #[cfg(test)]
 mod tests {
+    extern crate slog;
     use super::*;
+
+    fn logger() -> slog::Logger {
+        use slog::Drain;
+        let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        slog::Logger::root(drain, o!())
+    }
 
     #[test]
     fn events() {
-        let mut sync = Sync::new(Config {
+        let mut sync = Sync::new(logger(), Config {
             main_clock: 128,
             dot_clock_divider: 2,
             hdots: 4,

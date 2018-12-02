@@ -1,6 +1,6 @@
 #![feature(nll)]
-#![feature(attr_literals)]
 #![feature(stdsimd)]
+#![feature(arbitrary_self_types)]
 
 #[macro_use]
 extern crate slog;

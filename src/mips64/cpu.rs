@@ -100,6 +100,7 @@ pub struct Cpu {
     cop2: Option<Box<Cop>>,
     cop3: Option<Box<Cop>>,
 
+    name: String,
     logger: slog::Logger,
     bus: Rc<RefCell<Box<Bus>>>,
     until: i64,
@@ -273,7 +274,7 @@ macro_rules! if_cop {
 }
 
 impl Cpu {
-    pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>) -> Cpu {
+    pub fn new(name: &str, logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>) -> Cpu {
         let reset_vector = 0xFFFF_FFFF_BFC0_0000; // FIXME
         return Cpu {
             ctx: CpuContext {
@@ -288,6 +289,7 @@ impl Cpu {
                 lines: Lines { halt: false },
             },
             bus: bus,
+            name: name.into(),
             cop0: None,
             cop1: None,
             cop2: None,
@@ -614,21 +616,21 @@ impl sync::Subsystem for Box<Cpu> {
     }
 }
 
-impl DebuggerModel for Box<Cpu> {
-    fn render_debug<'a, 'ui>(&mut self, dr: DebuggerRenderer<'a, 'ui>) {
+impl Cpu {
+    pub fn render_debug<'a, 'ui>(self: &mut Box<Cpu>, dr: &DebuggerRenderer<'a, 'ui>) {
         dr.render_regview(self);
         dr.render_disasmview(self);
     }
 }
 
-use self::emu::dbg::{DebuggerModel, DebuggerRenderer, DisasmView, RegisterSize, RegisterView};
+use self::emu::dbg::{DebuggerRenderer, DisasmView, RegisterSize, RegisterView};
 
 impl RegisterView for Box<Cpu> {
     const WINDOW_SIZE: (f32, f32) = (380.0, 400.0);
-    const COLUMNS: usize = 2;
+    const COLUMNS: usize = 3;
 
     fn name(&self) -> &str {
-        "R4300"
+        &self.name
     }
 
     fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)
@@ -646,6 +648,11 @@ impl RegisterView for Box<Cpu> {
                     visit(n, RegisterSize::Reg64(v));
                 }
             }
+            2 => {
+                visit("pc", RegisterSize::Reg64(&mut self.ctx.pc));
+                visit("hi", RegisterSize::Reg64(&mut self.ctx.hi));
+                visit("lo", RegisterSize::Reg64(&mut self.ctx.lo));
+            }
             _ => unreachable!(),
         };
     }
@@ -653,7 +660,7 @@ impl RegisterView for Box<Cpu> {
 
 impl DisasmView for Box<Cpu> {
     fn name(&self) -> &str {
-        "R4300"
+        &self.name
     }
 
     fn pc(&self) -> u64 {
@@ -668,22 +675,39 @@ impl DisasmView for Box<Cpu> {
     }
 
     fn disasm_block<Func: Fn(u64, &[u8], &str)>(&self, pc_range: (u64, u64), f: Func) {
-        let mut pc = pc_range.0 as u32;
-        let mem = self
-            .bus
-            .borrow()
-            .fetch_read::<u32>((pc & 0xFFFF_FFFC & self.bus_fetch_mask) | self.bus_fetch_fixed);
-        let mut iter = mem.iter().unwrap();
-
         let mut buf = vec![0u8, 0u8, 0u8, 0u8];
-        while pc < pc_range.1 as u32 {
-            let opcode = iter.next().unwrap();
+        let mut pc = pc_range.0 as u32;
+
+        let mut dis = move |pc: u32, opcode: u32| {
             byteorder::BigEndian::write_u32(&mut buf, opcode);
+            let insn = DecodedInsn::decode(opcode, pc.into()).humanize().disasm();
+            f(pc as u64, &buf, &insn);
+        };
 
-            let dis = DecodedInsn::decode(opcode, pc.into()).humanize().disasm();
-            f(pc as u64, &buf, &dis);
+        while pc < pc_range.1 as u32 {
+            let mem = self.bus.borrow().fetch_read_nolog::<u32>(
+                (pc & 0xFFFF_FFFC & self.bus_fetch_mask) | self.bus_fetch_fixed,
+            );
 
-            pc += 4;
+            let iter = mem.iter();
+            if iter.is_none() {
+                dis(pc, mem.read());
+                pc += 4;
+                continue;
+            }
+            let mut iter = iter.unwrap();
+
+            while pc < pc_range.1 as u32 {
+                match iter.next() {
+                    Some(opcode) => dis(pc, opcode),
+                    None => break,
+                };
+                pc += 4;
+            }
         }
+    }
+
+    fn step(&mut self) {
+        self.run(self.ctx.clock + 1);
     }
 }

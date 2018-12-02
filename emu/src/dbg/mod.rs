@@ -10,6 +10,7 @@ use super::hw::glutils::{ColorForTexture, Texture};
 use self::imgui::*;
 use self::imgui_opengl_renderer::Renderer;
 use self::imgui_sdl2::ImguiSdl2;
+use self::sdl2::keyboard::Scancode;
 mod uisupport;
 
 use std::cell::RefCell;
@@ -22,7 +23,8 @@ mod disasmview;
 pub use self::disasmview::*;
 
 pub trait DebuggerModel {
-    fn render_debug<'a, 'ui>(&mut self, dr: DebuggerRenderer<'a, 'ui>);
+    fn pause(&mut self, pause: bool);
+    fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>);
 }
 
 pub struct Debugger {
@@ -31,6 +33,8 @@ pub struct Debugger {
     backend: Renderer,
     hidpi_factor: f32,
     tex_screen: Texture,
+
+    paused: bool,
 }
 
 impl Debugger {
@@ -49,6 +53,7 @@ impl Debugger {
             backend,
             hidpi_factor,
             tex_screen: Texture::new(),
+            paused: false,
         }
     }
 
@@ -64,18 +69,24 @@ impl Debugger {
         event_pump: &sdl2::EventPump,
         model: &mut T,
         screen: &GfxBufferLE<CF>,
-        tex_id: usize,
     ) {
         let imgui = self.imgui.clone();
         let mut imgui = imgui.borrow_mut();
+
+        // Global key shortcuts
+        if imgui.is_key_pressed(Scancode::Space as _) {
+            self.paused = !self.paused;
+            model.pause(self.paused);
+        }
+
         let ui = self.imgui_sdl2.frame(&window, &mut imgui, &event_pump);
 
-        self.render_main(&ui, screen, tex_id);
-        // ui.show_demo_window(&mut true);
+        self.render_main(&ui, screen);
+        ui.show_demo_window(&mut true);
 
         {
             let dr = DebuggerRenderer { ui: &ui };
-            model.render_debug(dr);
+            model.render_debug(&dr);
         }
 
         // Actually flush commands batched in imgui to OpenGL
@@ -87,12 +98,7 @@ impl Debugger {
         self.backend.render(ui);
     }
 
-    fn render_main<'ui, CF: ColorForTexture>(
-        &mut self,
-        ui: &Ui<'ui>,
-        screen: &GfxBufferLE<CF>,
-        tex_id: usize,
-    ) {
+    fn render_main<'ui, CF: ColorForTexture>(&mut self, ui: &Ui<'ui>, screen: &GfxBufferLE<CF>) {
         ui.main_menu_bar(|| {
             ui.menu(im_str!("Emulation")).build(|| {
                 ui.menu_item(im_str!("Reset")).build();
@@ -105,7 +111,7 @@ impl Debugger {
             .build(|| {
                 let tsid = self.tex_screen.id();
                 let reg = ui.get_content_region_avail();
-                let image = uisupport::Image::new(ui, tsid.into(), reg);
+                let image = Image::new(ui, tsid.into(), reg);
                 image.build();
             });
     }

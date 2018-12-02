@@ -72,6 +72,7 @@ impl Sp {
         // Create the RSP internal MIPS CPU and its associated bus
         let bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
         let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
+            "RSP",
             logger.new(o!()),
             bus.clone(),
         ))));

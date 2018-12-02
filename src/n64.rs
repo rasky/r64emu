@@ -24,6 +24,7 @@ pub struct N64 {
     bus: Rc<RefCell<Box<Bus>>>,
     cpu: Rc<RefCell<Box<mips64::Cpu>>>,
     cart: DevPtr<Cartridge>,
+    paused: bool,
 
     pi: DevPtr<Pi>,
     si: DevPtr<Si>,
@@ -63,6 +64,7 @@ impl N64 {
 
         let bus = Rc::new(RefCell::new(Bus::new(sync::Sync::new_logger(&sync))));
         let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
+            "R4300",
             sync::Sync::new_logger(&sync),
             bus.clone(),
         ))));
@@ -130,6 +132,7 @@ impl N64 {
             vi,
             ai,
             ri,
+            paused: false,
         });
     }
 
@@ -151,13 +154,15 @@ impl N64 {
 
 impl hw::OutputProducer for N64 {
     fn render_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>) {
-        let mut vi = self.vi.clone();
-        self.sync.run_frame(move |evt| match evt {
-            sync::Event::HSync(x, y) if x == 0 => {
-                vi.borrow_mut().set_line(y);
-            }
-            _ => {}
-        });
+        if !self.paused {
+            let mut vi = self.vi.clone();
+            self.sync.run_frame(move |evt| match evt {
+                sync::Event::HSync(x, y) if x == 0 => {
+                    vi.borrow_mut().set_line(y);
+                }
+                _ => {}
+            });
+        }
 
         self.vi.borrow_mut().draw_frame(screen);
     }
@@ -168,7 +173,12 @@ impl hw::OutputProducer for N64 {
 }
 
 impl DebuggerModel for N64 {
-    fn render_debug<'a, 'ui>(&mut self, dr: DebuggerRenderer<'a, 'ui>) {
+    fn pause(&mut self, pause: bool) {
+        self.paused = pause;
+    }
+
+    fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>) {
         self.cpu.borrow_mut().render_debug(dr);
+        self.sp.borrow_mut().core_cpu.borrow_mut().render_debug(dr);
     }
 }
