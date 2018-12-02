@@ -51,9 +51,8 @@ impl Reg {
 
 enum_str!{
     enum Insn {
-        UNKNOWN,
-        UNKSPECIAL,
-        ADDIU, DADDI, DADDIU,
+        UNKNOWN, UNKSPC, UNKRIMM,
+        ADDI, ADDIU, DADDI, DADDIU,
         ANDI, ORI, XORI,
         LUI,
         ADD, ADDU, SUB, SUBU, DADD, DADDU, DSUB, DSUBU,
@@ -61,6 +60,8 @@ enum_str!{
         J, JAL, JR, JALR,
         BEQ, BNE, BLEZ, BGTZ,
         BEQL, BNEL, BLEZL, BGTZL,
+        BLTZ, BGEZ, BLTZAL, BGEZAL,
+        BLTZL, BGEZL, BLTZALL, BGEZALL,
         LB, LBU, LH, LHU, LW, LWL, LWR, LWU,
         SB, SH, SW, SWL, SWR,
         SLL, SRL, SRA, SLLV, SRLV, SRAV, DSLLV, DSRLV, DSRAV,
@@ -69,7 +70,7 @@ enum_str!{
         CACHE, SYNC, BREAK,
 
         // Fake insn
-        NOP, LI, BEQZ, BNEZ,
+        NOP, LI, BEQZ, BNEZ, BEQZL, BNEZL, MOVE,
     }
 }
 
@@ -194,6 +195,7 @@ impl DecodedInsn {
         let op = opcode >> 26;
         let special = opcode & 0x3f;
         let sa = ((opcode >> 6) & 0x1f) as u8;
+        let vrt = (opcode >> 16) & 0x1f;
         let rs = Reg(((opcode >> 21) & 0x1f) as usize);
         let rt = Reg(((opcode >> 16) & 0x1f) as usize);
         let rd = Reg(((opcode >> 11) & 0x1f) as usize);
@@ -247,7 +249,19 @@ impl DecodedInsn {
                 0x2E => Self::new3(DSUB, OReg(rd), IReg(rs), IReg(rt)),
                 0x2F => Self::new3(DSUBU, OReg(rd), IReg(rs), IReg(rt)),
 
-                _ => Self::new1(UNKSPECIAL, Imm32(special)),
+                _ => Self::new1(UNKSPC, Imm32(special)),
+            },
+            0x01 => match vrt {
+                0x00 => Self::new2(BLTZ, IReg(rs), Imm32(btgt)),
+                0x01 => Self::new2(BGEZ, IReg(rs), Imm32(btgt)),
+                0x02 => Self::new2(BLTZL, IReg(rs), Imm32(btgt)),
+                0x03 => Self::new2(BGEZL, IReg(rs), Imm32(btgt)),
+                0x10 => Self::new2(BLTZAL, IReg(rs), Imm32(btgt)),
+                0x11 => Self::new2(BGEZAL, IReg(rs), Imm32(btgt)),
+                0x12 => Self::new2(BLTZALL, IReg(rs), Imm32(btgt)),
+                0x13 => Self::new2(BGEZALL, IReg(rs), Imm32(btgt)),
+
+                _ => Self::new1(UNKRIMM, Imm32(vrt)),
             },
             0x02 => Self::new1(J, Imm32(jtgt)),
             0x03 => Self::new1(JAL, Imm32(jtgt)),
@@ -255,6 +269,7 @@ impl DecodedInsn {
             0x05 => Self::new3(BNE, IReg(rs), IReg(rt), Imm32(btgt)),
             0x06 => Self::new2(BLEZ, IReg(rs), Imm32(btgt)),
             0x07 => Self::new2(BGTZ, IReg(rs), Imm32(btgt)),
+            0x08 => Self::new3(ADDI, OReg(rt), IReg(rs), Imm16(imm16)),
             0x09 => Self::new3(ADDIU, OReg(rt), IReg(rs), Imm16(imm16)),
             0x0C => Self::new3(ANDI, OReg(rt), IReg(rs), Imm16(imm16)),
             0x0D => Self::new3(ORI, OReg(rt), IReg(rs), Imm16(imm16)),
@@ -296,10 +311,17 @@ impl DecodedInsn {
         let op2 = self.operands[2];
         let op3 = self.operands[3];
         match self.op {
-            SLL if self.operands[0] == OReg(zr) && self.operands[1] == IReg(zr) => Self::new0(NOP),
-            ADDIU | ORI if self.operands[1] == IReg(zr) => Self::new2(LI, op0, op2),
-            BNE if self.operands[1] == IReg(zr) => Self::new2(BNEZ, op0, op2),
-            BEQ if self.operands[1] == IReg(zr) => Self::new2(BEQZ, op0, op2),
+            SLL if op0 == OReg(zr) && op1 == IReg(zr) => Self::new0(NOP),
+            ADDI | ADDIU | ORI if op1 == IReg(zr) => Self::new2(LI, op0, op2),
+            BNE if op1 == IReg(zr) => Self::new2(BNEZ, op0, op2),
+            BEQ if op1 == IReg(zr) => Self::new2(BEQZ, op0, op2),
+            BNEL if op1 == IReg(zr) => Self::new2(BNEZL, op0, op2),
+            BEQL if op1 == IReg(zr) => Self::new2(BEQZL, op0, op2),
+            BEQZ | BGEZ if op0 == IReg(zr) => Self::new1(J, op1), // relocatable encoding
+            BGEZAL if op0 == IReg(zr) => Self::new1(JAL, op1),    // relocatable encoding
+            OR if op1 == IReg(zr) && op2 == IReg(zr) => Self::new2(LI, op0, Imm32(0)),
+            OR if op1 == IReg(zr) => Self::new2(MOVE, op0, op2),
+            OR if op2 == IReg(zr) => Self::new2(MOVE, op0, op1),
             _ => self,
         }
     }
