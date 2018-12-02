@@ -138,33 +138,38 @@ where
     Insn: fmt::Display + Copy + Clone + PartialEq,
     Reg: fmt::Display + Copy + Clone + PartialEq,
 {
-    pub fn new0(op: Insn) -> Self {
+    pub fn new0<I: Into<Insn>>(op: I) -> Self {
         DecodedInsn {
-            op,
+            op: op.into(),
             fmt: None,
             args: [Operand::Null, Operand::Null, Operand::Null, Operand::Null],
         }
     }
-    pub fn new1(op: Insn, arg1: Operand<Reg>) -> Self {
+    pub fn new1<I: Into<Insn>>(op: I, arg1: Operand<Reg>) -> Self {
         let mut op = Self::new0(op);
         op.args[0] = arg1;
         op
     }
-    pub fn new2(op: Insn, arg1: Operand<Reg>, arg2: Operand<Reg>) -> Self {
+    pub fn new2<I: Into<Insn>>(op: I, arg1: Operand<Reg>, arg2: Operand<Reg>) -> Self {
         let mut op = Self::new0(op);
         op.args[0] = arg1;
         op.args[1] = arg2;
         op
     }
-    pub fn new3(op: Insn, arg1: Operand<Reg>, arg2: Operand<Reg>, arg3: Operand<Reg>) -> Self {
+    pub fn new3<I: Into<Insn>>(
+        op: I,
+        arg1: Operand<Reg>,
+        arg2: Operand<Reg>,
+        arg3: Operand<Reg>,
+    ) -> Self {
         let mut op = Self::new0(op);
         op.args[0] = arg1;
         op.args[1] = arg2;
         op.args[2] = arg3;
         op
     }
-    pub fn new4(
-        op: Insn,
+    pub fn new4<I: Into<Insn>>(
+        op: I,
         arg1: Operand<Reg>,
         arg2: Operand<Reg>,
         arg3: Operand<Reg>,
