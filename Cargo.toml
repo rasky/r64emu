@@ -3,6 +3,11 @@ name = "r64emu"
 version = "0.1.0"
 authors = ["Giovanni Bajo <rasky@develer.com>"]
 
+[workspace]
+members = [
+    "emu"
+]
+
 [dependencies]
 emu = {path =  "./emu"}
 emu_derive = {path =  "./emu/emu-derive"}
@@ -37,7 +42,9 @@ version = "2.4.1"
 features = ["nothreads"]
 
 [patch.crates-io]
-"slog" = { path = "./vendor/slog" }
+"slog" = { git="https://github.com/rasky/slog", branch="nothreads" }
+"imgui-sdl2" = { git="https://github.com/rasky/rust-imgui-sdl2", branch="r64emu" }
+"imgui-opengl-renderer" = { git="https://github.com/rasky/rust-imgui-opengl-renderer", branch="r64emu"}
 
 [profile.dev]
 overflow-checks = false

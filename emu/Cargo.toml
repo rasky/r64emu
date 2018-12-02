@@ -13,8 +13,8 @@ array-macro = "1.0"
 emu_derive = { path="emu-derive" }
 slog-term = "2.4.0"
 typenum = "1.10.0"
-imgui = "0.0.21"
-imgui-sys = "0.0.21"
+imgui = { git="https://github.com/Gekkio/imgui-rs.git", branch="master"}
+imgui-sys = { git="https://github.com/Gekkio/imgui-rs.git", branch="master"}
 imgui-sdl2 = "0.3.0"
 imgui-opengl-renderer = "0.3.0"
 gl = "0.10.0"
@@ -26,6 +26,3 @@ features = ["static-link","bundled"]
 [dependencies.slog]
 version = "2.4.1"
 features = ["nothreads"]
-
-[patch.crates-io]
-"slog" = { path = "../vendor/slog" }
