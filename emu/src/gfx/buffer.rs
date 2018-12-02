@@ -128,6 +128,14 @@ impl<'a: 's, 's, CF: ColorFormat + Sized, O: ByteOrder> GfxBufferMut<'a, CF, O> 
         })
     }
 
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
     pub fn raw(&'s mut self) -> (&'s mut [u8], usize) {
         (self.mem, self.pitch)
     }
