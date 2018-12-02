@@ -17,6 +17,9 @@ extern crate array_macro;
 #[macro_use]
 extern crate slog;
 
+#[macro_use]
+extern crate runtime_fmt;
+
 pub mod bus;
 pub mod dbg;
 pub mod fp;

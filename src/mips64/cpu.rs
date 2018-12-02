@@ -6,7 +6,7 @@ use self::emu::bus::be::{Bus, MemIoR};
 use self::emu::bus::MemInt;
 use self::emu::int::Numerics;
 use self::emu::sync;
-use super::decode::DecodedInsn;
+use super::decode::decode;
 use slog;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -680,7 +680,7 @@ impl DisasmView for Box<Cpu> {
 
         let mut dis = move |pc: u32, opcode: u32| {
             byteorder::BigEndian::write_u32(&mut buf, opcode);
-            let insn = DecodedInsn::decode(opcode, pc.into()).humanize().disasm();
+            let insn = decode(opcode, pc.into()).disasm();
             f(pc as u64, &buf, &insn);
         };
 

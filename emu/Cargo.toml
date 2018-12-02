@@ -18,6 +18,7 @@ imgui-sys = { git="https://github.com/Gekkio/imgui-rs.git", branch="master"}
 imgui-sdl2 = "0.3.0"
 imgui-opengl-renderer = "0.3.0"
 gl = "0.10.0"
+runtime-fmt = "0.3.0"
 
 [dependencies.sdl2]
 version = "0.31.0"

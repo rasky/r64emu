@@ -21,6 +21,8 @@ mod regview;
 pub use self::regview::*;
 mod disasmview;
 pub use self::disasmview::*;
+mod decoding;
+pub use self::decoding::*;
 
 pub trait DebuggerModel {
     fn pause(&mut self, pause: bool);

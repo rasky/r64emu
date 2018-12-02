@@ -8,6 +8,7 @@ extern crate slog;
 #[macro_use]
 extern crate emu_derive;
 extern crate byteorder;
+#[macro_use]
 extern crate emu;
 
 extern crate packed_simd;
