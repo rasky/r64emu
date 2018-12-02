@@ -140,7 +140,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(ui: &'a Ui<'ui>, v: &mu
                                 ui.text_colored(color(102, 99, 83), im_str!("{:x}", ByteBuf(mem)));
 
                                 // Opcode
-                                ui.same_line(170.0);
+                                ui.same_line(160.0);
                                 ui.text_colored(color(165, 224, 46), im_str!("{}", fields[0]));
 
                                 // Args
