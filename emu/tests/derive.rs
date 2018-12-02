@@ -1,4 +1,3 @@
-#![feature(attr_literals)]
 extern crate byteorder;
 extern crate emu;
 
@@ -26,7 +25,7 @@ mod tests {
 
     #[derive(Default, DeviceLE)]
     struct Gpu {
-        #[mem(bank = 1, offset = 0x0, size = 4_194_304, vsize = 0x0200_0000)]
+        #[mem(bank = 1, offset = 0x0, size = 4194304, vsize = 0x0200_0000)]
         ram: Mem,
 
         #[reg(bank = 0, offset = 0xC, rwmask = 0xffff0000, rcb, wcb)]
@@ -49,10 +48,10 @@ mod tests {
     /*
     impl Device for Gpu {
         type Order = LittleEndian;
-
+    
         fn dev_init(&mut self, wself: Rc<RefCell<Self>>) {
             self.ram = Mem::new(1024, MemFlags::default());
-
+    
             let wdevr = Rc::downgrade(&wself);
             let wdevw = Rc::downgrade(&wself);
             self.reg1 = Reg::new(
@@ -71,7 +70,7 @@ mod tests {
                 })),
             );
         }
-
+    
         fn dev_map(
             &mut self,
             bus: &mut Bus<Self::Order>,
