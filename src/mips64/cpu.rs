@@ -6,7 +6,7 @@ use self::emu::bus::be::{Bus, MemIoR};
 use self::emu::bus::MemInt;
 use self::emu::int::Numerics;
 use self::emu::sync;
-use super::decode::decode;
+use super::decode::{decode, DecodedInsn};
 use slog;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -17,6 +17,9 @@ pub trait Cop {
     fn set_reg(&mut self, idx: usize, val: u128);
 
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32);
+    fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
+        DecodedInsn::new0("unkcop")
+    }
 
     fn lwc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
         let rt = ((op >> 16) & 0x1f) as usize;
@@ -325,8 +328,31 @@ impl Cpu {
     pub fn set_cop3(&mut self, cop3: Box<dyn Cop>) {
         self.cop3 = Some(cop3);
     }
-    pub fn cop2(&mut self) -> Option<&mut Box<dyn Cop>> {
+
+    pub fn cop0(&self) -> Option<&Box<dyn Cop0>> {
+        self.cop0.as_ref()
+    }
+    pub fn cop1(&self) -> Option<&Box<dyn Cop>> {
+        self.cop1.as_ref()
+    }
+    pub fn cop2(&self) -> Option<&Box<dyn Cop>> {
+        self.cop2.as_ref()
+    }
+    pub fn cop3(&self) -> Option<&Box<dyn Cop>> {
+        self.cop3.as_ref()
+    }
+
+    pub fn cop0_mut(&mut self) -> Option<&mut Box<dyn Cop0>> {
+        self.cop0.as_mut()
+    }
+    pub fn cop1_mut(&mut self) -> Option<&mut Box<dyn Cop>> {
+        self.cop1.as_mut()
+    }
+    pub fn cop2_mut(&mut self) -> Option<&mut Box<dyn Cop>> {
         self.cop2.as_mut()
+    }
+    pub fn cop3_mut(&mut self) -> Option<&mut Box<dyn Cop>> {
+        self.cop3.as_mut()
     }
 
     pub fn reset(&mut self) {
@@ -680,7 +706,7 @@ impl DisasmView for Box<Cpu> {
 
         let mut dis = move |pc: u32, opcode: u32| {
             byteorder::BigEndian::write_u32(&mut buf, opcode);
-            let insn = decode(opcode, pc.into()).disasm();
+            let insn = decode(self, opcode, pc.into()).disasm();
             f(pc as u64, &buf, &insn);
         };
 

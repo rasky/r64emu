@@ -1,4 +1,5 @@
 extern crate emu;
+use super::cpu::Cpu;
 use emu::dbg::Operand;
 use std::fmt;
 
@@ -6,7 +7,7 @@ use std::fmt;
 const MEMOP_FMT: &'static str = "{},{}({})";
 
 // Register names
-const REG_NAMES: [&'static str; 34] = [
+pub(crate) const REG_NAMES: [&'static str; 34] = [
     "zr", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
     "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra",
     "hi", "lo",
@@ -19,7 +20,16 @@ const REG_NAMES: [&'static str; 34] = [
 /// we can't extend a enum.
 pub type DecodedInsn = emu::dbg::DecodedInsn<&'static str, &'static str>;
 
-fn decode1(opcode: u32, pc: u64) -> DecodedInsn {
+macro_rules! decode_cop {
+    ($cpu:ident, $opcode:ident, $pc:ident, $copn:ident, $default:expr) => {{
+        match $cpu.$copn() {
+            None => DecodedInsn::new0($default),
+            Some(ref cop) => cop.decode($opcode, $pc),
+        }
+    }};
+}
+
+fn decode1(cpu: &Cpu, opcode: u32, pc: u64) -> DecodedInsn {
     use self::Operand::*;
 
     let op = opcode >> 26;
@@ -108,6 +118,10 @@ fn decode1(opcode: u32, pc: u64) -> DecodedInsn {
         0x0E => DecodedInsn::new3("xori", OReg(rt), IReg(rs), Imm16(imm16)),
         0x0F => DecodedInsn::new2("lui", OReg(rt), Imm16(imm16)),
 
+        0x10 => decode_cop!(cpu, opcode, pc, cop0, "cop0?"),
+        0x11 => decode_cop!(cpu, opcode, pc, cop1, "cop1?"),
+        0x12 => decode_cop!(cpu, opcode, pc, cop2, "cop2?"),
+        0x13 => decode_cop!(cpu, opcode, pc, cop3, "cop3?"),
         0x14 => DecodedInsn::new3("beql", IReg(rs), IReg(rt), Imm32(btgt)),
         0x15 => DecodedInsn::new3("bnel", IReg(rs), IReg(rt), Imm32(btgt)),
         0x16 => DecodedInsn::new2("blezl", IReg(rs), Imm32(btgt)),
@@ -129,6 +143,18 @@ fn decode1(opcode: u32, pc: u64) -> DecodedInsn {
         0x2B => DecodedInsn::new3("sw", IReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
         0x2E => DecodedInsn::new3("swr", IReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
         0x2F => DecodedInsn::new0("cache"),
+
+        0x31 => decode_cop!(cpu, opcode, pc, cop1, "lwc1?"),
+        0x32 => decode_cop!(cpu, opcode, pc, cop2, "lwc2?"),
+        0x35 => decode_cop!(cpu, opcode, pc, cop1, "ldc1?"),
+        0x36 => decode_cop!(cpu, opcode, pc, cop2, "ldc2?"),
+        0x37 => DecodedInsn::new3("ld", OReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
+        0x39 => decode_cop!(cpu, opcode, pc, cop1, "swc1?"),
+        0x3A => decode_cop!(cpu, opcode, pc, cop2, "swc2?"),
+        0x3D => decode_cop!(cpu, opcode, pc, cop1, "sdc1?"),
+        0x3E => decode_cop!(cpu, opcode, pc, cop2, "sdc2?"),
+        0x3F => DecodedInsn::new3("sd", IReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
+
         _ => DecodedInsn::new1("unknown", Imm32(op)),
     }
 }
@@ -157,8 +183,8 @@ fn humanize(insn: DecodedInsn) -> DecodedInsn {
     }
 }
 
-pub(crate) fn decode(opcode: u32, pc: u64) -> DecodedInsn {
-    humanize(decode1(opcode, pc))
+pub(crate) fn decode(cpu: &Cpu, opcode: u32, pc: u64) -> DecodedInsn {
+    humanize(decode1(cpu, opcode, pc))
 }
 
 #[cfg(test)]

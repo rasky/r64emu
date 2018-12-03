@@ -1,6 +1,43 @@
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
+use super::decode::{DecodedInsn, REG_NAMES};
+use emu::dbg::Operand;
 use emu::int::Numerics;
 use slog;
+
+const COP0_REG_NAMES: [&'static str; 32] = [
+    "Index",
+    "Random",
+    "EntryLo0",
+    "EntryLo1",
+    "Context",
+    "PageMask",
+    "Wired",
+    "?7?",
+    "BadVAddr",
+    "Count",
+    "EntryHi",
+    "Compare",
+    "Status",
+    "Cause",
+    "EPC",
+    "PRId",
+    "Config",
+    "LLAddr",
+    "WatchLo",
+    "WatchHi",
+    "XContext",
+    "?21?",
+    "?22?",
+    "?23?",
+    "?24?",
+    "?25?",
+    "ParityError",
+    "CacheError",
+    "TagLo",
+    "TagHi",
+    "ErrorEPC",
+    "?31?",
+];
 
 pub struct Cp0 {
     reg_status: u64,
@@ -114,6 +151,24 @@ impl Cop for Cp0 {
                 }
             }
             _ => panic!("unimplemented COP0 opcode: func={:x?}", op.func()),
+        }
+    }
+
+    fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
+        use self::Operand::*;
+
+        let func = (opcode >> 21) & 0x1f;
+        let vrt = (opcode >> 16) as usize & 0x1f;
+        let vrd = (opcode >> 11) as usize & 0x1f;
+        let rt = REG_NAMES[vrt];
+        let rd = REG_NAMES[vrd];
+        let c0rt = COP0_REG_NAMES[vrt];
+        let c0rd = COP0_REG_NAMES[vrd];
+
+        match func {
+            0x00 => DecodedInsn::new2("mfc0", OReg(rt), IReg(c0rd)),
+            0x04 => DecodedInsn::new2("mtc0", IReg(rt), OReg(c0rd)),
+            _ => DecodedInsn::new1("cop0", Imm32(func)),
         }
     }
 }
