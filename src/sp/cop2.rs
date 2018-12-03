@@ -7,9 +7,10 @@ use super::vrcp;
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
 use emu::bus::MemInt;
+use emu::dbg::Operand;
 use emu::int::Numerics;
 use errors::*;
-use mips64::{Cop, CpuContext};
+use mips64::{Cop, CpuContext, DecodedInsn};
 use slog;
 use std::arch::x86_64::*;
 use std::cell::RefCell;
@@ -317,6 +318,14 @@ impl SpCop2 {
                     op.setaccum(0, _mm_sub_epi16(vs, diff));
                     op.setcarry(vzero);
                     op.setne(vzero);
+                }
+                0x13 => {
+                    // VABS
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let res = _mm_sign_epi16(vt, vs);
+                    op.setaccum(0, res);
+                    op.setvd(res);
                 }
                 0x14 => {
                     // VADDC
@@ -662,6 +671,7 @@ impl SpCop2 {
                     let res = op.vt_lane(se);
                     op.setvd_lane(op.rs() & 7, res);
                     // FIXME: update ACCUM with VMOV?
+                    op.setaccum(0, op.vt());
                 }
                 0x34 => {
                     // VRSQ
@@ -916,5 +926,40 @@ impl Cop for SpCop2 {
     }
     fn sdc(&mut self, _op: u32, _ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         unimplemented!()
+    }
+
+    fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
+        use self::Operand::*;
+
+        let op = opcode >> 26;
+        let func = opcode & 0x3F;
+        match op {
+            0x12 => match func {
+                _ => DecodedInsn::new1("cop2", Imm32(func)),
+            },
+            0x32 => {
+                let oploadstore = (opcode >> 11) & 0x1F;
+                match oploadstore {
+                    0x00 => DecodedInsn::new0("lbv"),
+                    0x01 => DecodedInsn::new0("lsv"),
+                    0x02 => DecodedInsn::new0("llv"),
+                    0x03 => DecodedInsn::new0("ldv"),
+                    0x04 => DecodedInsn::new0("lqv"),
+                    _ => DecodedInsn::new1("lwc2", Imm32(oploadstore)),
+                }
+            }
+            0x3A => {
+                let oploadstore = (opcode >> 11) & 0x1F;
+                match oploadstore {
+                    0x00 => DecodedInsn::new0("sbv"),
+                    0x01 => DecodedInsn::new0("ssv"),
+                    0x02 => DecodedInsn::new0("slv"),
+                    0x03 => DecodedInsn::new0("sdv"),
+                    0x04 => DecodedInsn::new0("sqv"),
+                    _ => DecodedInsn::new1("swc2", Imm32(oploadstore)),
+                }
+            }
+            _ => DecodedInsn::new0("unkcop2?"),
+        }
     }
 }
