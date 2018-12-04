@@ -42,8 +42,8 @@ fn decode1(cpu: &Cpu, opcode: u32, pc: u64) -> DecodedInsn {
     let imm16 = (opcode & 0xffff) as u16;
     let sximm32 = (opcode & 0xffff) as i16 as i32 as u32;
     let sximm64 = (opcode & 0xffff) as i16 as i64;
-    let btgt = (pc + sximm64 as u64 * 4) as u32;
-    let jtgt = ((pc & 0xFFFF_FFFF_F000_0000) + ((opcode as u64 & 0x03FF_FFFF) * 4)) as u32;
+    let btgt = (pc + 4 + sximm64 as u64 * 4) as u32;
+    let jtgt = (((pc + 4) & 0xFFFF_FFFF_F000_0000) + ((opcode as u64 & 0x03FF_FFFF) * 4)) as u32;
     let reghi = "hi".into();
     let reglo = "lo".into();
 
@@ -171,11 +171,12 @@ fn humanize(insn: DecodedInsn) -> DecodedInsn {
         "sll" if op0 == OReg(zr) && op1 == IReg(zr) => DecodedInsn::new0("nop"),
         "addi" | "addiu" | "ori" if op1 == IReg(zr) => DecodedInsn::new2("li", op0, op2),
         "bne" if op1 == IReg(zr) => DecodedInsn::new2("bnez", op0, op2),
+        "beq" if op0 == IReg(zr) && op1 == IReg(zr) => DecodedInsn::new1("j", op2), // relocatable encoding
         "beq" if op1 == IReg(zr) => DecodedInsn::new2("beqz", op0, op2),
         "bnel" if op1 == IReg(zr) => DecodedInsn::new2("bnezl", op0, op2),
         "beql" if op1 == IReg(zr) => DecodedInsn::new2("beqzl", op0, op2),
-        "beqz" | "bgez" if op0 == IReg(zr) => DecodedInsn::new1("j", op1), // relocatable encoding
-        "bgezal" if op0 == IReg(zr) => DecodedInsn::new1("jal", op1),      // relocatable encoding
+        "bgez" if op0 == IReg(zr) => DecodedInsn::new1("j", op1), // relocatable encoding
+        "bgezal" if op0 == IReg(zr) => DecodedInsn::new1("jal", op1), // relocatable encoding
         "or" if op1 == IReg(zr) && op2 == IReg(zr) => DecodedInsn::new2("li", op0, Imm32(0)),
         "or" if op1 == IReg(zr) => DecodedInsn::new2("move", op0, op2),
         "or" if op2 == IReg(zr) => DecodedInsn::new2("move", op0, op1),
