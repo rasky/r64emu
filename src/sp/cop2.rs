@@ -3,11 +3,11 @@ extern crate emu;
 use super::sp::Sp;
 use super::vmul;
 use super::vrcp;
+use super::decode::decode;
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
 use emu::bus::MemInt;
-use emu::dbg::Operand;
 use emu::int::Numerics;
 use errors::*;
 use mips64::{Cop, CpuContext, DecodedInsn};
@@ -927,39 +927,7 @@ impl Cop for SpCop2 {
     fn sdc(&mut self, _op: u32, _ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
         unimplemented!()
     }
-
     fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
-        use self::Operand::*;
-
-        let op = opcode >> 26;
-        let func = opcode & 0x3F;
-        match op {
-            0x12 => match func {
-                _ => DecodedInsn::new1("cop2", Imm32(func)),
-            },
-            0x32 => {
-                let oploadstore = (opcode >> 11) & 0x1F;
-                match oploadstore {
-                    0x00 => DecodedInsn::new0("lbv"),
-                    0x01 => DecodedInsn::new0("lsv"),
-                    0x02 => DecodedInsn::new0("llv"),
-                    0x03 => DecodedInsn::new0("ldv"),
-                    0x04 => DecodedInsn::new0("lqv"),
-                    _ => DecodedInsn::new1("lwc2", Imm32(oploadstore)),
-                }
-            }
-            0x3A => {
-                let oploadstore = (opcode >> 11) & 0x1F;
-                match oploadstore {
-                    0x00 => DecodedInsn::new0("sbv"),
-                    0x01 => DecodedInsn::new0("ssv"),
-                    0x02 => DecodedInsn::new0("slv"),
-                    0x03 => DecodedInsn::new0("sdv"),
-                    0x04 => DecodedInsn::new0("sqv"),
-                    _ => DecodedInsn::new1("swc2", Imm32(oploadstore)),
-                }
-            }
-            _ => DecodedInsn::new0("unkcop2?"),
-        }
+        decode(opcode, pc)
     }
 }

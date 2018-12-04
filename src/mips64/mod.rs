@@ -8,5 +8,5 @@ pub(crate) mod decode;
 
 pub use self::cp0::Cp0;
 pub use self::cpu::{Cop, Cop0, Cpu, CpuContext, Exception};
-pub use self::decode::DecodedInsn;
+pub use self::decode::{DecodedInsn, REG_NAMES};
 pub use self::fpu::Fpu;

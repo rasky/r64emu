@@ -1,8 +1,44 @@
 use super::{Sp, StatusFlags};
 use emu::bus::be::{Bus, DevPtr, Device};
-use emu::int::Numerics;
+use emu::dbg::Operand;
 use errors::*;
 use mips64;
+use mips64::{DecodedInsn, REG_NAMES};
+
+const RSP_COP0_REG_NAMES: [&'static str; 32] = [
+    "DMA_CACHE",
+    "DMA_DRAM",
+    "DMA_READ_LENGTH",
+    "DMA_WRITE_LENTGH",
+    "SP_STATUS",
+    "DMA_FULL",
+    "DMA_BUSY",
+    "SP_RESERVED",
+    "CMD_START",
+    "CMD_END",
+    "CMD_CURRENT",
+    "CMD_STATUS",
+    "CMD_CLOCK",
+    "CMD_BUSY",
+    "CMD_PIPE_BUSY",
+    "CMD_TMEM_BUSY",
+    "?16?",
+    "?17?",
+    "?18?",
+    "?19?",
+    "?20?",
+    "?21?",
+    "?22?",
+    "?23?",
+    "?24?",
+    "?25?",
+    "?26?",
+    "?27?",
+    "?28?",
+    "?29?",
+    "?30?",
+    "?31?",
+];
 
 pub struct SpCop0 {
     sp: DevPtr<Sp>,
@@ -104,6 +140,24 @@ impl mips64::Cop for SpCop0 {
                 op.cop0.reg_bus.write::<u32>(rd * 4, op.rt32());
             }
             _ => panic!("unimplemented RSP COP0 opcode: func={:x?}", op.func()),
+        }
+    }
+
+    fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
+        use self::Operand::*;
+
+        let func = (opcode >> 21) & 0x1f;
+        let vrt = (opcode >> 16) as usize & 0x1f;
+        let vrd = (opcode >> 11) as usize & 0x1f;
+        let rt = REG_NAMES[vrt];
+        let rd = REG_NAMES[vrd];
+        let c0rt = RSP_COP0_REG_NAMES[vrt];
+        let c0rd = RSP_COP0_REG_NAMES[vrd];
+
+        match func {
+            0x00 => DecodedInsn::new2("mfc0", OReg(rt), IReg(c0rd)),
+            0x04 => DecodedInsn::new2("mtc0", IReg(rt), OReg(c0rd)),
+            _ => DecodedInsn::new1("cop0", Imm32(func)),
         }
     }
 }
