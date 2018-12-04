@@ -5,12 +5,15 @@ authors = ["Giovanni Bajo <rasky@develer.com>"]
 
 [workspace]
 members = [
-    "emu"
+    "emu",
+    "emu/emu-derive",
+    "emu/cpu/mips64",
 ]
 
 [dependencies]
 emu = {path =  "./emu"}
 emu_derive = {path =  "./emu/emu-derive"}
+mips64 = {path =  "./emu/cpu/mips64"}
 num = "0.1.42"
 error-chain = "0.12.0"
 pretty-hex = "0.1.0"

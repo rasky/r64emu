@@ -1,0 +1,10 @@
+[package]
+name = "mips64"
+version = "0.1.0"
+authors = ["Giovanni Bajo <rasky@develer.com>"]
+
+[dependencies]
+emu = { path =  "../../../emu" }
+slog = "^2"
+num = "0.1.42"
+byteorder = "1"

@@ -187,26 +187,3 @@ fn humanize(insn: DecodedInsn) -> DecodedInsn {
 pub(crate) fn decode(cpu: &Cpu, opcode: u32, pc: u64) -> DecodedInsn {
     humanize(decode1(cpu, opcode, pc))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{decode1, humanize};
-
-    fn dis(op: u32, pc: u64) -> String {
-        decode1(op, pc).disasm()
-    }
-    fn hdis(op: u32, pc: u64) -> String {
-        humanize(decode1(op, pc)).disasm()
-    }
-
-    #[test]
-    fn disasm() {
-        assert_eq!(dis(0x24040386, 0), "addiu\ta0,zr,0x386");
-    }
-
-    #[test]
-    fn humanize() {
-        assert_eq!(hdis(0x24040386, 0), "li\ta0,0x386");
-    }
-
-}

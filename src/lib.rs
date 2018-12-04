@@ -1,6 +1,5 @@
 #![feature(nll)]
 #![feature(stdsimd)]
-#![feature(arbitrary_self_types)]
 
 #[macro_use]
 extern crate slog;
@@ -10,6 +9,7 @@ extern crate emu_derive;
 extern crate byteorder;
 #[macro_use]
 extern crate emu;
+extern crate mips64;
 
 extern crate packed_simd;
 
@@ -32,7 +32,6 @@ mod rdp;
 pub mod ai;
 pub mod cartridge;
 pub mod dp;
-pub mod mips64;
 pub mod pi;
 pub mod ri;
 pub mod si;

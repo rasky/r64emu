@@ -1,4 +1,11 @@
+#![feature(nll)]
+#![feature(arbitrary_self_types)]
+
+extern crate emu;
 extern crate num;
+
+#[macro_use]
+extern crate slog;
 
 mod cp0;
 mod cpu;

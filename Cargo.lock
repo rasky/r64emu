@@ -712,6 +712,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mips64"
+version = "0.1.0"
+dependencies = [
+ "byteorder 1.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "emu 0.1.0",
+ "num 0.1.42 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slog 2.4.1 (git+https://github.com/rasky/slog?branch=nothreads)",
+]
+
+[[package]]
 name = "native-tls"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -941,6 +951,7 @@ dependencies = [
  "failure 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "image 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mips64 0.1.0",
  "num 0.1.42 (registry+https://github.com/rust-lang/crates.io-index)",
  "packed_simd 0.3.1 (git+https://github.com/rust-lang-nursery/packed_simd)",
  "pretty-hex 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
