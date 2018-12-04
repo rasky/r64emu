@@ -26,13 +26,13 @@ pub struct N64 {
     cart: DevPtr<Cartridge>,
     paused: bool,
 
-    pi: DevPtr<Pi>,
-    si: DevPtr<Si>,
+    _pi: DevPtr<Pi>,
+    _si: DevPtr<Si>,
     sp: DevPtr<Sp>,
-    dp: DevPtr<Dp>,
+    _dp: DevPtr<Dp>,
     vi: DevPtr<Vi>,
-    ai: DevPtr<Ai>,
-    ri: DevPtr<Ri>,
+    _ai: DevPtr<Ai>,
+    _ri: DevPtr<Ri>,
 }
 
 impl N64 {
@@ -46,8 +46,8 @@ impl N64 {
 
         const RDRAM_CLOCK: i64 = X1 * 17;
         const MAIN_CLOCK: i64 = RDRAM_CLOCK / 4;
-        const PIF_CLOCK: i64 = MAIN_CLOCK / 4;
-        const CARTRIDGE_CLOCK: i64 = PIF_CLOCK / 8; // 1.953 MHZ
+        const _PIF_CLOCK: i64 = MAIN_CLOCK / 4;
+        const _CARTRIDGE_CLOCK: i64 = _PIF_CLOCK / 8; // 1.953 MHZ
         const VCLK: i64 = X2 * 17 / 5; // 48.6812 MHZ
 
         let mut sync = sync::Sync::new(
@@ -125,14 +125,14 @@ impl N64 {
             cpu,
             cart,
             bus,
-            pi,
-            si,
-            sp,
-            dp,
-            vi,
-            ai,
-            ri,
             paused: false,
+            _pi: pi,
+            _si: si,
+            sp: sp,
+            _dp: dp,
+            vi: vi,
+            _ai: ai,
+            _ri: ri,
         });
     }
 
