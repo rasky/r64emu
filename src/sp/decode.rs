@@ -14,7 +14,7 @@ const VMEM_FMT: &'static str = "{}[e{}],{}({})";
 const VREG2_FMT: &'static str = "{},{}[e{}]";
 const VREG3_FMT: &'static str = "{},{},{}[e{}]";
 
-pub(crate) fn decode(opcode: u32, pc: u64) -> DecodedInsn {
+pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
     use self::Operand::*;
 
     let op = opcode >> 26;

@@ -1,4 +1,4 @@
-use emu::bus::be::{Bus, DevPtr, Mem};
+use emu::bus::be::{Bus, DevPtr};
 use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;

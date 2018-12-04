@@ -86,9 +86,6 @@ impl<'a> C0op<'a> {
     fn rt64(&self) -> u64 {
         self.cpu.regs[self.rt()]
     }
-    fn rt32(&self) -> u32 {
-        self.rt64() as u32
-    }
 }
 
 impl Cop for Cp0 {
@@ -154,15 +151,15 @@ impl Cop for Cp0 {
         }
     }
 
-    fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
+    fn decode(&self, opcode: u32, _pc: u64) -> DecodedInsn {
         use self::Operand::*;
 
         let func = (opcode >> 21) & 0x1f;
         let vrt = (opcode >> 16) as usize & 0x1f;
         let vrd = (opcode >> 11) as usize & 0x1f;
         let rt = REG_NAMES[vrt];
-        let rd = REG_NAMES[vrd];
-        let c0rt = COP0_REG_NAMES[vrt];
+        let _rd = REG_NAMES[vrd];
+        let _c0rt = COP0_REG_NAMES[vrt];
         let c0rd = COP0_REG_NAMES[vrd];
 
         match func {

@@ -17,7 +17,7 @@ pub trait Cop {
     fn set_reg(&mut self, idx: usize, val: u128);
 
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32);
-    fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
+    fn decode(&self, _opcode: u32, _pc: u64) -> DecodedInsn {
         DecodedInsn::new0("unkcop")
     }
 
@@ -190,9 +190,6 @@ impl<'a> Mipsop<'a> {
     }
     fn mrd64(&'a mut self) -> &'a mut u64 {
         &mut self.cpu.ctx.regs[self.rd()]
-    }
-    fn hex(&self) -> String {
-        format!("{:x}", self.opcode)
     }
 }
 

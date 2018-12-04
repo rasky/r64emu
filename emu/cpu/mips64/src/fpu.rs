@@ -8,13 +8,13 @@ use std::marker::PhantomData;
 
 pub struct Fpu {
     regs: [u64; 32],
-    fir: u64,
+    _fir: u64,
     fccr: u64,
-    fexr: u64,
-    fenr: u64,
+    _fexr: u64,
+    _fenr: u64,
     fcsr: u64,
 
-    logger: slog::Logger,
+    _logger: slog::Logger,
 }
 
 trait FloatRawConvert {
@@ -60,7 +60,7 @@ impl FloatRawConvert for f64 {
 struct Fop<'a, F: Float + FloatRawConvert> {
     opcode: u32,
     fpu: &'a mut Fpu,
-    cpu: &'a mut CpuContext,
+    _cpu: &'a mut CpuContext,
     phantom: PhantomData<F>,
 }
 
@@ -125,12 +125,12 @@ impl Fpu {
     pub fn new(logger: slog::Logger) -> Box<Fpu> {
         Box::new(Fpu {
             regs: [0u64; 32],
-            fir: 0,
+            _fir: 0,
             fccr: 0,
-            fexr: 0,
-            fenr: 0,
+            _fexr: 0,
+            _fenr: 0,
             fcsr: 0,
-            logger,
+            _logger: logger,
         })
     }
 
@@ -157,7 +157,7 @@ impl Fpu {
         let mut op = Fop::<M> {
             opcode,
             fpu: self,
-            cpu,
+            _cpu: cpu,
             phantom: PhantomData,
         };
         match op.func() {

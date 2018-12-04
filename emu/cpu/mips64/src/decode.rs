@@ -1,7 +1,6 @@
 extern crate emu;
 use super::cpu::Cpu;
 use emu::dbg::Operand;
-use std::fmt;
 
 // Decoding format for arguments of load/store ops
 const MEMOP_FMT: &'static str = "{},{}({})";
@@ -166,7 +165,7 @@ fn humanize(insn: DecodedInsn) -> DecodedInsn {
     let op0 = insn.args[0];
     let op1 = insn.args[1];
     let op2 = insn.args[2];
-    let op3 = insn.args[3];
+    let _op3 = insn.args[3];
     match insn.op {
         "sll" if op0 == OReg(zr) && op1 == IReg(zr) => DecodedInsn::new0("nop"),
         "addi" | "addiu" | "ori" if op1 == IReg(zr) => DecodedInsn::new2("li", op0, op2),

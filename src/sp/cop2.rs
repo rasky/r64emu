@@ -1,9 +1,9 @@
 extern crate emu;
 
+use super::decode::decode;
 use super::sp::Sp;
 use super::vmul;
 use super::vrcp;
-use super::decode::decode;
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
@@ -23,10 +23,10 @@ use std::rc::Rc;
 struct VectorReg([u8; 16]);
 
 impl VectorReg {
-    fn byte(&self, idx: usize) -> u8 {
+    fn _byte(&self, idx: usize) -> u8 {
         self.0[7 - idx]
     }
-    fn setbyte(&mut self, idx: usize, val: u8) {
+    fn _setbyte(&mut self, idx: usize, val: u8) {
         self.0[7 - idx] = val;
     }
 
@@ -63,7 +63,7 @@ pub(crate) struct SpCop2 {
     div_in: Option<u32>,
     div_out: u32,
     sp: DevPtr<Sp>,
-    logger: slog::Logger,
+    _logger: slog::Logger,
 }
 
 impl SpCop2 {
@@ -86,7 +86,7 @@ impl SpCop2 {
             div_in: None,
             div_out: 0,
             sp: sp.clone(),
-            logger,
+            _logger: logger,
         }))
     }
 
@@ -308,8 +308,6 @@ impl SpCop2 {
                     // was an overflow.
                     // NOTE: the carry register is either 0x0 or 0xFFFF (-1), so add/sub
                     // operations are reversed.
-                    let zero = _mm_setzero_si128();
-
                     let diff = _mm_sub_epi16(vt, carry);
                     let sdiff = _mm_subs_epi16(vt, carry);
                     let mask = _mm_cmpgt_epi16(sdiff, diff);

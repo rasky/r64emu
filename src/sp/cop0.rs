@@ -43,7 +43,7 @@ const RSP_COP0_REG_NAMES: [&'static str; 32] = [
 pub struct SpCop0 {
     sp: DevPtr<Sp>,
     reg_bus: Box<Bus>, // bus to access SP HW registers via MTC/MFC
-    logger: slog::Logger,
+    _logger: slog::Logger,
 }
 
 impl SpCop0 {
@@ -54,7 +54,7 @@ impl SpCop0 {
         sp.borrow().dev_map(&mut reg_bus, 1, 0x0000_0000)?;
 
         Ok(Box::new(SpCop0 {
-            logger: logger,
+            _logger: logger,
             sp: sp.clone(),
             reg_bus: reg_bus,
         }))
@@ -71,7 +71,7 @@ impl<'a> C0op<'a> {
     fn func(&self) -> usize {
         ((self.opcode >> 21) & 0x1f) as usize
     }
-    fn sel(&self) -> u32 {
+    fn _sel(&self) -> u32 {
         self.opcode & 7
     }
     fn rt(&self) -> usize {
@@ -143,15 +143,15 @@ impl mips64::Cop for SpCop0 {
         }
     }
 
-    fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
+    fn decode(&self, opcode: u32, _pc: u64) -> DecodedInsn {
         use self::Operand::*;
 
         let func = (opcode >> 21) & 0x1f;
         let vrt = (opcode >> 16) as usize & 0x1f;
         let vrd = (opcode >> 11) as usize & 0x1f;
         let rt = REG_NAMES[vrt];
-        let rd = REG_NAMES[vrd];
-        let c0rt = RSP_COP0_REG_NAMES[vrt];
+        let _rd = REG_NAMES[vrd];
+        let _c0rt = RSP_COP0_REG_NAMES[vrt];
         let c0rd = RSP_COP0_REG_NAMES[vrd];
 
         match func {

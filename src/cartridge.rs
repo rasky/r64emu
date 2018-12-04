@@ -2,7 +2,7 @@ extern crate crc;
 extern crate emu;
 
 use self::crc::crc32;
-use emu::bus::be::{Mem, MemFlags, Reg16, Reg32};
+use emu::bus::be::{Mem, MemFlags, Reg32};
 use errors::*;
 use std::fs::File;
 use std::io::Read;
