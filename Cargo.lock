@@ -1299,7 +1299,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "slog"
 version = "2.4.1"
-source = "git+https://github.com/rasky/slog?branch=nothreads#6c5bd8199bf7ea9a195802544b0209cfb58ed877"
+source = "git+https://github.com/rasky/slog?branch=nothreads#50fba7b7be77782007148cca04983346613bd504"
 
 [[package]]
 name = "slog-term"
