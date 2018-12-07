@@ -21,7 +21,7 @@ gl = "0.10.0"
 runtime-fmt = "0.3.0"
 
 [dependencies.sdl2]
-version = "0.31.0"
+version = "^0"
 features = ["static-link","bundled"]
 
 [dependencies.slog]

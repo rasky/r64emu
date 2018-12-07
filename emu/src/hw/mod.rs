@@ -168,17 +168,6 @@ impl Output {
                 v.window.gl_swap_window();
                 v.update_fps();
 
-                // Workaround for SDL on Mac bug: the GL context is not visible until
-                // the window is moved or resized.
-                // TODO: remove this once rust-sdl2 is upgraded to SDL 2.0.9.
-                if self.framecount == 0 {
-                    #[cfg(target_os = "macos")]
-                    let (x, y) = v.window.position();
-                    #[cfg(target_os = "macos")]
-                    v.window
-                        .set_position(WindowPos::Positioned(x), WindowPos::Positioned(y));
-                }
-
                 self.framecount += 1;
             }
         }
