@@ -10,6 +10,7 @@ extern crate toml;
 
 use byteorder::{BigEndian, ByteOrder};
 use emu::bus::be::{Bus, DevPtr};
+use emu::dbg::Tracer;
 use r64emu::sp::Sp;
 use slog::Discard;
 use std::borrow;
@@ -160,7 +161,7 @@ fn test_golden(testname: &str) {
             main_bus.borrow().write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
             let cpu = sp.borrow().core_cpu.clone();
             let clock = cpu.borrow().ctx().clock;
-            cpu.borrow_mut().run(clock + 1000);
+            cpu.borrow_mut().run(clock + 1000, None).unwrap();
         }
 
         // Read the results

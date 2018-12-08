@@ -4,6 +4,7 @@ extern crate emu;
 extern crate slog;
 use super::rdp::Rdp;
 use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
+use emu::dbg;
 use emu::int::Numerics;
 use emu::sync;
 use std::cell::RefCell;
@@ -137,11 +138,11 @@ impl Dp {
 }
 
 impl sync::Subsystem for Dp {
-    fn run(&mut self, until: i64) {
+    fn run(&mut self, until: i64, _: Option<&dyn dbg::Tracer>) -> dbg::Result {
         loop {
             if !self.running {
                 self.cycles = until;
-                return;
+                return Ok(());
             }
 
             let mut curr_addr = self.cmd_current_ref();
@@ -156,7 +157,7 @@ impl sync::Subsystem for Dp {
                 *curr_addr += 8;
                 self.cycles += 1;
                 if self.cycles >= until {
-                    return;
+                    return Ok(());
                 }
             }
 
@@ -164,6 +165,7 @@ impl sync::Subsystem for Dp {
             // check if there's a new buffer pending
             self.running = false;
             self.check_start();
+            return Ok(());
         }
     }
 

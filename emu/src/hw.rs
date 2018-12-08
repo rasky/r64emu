@@ -117,7 +117,7 @@ impl Output {
             cfg: Rc::new(cfg),
             context: sdl2::init()?,
             video: None,
-            debug: false,
+            debug: true,
             framecount: 0,
         })
     }

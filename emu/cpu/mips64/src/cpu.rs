@@ -1,13 +1,14 @@
-extern crate byteorder;
-extern crate emu;
-
-use self::byteorder::ByteOrder;
-use self::emu::bus::be::{Bus, MemIoR};
-use self::emu::bus::MemInt;
-use self::emu::int::Numerics;
-use self::emu::sync;
 use super::decode::{decode, DecodedInsn};
+
+use emu::bus::be::{Bus, MemIoR};
+use emu::bus::MemInt;
+use emu::dbg::{DebuggerRenderer, DisasmView, RegisterSize, RegisterView, Result, Tracer};
+use emu::int::Numerics;
+use emu::sync;
+
+use byteorder::ByteOrder;
 use slog;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -593,12 +594,12 @@ impl Cpu {
             .write::<U>(addr & self.bus_write_mask & !(U::SIZE as u32 - 1), val);
     }
 
-    pub fn run(&mut self, until: i64) {
+    pub fn run(&mut self, until: i64, tracer: Option<&dyn Tracer>) -> Result {
         self.until = until;
         while self.ctx.clock < self.until {
             if self.ctx.lines.halt {
                 self.ctx.clock = self.until;
-                return;
+                return Ok(());
             }
 
             if let Some(ref mut cop0) = self.cop0 {
@@ -617,17 +618,21 @@ impl Cpu {
                 self.ctx.pc = self.ctx.next_pc;
                 self.ctx.next_pc += 4;
                 self.op(op);
+                tracer
+                    .map(|t| t.trace_insn(0, self.ctx.next_pc))
+                    .unwrap_or(Ok(()))?;
                 if self.ctx.clock >= self.until || self.ctx.tight_exit {
                     break;
                 }
             }
         }
+        Ok(())
     }
 }
 
 impl sync::Subsystem for Box<Cpu> {
-    fn run(&mut self, until: i64) {
-        Cpu::run(self, until)
+    fn run(&mut self, until: i64, tracer: Option<&dyn Tracer>) -> Result {
+        Cpu::run(self, until, tracer)
     }
 
     fn cycles(&self) -> i64 {
@@ -645,8 +650,6 @@ impl Cpu {
         dr.render_disasmview(self);
     }
 }
-
-use self::emu::dbg::{DebuggerRenderer, DisasmView, RegisterSize, RegisterView};
 
 impl RegisterView for Box<Cpu> {
     const WINDOW_SIZE: (f32, f32) = (380.0, 400.0);
@@ -731,6 +734,6 @@ impl DisasmView for Box<Cpu> {
     }
 
     fn step(&mut self) {
-        self.run(self.ctx.clock + 1);
+        self.run(self.ctx.clock + 1, None).unwrap();
     }
 }

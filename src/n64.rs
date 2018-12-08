@@ -177,12 +177,11 @@ impl DebuggerModel for N64 {
     ) -> dbg::Result {
         let mut vi = self.vi.clone();
         self.sync.trace_frame(
-            move |evt, tracer| match evt {
+            move |evt| match evt {
                 sync::Event::HSync(x, y) if x == 0 => {
                     vi.borrow_mut().set_line(y);
-                    tracer.trace_gpu(y)
                 }
-                _ => Ok(()),
+                _ => {}
             },
             tracer,
         )?;

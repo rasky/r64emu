@@ -1,7 +1,7 @@
 use array_macro::array;
 use rustc_hash::FxHashMap;
 
-use crate::bus::MemInt;
+use crate::bus::{AccessSize, MemInt};
 
 use std::cell::Cell;
 use std::time::Instant;
@@ -27,8 +27,8 @@ pub type Result = std::result::Result<(), TraceEvent>;
 /// debugger tracing.
 pub trait Tracer {
     fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result;
-    fn trace_mem_write<T: MemInt>(&self, cpu_idx: usize, addr: u64, val: T) -> Result;
-    fn trace_mem_read<T: MemInt>(&self, cpu_idx: usize, addr: u64, val: T) -> Result;
+    fn trace_mem_write(&self, cpu_idx: usize, addr: u64, size: AccessSize, val: u64) -> Result;
+    fn trace_mem_read(&self, cpu_idx: usize, addr: u64, size: AccessSize, val: u64) -> Result;
     fn trace_gpu(&self, line: usize) -> Result;
 }
 
@@ -39,10 +39,10 @@ impl Tracer for NullTracer {
     fn trace_insn(&self, _cpu_idx: usize, _pc: u64) -> Result {
         Ok(())
     }
-    fn trace_mem_write<T: MemInt>(&self, _cpu_idx: usize, _addr: u64, _val: T) -> Result {
+    fn trace_mem_write(&self, _cpu_idx: usize, _addr: u64, _size: AccessSize, _val: u64) -> Result {
         Ok(())
     }
-    fn trace_mem_read<T: MemInt>(&self, _cpu_idx: usize, _addr: u64, _val: T) -> Result {
+    fn trace_mem_read(&self, _cpu_idx: usize, _addr: u64, _size: AccessSize, _val: u64) -> Result {
         Ok(())
     }
     fn trace_gpu(&self, _line: usize) -> Result {
@@ -121,7 +121,7 @@ impl Tracer for Debugger {
         }
     }
 
-    fn trace_mem_read<T: MemInt>(&self, cpu_idx: usize, addr: u64, val: T) -> Result {
+    fn trace_mem_read(&self, cpu_idx: usize, addr: u64, _size: AccessSize, val: u64) -> Result {
         match self.cpus[cpu_idx].read_watchpoints.get(&addr) {
             Some(ref wp) if wp.active && wp.condition.check(val) => {
                 Err(TraceEvent::WatchpointRead(cpu_idx, addr))
@@ -130,7 +130,7 @@ impl Tracer for Debugger {
         }
     }
 
-    fn trace_mem_write<T: MemInt>(&self, cpu_idx: usize, addr: u64, val: T) -> Result {
+    fn trace_mem_write(&self, cpu_idx: usize, addr: u64, _size: AccessSize, val: u64) -> Result {
         match self.cpus[cpu_idx].write_watchpoints.get(&addr) {
             Some(ref wp) if wp.active && wp.condition.check(val) => {
                 Err(TraceEvent::WatchpointWrite(cpu_idx, addr))
