@@ -8,7 +8,7 @@ use std::time::Instant;
 
 const DEBUGGER_MAX_CPU: usize = 8;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 pub enum TraceEvent {
     Poll(), // Fake event used to poll back into the tracer to improve responsiveness
     Breakpoint(usize, u64), // A breakpoint was hit at the specified PC
@@ -18,7 +18,7 @@ pub enum TraceEvent {
     GenericBreak(&'static str), // Another kind of condition was hit, and we want to stop the tracing.
 }
 
-pub type Result = std::result::Result<(), TraceEvent>;
+pub type Result<T> = std::result::Result<T, Box<TraceEvent>>;
 
 /// A tracer is a debugger that can do fine-grained tracing of an emulator
 /// and trigger specific events when a certain condition is reached (eg: a
@@ -26,26 +26,38 @@ pub type Result = std::result::Result<(), TraceEvent>;
 /// It is passed as argument to DebuggerModel::trace, as entry-point for
 /// debugger tracing.
 pub trait Tracer {
-    fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result;
-    fn trace_mem_write(&self, cpu_idx: usize, addr: u64, size: AccessSize, val: u64) -> Result;
-    fn trace_mem_read(&self, cpu_idx: usize, addr: u64, size: AccessSize, val: u64) -> Result;
-    fn trace_gpu(&self, line: usize) -> Result;
+    fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result<()>;
+    fn trace_mem_write(&self, cpu_idx: usize, addr: u64, size: AccessSize, val: u64) -> Result<()>;
+    fn trace_mem_read(&self, cpu_idx: usize, addr: u64, size: AccessSize, val: u64) -> Result<()>;
+    fn trace_gpu(&self, line: usize) -> Result<()>;
 }
 
 // A dummy tracer that never returns a tracing event.
 pub struct NullTracer {}
 
 impl Tracer for NullTracer {
-    fn trace_insn(&self, _cpu_idx: usize, _pc: u64) -> Result {
+    fn trace_insn(&self, _cpu_idx: usize, _pc: u64) -> Result<()> {
         Ok(())
     }
-    fn trace_mem_write(&self, _cpu_idx: usize, _addr: u64, _size: AccessSize, _val: u64) -> Result {
+    fn trace_mem_write(
+        &self,
+        _cpu_idx: usize,
+        _addr: u64,
+        _size: AccessSize,
+        _val: u64,
+    ) -> Result<()> {
         Ok(())
     }
-    fn trace_mem_read(&self, _cpu_idx: usize, _addr: u64, _size: AccessSize, _val: u64) -> Result {
+    fn trace_mem_read(
+        &self,
+        _cpu_idx: usize,
+        _addr: u64,
+        _size: AccessSize,
+        _val: u64,
+    ) -> Result<()> {
         Ok(())
     }
-    fn trace_gpu(&self, _line: usize) -> Result {
+    fn trace_gpu(&self, _line: usize) -> Result<()> {
         Ok(())
     }
 }
@@ -114,39 +126,45 @@ impl Debugger {
 }
 
 impl Tracer for Debugger {
-    fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result {
+    fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result<()> {
         match self.cpus[cpu_idx].breakpoints.get(&pc) {
-            Some(ref bp) if bp.active => Err(TraceEvent::Breakpoint(cpu_idx, pc)),
+            Some(ref bp) if bp.active => Err(box TraceEvent::Breakpoint(cpu_idx, pc)),
             _ => Ok(()),
         }
     }
 
-    fn trace_mem_read(&self, cpu_idx: usize, addr: u64, _size: AccessSize, val: u64) -> Result {
+    fn trace_mem_read(&self, cpu_idx: usize, addr: u64, _size: AccessSize, val: u64) -> Result<()> {
         match self.cpus[cpu_idx].read_watchpoints.get(&addr) {
             Some(ref wp) if wp.active && wp.condition.check(val) => {
-                Err(TraceEvent::WatchpointRead(cpu_idx, addr))
+                Err(box TraceEvent::WatchpointRead(cpu_idx, addr))
             }
             _ => Ok(()),
         }
     }
 
-    fn trace_mem_write(&self, cpu_idx: usize, addr: u64, _size: AccessSize, val: u64) -> Result {
+    fn trace_mem_write(
+        &self,
+        cpu_idx: usize,
+        addr: u64,
+        _size: AccessSize,
+        val: u64,
+    ) -> Result<()> {
         match self.cpus[cpu_idx].write_watchpoints.get(&addr) {
             Some(ref wp) if wp.active && wp.condition.check(val) => {
-                Err(TraceEvent::WatchpointWrite(cpu_idx, addr))
+                Err(box TraceEvent::WatchpointWrite(cpu_idx, addr))
             }
             _ => Ok(()),
         }
     }
 
-    fn trace_gpu(&self, _line: usize) -> Result {
+    fn trace_gpu(&self, _line: usize) -> Result<()> {
         // Check if the polling interval is elapsed. Do this only every line
         // (not every insn or memory access, since otherwise the overhead is
         // too big).
         if let Some(poll_when) = self.next_poll.get() {
             if poll_when <= Instant::now() {
                 self.next_poll.set(None);
-                return Err(TraceEvent::Poll());
+                return Err(box TraceEvent::Poll());
             }
         }
         Ok(())

@@ -37,8 +37,11 @@ pub trait DebuggerModel {
     ///
     /// After a TraceEvent is returned and processed by the debugger, emulation of the
     /// frame will be resumed by calling run_frame with the same screen buffer.
-    fn trace_frame<T: Tracer>(&mut self, screen: &mut GfxBufferMutLE<Rgb888>, tracer: &T)
-        -> Result;
+    fn trace_frame<T: Tracer>(
+        &mut self,
+        screen: &mut GfxBufferMutLE<Rgb888>,
+        tracer: &T,
+    ) -> Result<()>;
 
     fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>);
 }
@@ -109,8 +112,10 @@ impl DebuggerUI {
                     self.tex_screen.copy_from_buffer_mut(screen);
                     return true;
                 }
-                Err(TraceEvent::Poll()) => return false, // Polling
-                Err(_) => unimplemented!(),
+                Err(event) => match *event {
+                    TraceEvent::Poll() => return false, // Polling
+                    _ => unimplemented!(),
+                },
             };
         }
     }

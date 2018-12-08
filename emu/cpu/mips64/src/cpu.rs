@@ -367,7 +367,7 @@ impl Cpu {
         unimplemented!();
     }
 
-    fn op(&mut self, opcode: u32) {
+    fn op(&mut self, opcode: u32, t: Option<&dyn Tracer>) -> Result<()> {
         self.ctx.clock += 1;
         let mut op = Mipsop { opcode, cpu: self };
         match op.op() {
@@ -506,31 +506,35 @@ impl Cpu {
             0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()), // DADDI
             0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,        // DADDIU
 
-            0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea()).sx64(), // LB
-            0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea()).sx64(), // LH
-            0x22 => *op.mrt64() = op.cpu.lwl(op.ea(), op.rt32()).sx64(), // LWL
-            0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea()).sx64(), // LW
-            0x24 => *op.mrt64() = op.cpu.read::<u8>(op.ea()) as u64, // LBU
-            0x25 => *op.mrt64() = op.cpu.read::<u16>(op.ea()) as u64, // LHU
-            0x26 => *op.mrt64() = op.cpu.lwr(op.ea(), op.rt32()).sx64(), // LWR
-            0x27 => *op.mrt64() = op.cpu.read::<u32>(op.ea()) as u64, // LWU
-            0x28 => op.cpu.write::<u8>(op.ea(), op.rt32() as u8),    // SB
-            0x29 => op.cpu.write::<u16>(op.ea(), op.rt32() as u16),  // SH
-            0x2A => op.cpu.write::<u32>(op.ea(), op.cpu.swl(op.ea(), op.rt32())), // SWL
-            0x2B => op.cpu.write::<u32>(op.ea(), op.rt32()),         // SW
-            0x2E => op.cpu.write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32())), // SWR
-            0x2F => {}                                               // CACHE
+            0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)?.sx64(), // LB
+            0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)?.sx64(), // LH
+            0x22 => *op.mrt64() = op.cpu.lwl(op.ea(), op.rt32(), t)?.sx64(), // LWL
+            0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea(), t)?.sx64(), // LW
+            0x24 => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)? as u64, // LBU
+            0x25 => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)? as u64, // LHU
+            0x26 => *op.mrt64() = op.cpu.lwr(op.ea(), op.rt32(), t)?.sx64(), // LWR
+            0x27 => *op.mrt64() = op.cpu.read::<u32>(op.ea(), t)? as u64, // LWU
+            0x28 => op.cpu.write::<u8>(op.ea(), op.rt32() as u8, t)?,    // SB
+            0x29 => op.cpu.write::<u16>(op.ea(), op.rt32() as u16, t)?,  // SH
+            0x2A => op
+                .cpu
+                .write::<u32>(op.ea(), op.cpu.swl(op.ea(), op.rt32(), t)?, t)?, // SWL
+            0x2B => op.cpu.write::<u32>(op.ea(), op.rt32(), t)?,         // SW
+            0x2E => op
+                .cpu
+                .write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32(), t)?, t)?, // SWR
+            0x2F => {}                                                   // CACHE
 
             0x31 => if_cop!(op, cop1, cop1.lwc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LWC1
             0x32 => if_cop!(op, cop2, cop2.lwc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LWC2
             0x35 => if_cop!(op, cop1, cop1.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC1
             0x36 => if_cop!(op, cop2, cop2.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC2
-            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea()),                        // LD
+            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea(), t)?,                    // LD
             0x39 => if_cop!(op, cop1, cop1.swc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SWC1
             0x3A => if_cop!(op, cop2, cop2.swc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SWC2
             0x3D => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SDC1
             0x3E => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SDC2
-            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64()),                          // SD
+            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64(), t)?,                      // SD
 
             _ => {
                 panic!(
@@ -539,35 +543,36 @@ impl Cpu {
                     op.cpu.ctx.pc.hex()
                 );
             }
-        }
+        };
+        Ok(())
     }
 
-    fn lwl(&self, addr: u32, reg: u32) -> u32 {
-        let mem = self.read::<u32>(addr);
+    fn lwl(&self, addr: u32, reg: u32, t: Option<&dyn Tracer>) -> Result<u32> {
+        let mem = self.read::<u32>(addr, t)?;
         let shift = (addr & 3) * 8;
         let mask = (1 << shift) - 1;
-        (reg & mask) | ((mem << shift) & !mask)
+        Ok((reg & mask) | ((mem << shift) & !mask))
     }
 
-    fn lwr(&self, addr: u32, reg: u32) -> u32 {
-        let mem = self.read::<u32>(addr);
+    fn lwr(&self, addr: u32, reg: u32, t: Option<&dyn Tracer>) -> Result<u32> {
+        let mem = self.read::<u32>(addr, t)?;
         let shift = (!addr & 3) * 8;
         let mask = ((1u64 << (32 - shift)) - 1) as u32;
-        (reg & !mask) | ((mem >> shift) & mask)
+        Ok((reg & !mask) | ((mem >> shift) & mask))
     }
 
-    fn swl(&self, addr: u32, reg: u32) -> u32 {
-        let mem = self.read::<u32>(addr);
+    fn swl(&self, addr: u32, reg: u32, t: Option<&dyn Tracer>) -> Result<u32> {
+        let mem = self.read::<u32>(addr, t)?;
         let shift = (addr & 3) * 8;
         let mask = ((1u64 << (32 - shift)) - 1) as u32;
-        (mem & !mask) | ((reg >> shift) & mask)
+        Ok((mem & !mask) | ((reg >> shift) & mask))
     }
 
-    fn swr(&self, addr: u32, reg: u32) -> u32 {
-        let mem = self.read::<u32>(addr);
+    fn swr(&self, addr: u32, reg: u32, t: Option<&dyn Tracer>) -> Result<u32> {
+        let mem = self.read::<u32>(addr, t)?;
         let shift = (!addr & 3) * 8;
         let mask = (1 << shift) - 1;
-        (mem & mask) | ((reg << shift) & !mask)
+        Ok((mem & mask) | ((reg << shift) & !mask))
     }
 
     fn fetch(&mut self, addr: u64) -> &MemIoR<u32> {
@@ -582,19 +587,27 @@ impl Cpu {
         &self.last_fetch_mem
     }
 
-    fn read<U: MemInt>(&self, addr: u32) -> U {
-        self.bus
+    fn read<U: MemInt>(&self, addr: u32, tracer: Option<&dyn Tracer>) -> Result<U> {
+        let val = self
+            .bus
             .borrow()
-            .read::<U>(addr & self.bus_read_mask & !(U::SIZE as u32 - 1))
+            .read::<U>(addr & self.bus_read_mask & !(U::SIZE as u32 - 1));
+        tracer
+            .map(|t| t.trace_mem_read(0, addr.into(), U::ACCESS_SIZE, val.into()))
+            .unwrap_or(Ok(()))?;
+        Ok(val)
     }
 
-    fn write<U: MemInt>(&self, addr: u32, val: U) {
+    fn write<U: MemInt>(&self, addr: u32, val: U, tracer: Option<&dyn Tracer>) -> Result<()> {
         self.bus
             .borrow()
             .write::<U>(addr & self.bus_write_mask & !(U::SIZE as u32 - 1), val);
+        tracer
+            .map(|t| t.trace_mem_write(0, addr.into(), U::ACCESS_SIZE, val.into()))
+            .unwrap_or(Ok(()))
     }
 
-    pub fn run(&mut self, until: i64, tracer: Option<&dyn Tracer>) -> Result {
+    pub fn run(&mut self, until: i64, tracer: Option<&dyn Tracer>) -> Result<()> {
         self.until = until;
         while self.ctx.clock < self.until {
             if self.ctx.lines.halt {
@@ -617,10 +630,10 @@ impl Cpu {
                 self.ctx.delay_slot = false;
                 self.ctx.pc = self.ctx.next_pc;
                 self.ctx.next_pc += 4;
-                self.op(op);
-                tracer
-                    .map(|t| t.trace_insn(0, self.ctx.next_pc))
-                    .unwrap_or(Ok(()))?;
+                self.op(op, tracer)?;
+                if let Some(t) = tracer {
+                    t.trace_insn(0, self.ctx.next_pc)?;
+                }
                 if self.ctx.clock >= self.until || self.ctx.tight_exit {
                     break;
                 }
@@ -631,7 +644,7 @@ impl Cpu {
 }
 
 impl sync::Subsystem for Box<Cpu> {
-    fn run(&mut self, until: i64, tracer: Option<&dyn Tracer>) -> Result {
+    fn run(&mut self, until: i64, tracer: Option<&dyn Tracer>) -> Result<()> {
         Cpu::run(self, until, tracer)
     }
 

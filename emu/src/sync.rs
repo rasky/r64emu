@@ -24,7 +24,7 @@ pub struct Config {
 pub trait Subsystem {
     // Run the subsytem until the specified target of cycles is reached.
     // Optionally, report events to the specified tracer (debugger).
-    fn run(&mut self, target_cycles: i64, tracer: Option<&dyn dbg::Tracer>) -> dbg::Result;
+    fn run(&mut self, target_cycles: i64, tracer: Option<&dyn dbg::Tracer>) -> dbg::Result<()>;
 
     // Return the current number of cycles elapsed in the subsytem.
     // Notice that this might be called from within run(), and it's supposed
@@ -158,7 +158,7 @@ impl Sync {
         &mut self,
         mut cb: F,
         tracer: Option<&dyn dbg::Tracer>,
-    ) -> dbg::Result {
+    ) -> dbg::Result<()> {
         let (frame_start, idx) = self.curr_frame.unwrap_or((self.cycles, 0));
         let frame_end = frame_start + self.frame_cycles;
         assert_eq!(frame_start % self.frame_cycles, 0);
@@ -189,7 +189,7 @@ impl Sync {
         &mut self,
         mut cb: F,
         tracer: &T,
-    ) -> dbg::Result {
+    ) -> dbg::Result<()> {
         self.do_frame(cb, Some(tracer))
     }
 
@@ -197,7 +197,7 @@ impl Sync {
         self.do_frame(cb, None).unwrap();
     }
 
-    fn run_until(&mut self, target: i64, tracer: Option<&dyn dbg::Tracer>) -> dbg::Result {
+    fn run_until(&mut self, target: i64, tracer: Option<&dyn dbg::Tracer>) -> dbg::Result<()> {
         for info in &self.subs {
             self.current_subinfo = Some(info.clone());
             let mut sub = info.sub.borrow_mut();

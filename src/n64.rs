@@ -174,7 +174,7 @@ impl DebuggerModel for N64 {
         &mut self,
         screen: &mut GfxBufferMutLE<Rgb888>,
         tracer: &T,
-    ) -> dbg::Result {
+    ) -> dbg::Result<()> {
         let mut vi = self.vi.clone();
         self.sync.trace_frame(
             move |evt| match evt {
