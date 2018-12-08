@@ -1,5 +1,6 @@
 use emu::bus::be::{Bus, DevPtr};
-use emu::dbg::{DebuggerModel, DebuggerRenderer};
+use emu::dbg;
+use emu::dbg::{DebuggerModel, DebuggerRenderer, Tracer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
 use emu::sync;
@@ -24,7 +25,6 @@ pub struct N64 {
     bus: Rc<RefCell<Box<Bus>>>,
     cpu: Rc<RefCell<Box<mips64::Cpu>>>,
     cart: DevPtr<Cartridge>,
-    paused: bool,
 
     _pi: DevPtr<Pi>,
     _si: DevPtr<Si>,
@@ -125,7 +125,6 @@ impl N64 {
             cpu,
             cart,
             bus,
-            paused: false,
             _pi: pi,
             _si: si,
             sp: sp,
@@ -154,15 +153,13 @@ impl N64 {
 
 impl hw::OutputProducer for N64 {
     fn render_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>) {
-        if !self.paused {
-            let mut vi = self.vi.clone();
-            self.sync.run_frame(move |evt| match evt {
-                sync::Event::HSync(x, y) if x == 0 => {
-                    vi.borrow_mut().set_line(y);
-                }
-                _ => {}
-            });
-        }
+        let mut vi = self.vi.clone();
+        self.sync.run_frame(move |evt| match evt {
+            sync::Event::HSync(x, y) if x == 0 => {
+                vi.borrow_mut().set_line(y);
+            }
+            _ => {}
+        });
 
         self.vi.borrow_mut().draw_frame(screen);
     }
@@ -173,8 +170,25 @@ impl hw::OutputProducer for N64 {
 }
 
 impl DebuggerModel for N64 {
-    fn pause(&mut self, pause: bool) {
-        self.paused = pause;
+    fn trace_frame<T: Tracer>(
+        &mut self,
+        screen: &mut GfxBufferMutLE<Rgb888>,
+        tracer: &T,
+    ) -> dbg::Result {
+        let mut vi = self.vi.clone();
+        self.sync.trace_frame(
+            move |evt, tracer| match evt {
+                sync::Event::HSync(x, y) if x == 0 => {
+                    vi.borrow_mut().set_line(y);
+                    tracer.trace_gpu(y)
+                }
+                _ => Ok(()),
+            },
+            tracer,
+        )?;
+
+        self.vi.borrow_mut().draw_frame(screen);
+        Ok(())
     }
 
     fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>) {

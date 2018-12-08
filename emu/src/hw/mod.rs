@@ -7,9 +7,9 @@ pub mod glutils;
 use self::glutils::SurfaceRenderer;
 use self::sdl2::event::Event;
 use self::sdl2::keyboard::Keycode;
-use self::sdl2::video::{GLContext, GLProfile, Window, WindowPos};
+use self::sdl2::video::{GLContext, GLProfile, Window};
 use self::sdl2::VideoSubsystem;
-use super::dbg::{Debugger, DebuggerModel};
+use super::dbg::{DebuggerModel, DebuggerUI};
 use super::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
 use std::rc::Rc;
 use std::sync::mpsc;
@@ -84,10 +84,12 @@ impl Video {
         let one_second = Duration::new(1, 0);
         match self.fps_clock.elapsed() {
             Ok(elapsed) if elapsed >= one_second => {
-                self.window.set_title(&format!(
-                    "{} - {} FPS",
-                    &self.cfg.window_title, self.fps_counter
-                ));
+                self.window
+                    .set_title(&format!(
+                        "{} - {} FPS",
+                        &self.cfg.window_title, self.fps_counter
+                    ))
+                    .unwrap();
                 self.fps_counter = 0;
                 self.fps_clock += one_second;
             }
@@ -128,48 +130,44 @@ impl Output {
     pub fn run_and_debug<P: OutputProducer + DebuggerModel>(&mut self, producer: &mut P) {
         let width = self.cfg.width as usize;
         let height = self.cfg.height as usize;
-        let mut debugger = match self.video {
-            Some(ref v) => Some(Debugger::new(v.video.clone())),
-            None => None,
-        };
+        assert_eq!(self.video.is_some(), true); // TODO: debugger could work without video as well
+        let mut dbg_ui = DebuggerUI::new(self.video.as_ref().unwrap().video.clone());
 
         let mut event_pump = self.context.event_pump().unwrap();
+        let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
+
         loop {
             for event in event_pump.poll_iter() {
-                debugger.as_mut().map(|dbg| {
-                    dbg.handle_event(&event);
-                });
+                dbg_ui.handle_event(&event);
 
                 match event {
                     Event::KeyDown {
                         keycode: Some(Keycode::Escape),
                         ..
                     } => {
-                        if debugger.is_some() {
-                            self.debug = !self.debug
-                        }
+                        // Toggle debugger activation
+                        self.debug = !self.debug
                     }
                     Event::Quit { .. } => return,
                     _ => {}
                 }
             }
 
-            let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
-            producer.render_frame(&mut screen.buf_mut());
-
-            if let Some(v) = self.video.as_mut() {
-                if !self.debug {
-                    v.render_frame(&screen.buf());
-                } else {
-                    debugger.as_mut().map(|dbg| {
-                        dbg.render_frame(&v.window, &event_pump, producer, &screen.buf());
-                    });
-                }
-                v.window.gl_swap_window();
+            let v = self.video.as_mut().unwrap();
+            if !self.debug {
+                producer.render_frame(&mut screen.buf_mut());
+                v.render_frame(&screen.buf());
                 v.update_fps();
-
-                self.framecount += 1;
+            } else {
+                if dbg_ui.trace(producer, &mut screen.buf_mut()) {
+                    v.update_fps();
+                }
+                dbg_ui.render(&v.window, &event_pump, producer);
             }
+
+            v.window.gl_swap_window();
+
+            self.framecount += 1;
         }
     }
 

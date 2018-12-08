@@ -1,4 +1,5 @@
 extern crate slog;
+use super::dbg;
 use int::Numerics;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -52,6 +53,7 @@ pub struct Sync {
     line_cycles: i64,
     frame_cycles: i64,
     frame_syncs: Vec<(i64, Event)>,
+    curr_frame: Option<(i64, usize)>,
 }
 
 impl Sync {
@@ -67,6 +69,7 @@ impl Sync {
             frame_syncs: vec![],
             current_sub: None,
             current_subinfo: None,
+            curr_frame: None,
         });
         s.calc();
         s
@@ -87,7 +90,7 @@ impl Sync {
                     pc.hex()
                 }
             })
-        }), 
+        }),
         "sub" => slog::FnValue(move |_| {
             let sync3 = unsafe { &*sync3 };
             sync3.current_subinfo.as_ref().map_or("[none]", |i| &i.name)
@@ -133,11 +136,9 @@ impl Sync {
     }
 
     pub fn cycles(&self) -> i64 {
-        let scaler : f64 = self.current_subinfo.as_ref().map_or(0.0, |i| i.scaler);
+        let scaler: f64 = self.current_subinfo.as_ref().map_or(0.0, |i| i.scaler);
         match self.current_sub {
-            Some(sub) => {
-                (unsafe { &*sub }.cycles() as f64 * scaler) as i64
-            }
+            Some(sub) => (unsafe { &*sub }.cycles() as f64 * scaler) as i64,
             None => self.cycles,
         }
     }
@@ -150,22 +151,41 @@ impl Sync {
         (x as usize, y as usize)
     }
 
-    pub fn run_frame<F: FnMut(Event)>(&mut self, mut cb: F) {
-        let frame_start = self.cycles;
+    pub fn trace_frame<Callback: FnMut(Event, &Tracer) -> dbg::Result, Tracer: dbg::Tracer>(
+        &mut self,
+        mut cb: Callback,
+        tracer: &Tracer,
+    ) -> dbg::Result {
+        let (frame_start, idx) = self.curr_frame.unwrap_or((self.cycles, 0));
         let frame_end = frame_start + self.frame_cycles;
         assert_eq!(frame_start % self.frame_cycles, 0);
 
-        for idx in 0..self.frame_syncs.len() {
+        for idx in idx..self.frame_syncs.len() {
+            self.curr_frame = Some((frame_start, idx));
             let (cyc, evt) = self.frame_syncs[idx];
-            self.run_until(frame_start + cyc);
-            cb(evt);
+            self.run_until(frame_start + cyc, tracer)?;
+            cb(evt, tracer)?;
         }
 
-        self.run_until(frame_end);
+        self.curr_frame = Some((frame_start, self.frame_syncs.len()));
+        self.run_until(frame_end, tracer)?;
         self.frames = self.frames + 1;
+        self.curr_frame = None;
+        Ok(())
     }
 
-    fn run_until(&mut self, target: i64) {
+    pub fn run_frame<F: FnMut(Event)>(&mut self, mut cb: F) {
+        self.trace_frame(
+            |evt, _| {
+                cb(evt);
+                Ok(())
+            },
+            &dbg::NullTracer {},
+        )
+        .unwrap();
+    }
+
+    fn run_until<T: dbg::Tracer>(&mut self, target: i64, tracer: &T) -> dbg::Result {
         for info in &self.subs {
             self.current_subinfo = Some(info.clone());
             let mut sub = info.sub.borrow_mut();
@@ -175,6 +195,7 @@ impl Sync {
             self.current_subinfo = None;
         }
         self.cycles = target;
+        Ok(())
     }
 }
 
@@ -192,14 +213,17 @@ mod tests {
 
     #[test]
     fn events() {
-        let mut sync = Sync::new(logger(), Config {
-            main_clock: 128,
-            dot_clock_divider: 2,
-            hdots: 4,
-            vdots: 4,
-            hsyncs: vec![0, 2],
-            vsyncs: vec![2],
-        });
+        let mut sync = Sync::new(
+            logger(),
+            Config {
+                main_clock: 128,
+                dot_clock_divider: 2,
+                hdots: 4,
+                vdots: 4,
+                hsyncs: vec![0, 2],
+                vsyncs: vec![2],
+            },
+        );
 
         let events = vec![
             (0, Event::HSync(0, 0)),

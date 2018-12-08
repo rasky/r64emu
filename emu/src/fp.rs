@@ -2,7 +2,7 @@ extern crate num;
 extern crate typenum;
 use self::num::cast::NumCast;
 use self::num::{PrimInt, ToPrimitive, Zero};
-use self::typenum::{U0, U128, U16, U32, U64, U8, Unsigned};
+use self::typenum::{Unsigned, U0, U128, U16, U32, U64, U8};
 use std::fmt;
 use std::iter;
 use std::marker::PhantomData;

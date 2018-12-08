@@ -1,7 +1,7 @@
 extern crate gl;
 
 use self::gl::types::*;
-use super::super::gfx::{ColorFormat, GfxBufferLE, Rgb888, Rgba8888};
+use super::super::gfx::{ColorFormat, GfxBufferLE, GfxBufferMutLE, Rgb888, Rgba8888};
 use std::ffi;
 
 fn return_param<T, F>(f: F) -> T
@@ -59,11 +59,7 @@ impl Texture {
         self.id as usize
     }
 
-    pub fn copy_from_buffer<CF: ColorForTexture>(&self, buffer: &GfxBufferLE<CF>) {
-        let width = buffer.width() as i32;
-        let height = buffer.height() as i32;
-        let (pixels, _pitch) = buffer.raw();
-
+    pub fn copy_from<CF: ColorForTexture>(&self, pixels: &[u8], width: usize, height: usize) {
         unsafe {
             gl::BindTexture(gl::TEXTURE_2D, self.id);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
@@ -74,14 +70,25 @@ impl Texture {
                 gl::TEXTURE_2D,
                 0,
                 CF::dst_format() as i32,
-                width,
-                height,
+                width as i32,
+                height as i32,
                 0,
                 CF::src_format(),
                 gl::UNSIGNED_BYTE,
                 pixels.as_ptr() as *mut ffi::c_void,
             );
         }
+    }
+
+    pub fn copy_from_buffer<CF: ColorForTexture>(&self, buffer: &GfxBufferLE<CF>) {
+        let (pixels, _pitch) = buffer.raw();
+        self.copy_from::<CF>(pixels, buffer.width(), buffer.height())
+    }
+
+    pub fn copy_from_buffer_mut<CF: ColorForTexture>(&self, buffer: &mut GfxBufferMutLE<CF>) {
+        let (width, heigth) = (buffer.width(), buffer.height());
+        let (pixels, _pitch) = buffer.raw();
+        self.copy_from::<CF>(pixels, width, heigth)
     }
 }
 

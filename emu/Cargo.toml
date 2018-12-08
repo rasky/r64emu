@@ -19,6 +19,7 @@ imgui-sdl2 = "0.3.0"
 imgui-opengl-renderer = "0.3.0"
 gl = "0.10.0"
 runtime-fmt = "0.3.0"
+rustc-hash = "1.0.1"
 
 [dependencies.sdl2]
 version = "^0"
