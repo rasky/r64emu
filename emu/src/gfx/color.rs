@@ -3,9 +3,9 @@ extern crate typenum;
 
 #[allow(unused_imports)]
 use self::typenum::{
-    IsEqual, IsGreaterOrEqual, True, U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2,
-    U20, U21, U22, U23, U24, U25, U26, U27, U28, U29, U3, U30, U31, U32, U4, U5, U6, U7, U8, U9,
-    Unsigned,
+    IsEqual, IsGreaterOrEqual, True, Unsigned, U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18,
+    U19, U2, U20, U21, U22, U23, U24, U25, U26, U27, U28, U29, U3, U30, U31, U32, U4, U5, U6, U7,
+    U8, U9,
 };
 use super::super::bus::MemInt;
 use std::fmt;
@@ -76,18 +76,22 @@ impl<U: MemInt, N: Unsigned, S: Unsigned> Value<U, N, S> {
             phantom: PhantomData,
             val: match (N1::to_usize(), N::to_usize()) {
                 // Special case for alpha 1-bit conversion.
-                (1, _) => if v.val == 0 {
-                    0
-                } else {
-                    max
-                },
+                (1, _) => {
+                    if v.val == 0 {
+                        0
+                    } else {
+                        max
+                    }
+                }
 
                 // Special case for alpha 1-bit conversion.
-                (_, 1) => if v.val != 0 {
-                    1
-                } else {
-                    0
-                },
+                (_, 1) => {
+                    if v.val != 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
 
                 // Special case for alpha elision.
                 (0, _) => max,
@@ -262,11 +266,12 @@ impl<CF: ColorFormat> fmt::Debug for Color<CF> {
             CF::GN::to_usize(),
             CF::BN::to_usize(),
             CF::AN::to_usize()
-        )).field("r", &self.r.val)
-            .field("g", &self.g.val)
-            .field("b", &self.b.val)
-            .field("a", &self.a.val)
-            .finish()
+        ))
+        .field("r", &self.r.val)
+        .field("g", &self.g.val)
+        .field("b", &self.b.val)
+        .field("a", &self.a.val)
+        .finish()
     }
 }
 
@@ -349,7 +354,8 @@ mod tests {
                 (0x24 << 2) | (0x24 >> 4),
                 (0x14 << 3) | (0x14 >> 2),
                 0
-            ).unwrap(),
+            )
+            .unwrap(),
             c2
         );
     }
@@ -449,7 +455,8 @@ mod tests {
                 (0x8 << 3) | (0x8 >> 2),
                 (0x14 << 3) | (0x14 >> 2),
                 255,
-            ).unwrap(),
+            )
+            .unwrap(),
         );
 
         let c3 = c2.cconv();

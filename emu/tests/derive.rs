@@ -48,10 +48,10 @@ mod tests {
     /*
     impl Device for Gpu {
         type Order = LittleEndian;
-    
+
         fn dev_init(&mut self, wself: Rc<RefCell<Self>>) {
             self.ram = Mem::new(1024, MemFlags::default());
-    
+
             let wdevr = Rc::downgrade(&wself);
             let wdevw = Rc::downgrade(&wself);
             self.reg1 = Reg::new(
@@ -70,7 +70,7 @@ mod tests {
                 })),
             );
         }
-    
+
         fn dev_map(
             &mut self,
             bus: &mut Bus<Self::Order>,

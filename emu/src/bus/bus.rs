@@ -216,13 +216,13 @@ where
         assert_eq_size!(HwIoW, [u8; 24]);
 
         Box::new(Bus {
-            reads: enum_map!{
+            reads: enum_map! {
                 AccessSize::Size8 => RadixTree::new(),
                 AccessSize::Size16 => RadixTree::new(),
                 AccessSize::Size32 => RadixTree::new(),
                 AccessSize::Size64 => RadixTree::new(),
             },
-            writes: enum_map!{
+            writes: enum_map! {
                 AccessSize::Size8 => RadixTree::new(),
                 AccessSize::Size16 => RadixTree::new(),
                 AccessSize::Size32 => RadixTree::new(),

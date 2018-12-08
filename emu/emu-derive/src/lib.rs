@@ -217,17 +217,17 @@ fn expand_reg_devinit(
     varname: &str,
     ra: &RegAttributes,
 ) -> proc_macro2::TokenStream {
-    let mut qrcb = quote!{None};
-    let mut qwcb = quote!{None};
-    let mut initbody = quote!{};
+    let mut qrcb = quote! {None};
+    let mut qwcb = quote! {None};
+    let mut initbody = quote! {};
 
     if ra.wcb {
-        initbody = quote!{
+        initbody = quote! {
             #initbody
             let wdevw = Rc::downgrade(&_wself);
         };
         let cbname = Ident::new(&format!("cb_write_{}", varname), Span::call_site());
-        qwcb = quote!{
+        qwcb = quote! {
             Some(Rc::new(Box::new(move |old, val| {
                 let dev = wdevw.upgrade().unwrap();
                 dev.borrow_mut(). #cbname (old, val);
@@ -236,12 +236,12 @@ fn expand_reg_devinit(
     }
 
     if ra.rcb {
-        initbody = quote!{
+        initbody = quote! {
             #initbody
             let wdevr = Rc::downgrade(&_wself);
         };
         let cbname = Ident::new(&format!("cb_read_{}", varname), Span::call_site());
-        qrcb = quote!{
+        qrcb = quote! {
             Some(Rc::new(Box::new(move |val| {
                 let dev = wdevr.upgrade().unwrap();
                 let res = dev.borrow(). #cbname (val);
@@ -284,13 +284,13 @@ fn expand_mem_devinit(
         if ma.writeonly {
             panic!("cannot set writeonly for manully inited mem")
         }
-        quote!{
+        quote! {
             if #fi .len() == 0 {
                 panic!("size not specified, and mem wasn't manually inited");
             }
         }
     } else {
-        quote!{
+        quote! {
             if #fi .len() != 0 {
                 panic!("don't specify size for already inited mem");
             }
@@ -307,7 +307,7 @@ fn expand_reg_devmap(
     let bank = ra.bank;
     let off = ra.offset;
     let varname = Ident::new(varname, Span::call_site());
-    quote!{
+    quote! {
         if bank == #bank {
             bus.map_reg(base + #off, &self. #varname)?;
         }
@@ -323,7 +323,7 @@ fn expand_mem_devmap(
     let off = ma.offset;
     let vsize = ma.vsize;
     let varname = Ident::new(varname, Span::call_site());
-    quote!{
+    quote! {
         if bank == #bank {
             bus.map_mem(base + #off, base + #off + #vsize - 1, &self. #varname)?;
         }
@@ -334,7 +334,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
     s.filter(|fi| fi.ast().attrs.len() != 0);
     s.bind_with(|_fi| BindStyle::RefMut);
 
-    let mut dev_map = quote!{};
+    let mut dev_map = quote! {};
     let dev_init = s.each(|fi| {
         let varname = fi.ast().ident.as_ref().unwrap().to_string();
 
@@ -357,7 +357,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
                 let ra = parse_reg_attributes(&varname, &attrs[0].tts);
 
                 let dm = expand_reg_devmap(fi, &varname, &ra);
-                dev_map = quote!{
+                dev_map = quote! {
                     #dev_map
                     #dm;
                 };
@@ -368,7 +368,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
                 let ma = parse_mem_attributes(&varname, &attrs[0].tts);
 
                 let dm = expand_mem_devmap(fi, &varname, &ma);
-                dev_map = quote!{
+                dev_map = quote! {
                     #dev_map
                     #dm;
                 };
