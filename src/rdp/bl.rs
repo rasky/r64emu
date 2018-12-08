@@ -63,7 +63,7 @@ impl Blender {
     pub(crate) fn blend_1cycle(
         &mut self,
         combined: MultiColor,
-        shade: MultiColor,
+        _shade: MultiColor,
         fb: MultiColor,
     ) -> MultiColor {
         self.combined = combined;

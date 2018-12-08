@@ -1,6 +1,8 @@
-extern crate rustc_hash;
-use self::rustc_hash::FxHashMap;
+use array_macro::array;
+use rustc_hash::FxHashMap;
+
 use crate::bus::MemInt;
+
 use std::cell::Cell;
 use std::time::Instant;
 
@@ -34,16 +36,16 @@ pub trait Tracer {
 pub struct NullTracer {}
 
 impl Tracer for NullTracer {
-    fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result {
+    fn trace_insn(&self, _cpu_idx: usize, _pc: u64) -> Result {
         Ok(())
     }
-    fn trace_mem_write<T: MemInt>(&self, cpu_idx: usize, addr: u64, val: T) -> Result {
+    fn trace_mem_write<T: MemInt>(&self, _cpu_idx: usize, _addr: u64, _val: T) -> Result {
         Ok(())
     }
-    fn trace_mem_read<T: MemInt>(&self, cpu_idx: usize, addr: u64, val: T) -> Result {
+    fn trace_mem_read<T: MemInt>(&self, _cpu_idx: usize, _addr: u64, _val: T) -> Result {
         Ok(())
     }
-    fn trace_gpu(&self, line: usize) -> Result {
+    fn trace_gpu(&self, _line: usize) -> Result {
         Ok(())
     }
 }
@@ -101,16 +103,7 @@ pub struct Debugger {
 impl Debugger {
     pub fn new() -> Self {
         Self {
-            cpus: [
-                DbgCpu::default(),
-                DbgCpu::default(),
-                DbgCpu::default(),
-                DbgCpu::default(),
-                DbgCpu::default(),
-                DbgCpu::default(),
-                DbgCpu::default(),
-                DbgCpu::default(),
-            ],
+            cpus: array![DbgCpu::default(); DEBUGGER_MAX_CPU],
             next_poll: Cell::new(None),
         }
     }

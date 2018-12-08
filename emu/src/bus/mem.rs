@@ -1,8 +1,9 @@
-extern crate byteorder;
-
-use self::byteorder::ByteOrder;
 use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
 use super::memint::MemInt;
+
+use bitflags::bitflags;
+use byteorder::ByteOrder;
+
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 

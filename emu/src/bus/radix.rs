@@ -1,3 +1,5 @@
+use array_macro::array;
+
 const RADIX_BITS: usize = 11;
 const RADIX_BREADTH: usize = 1 << RADIX_BITS;
 const RADIX_DEPTH: usize = (32 + RADIX_BITS - 1) / RADIX_BITS;

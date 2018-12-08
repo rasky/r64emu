@@ -1,8 +1,6 @@
-extern crate byteorder;
-extern crate num;
-
-use self::byteorder::{BigEndian, ByteOrder, LittleEndian};
-use self::num::PrimInt;
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
+use enum_map::Enum;
+use num::PrimInt;
 
 #[derive(Debug, Enum, Copy, Clone)]
 pub enum AccessSize {

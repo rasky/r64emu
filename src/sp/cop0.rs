@@ -1,7 +1,7 @@
 use super::{Sp, StatusFlags};
 use emu::bus::be::{Bus, DevPtr, Device};
 use emu::dbg::Operand;
-use errors::*;
+use crate::errors::*;
 use mips64;
 use mips64::{DecodedInsn, REG_NAMES};
 

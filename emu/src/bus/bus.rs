@@ -1,13 +1,15 @@
-extern crate byteorder;
-extern crate slog;
-
-use self::byteorder::ByteOrder;
 use super::device::{DevPtr, Device};
 use super::mem::Mem;
 use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use super::radix::RadixTree;
 use super::regs::Reg;
-use enum_map::EnumMap;
+
+use byteorder::ByteOrder;
+use enum_map::{enum_map, EnumMap};
+use slog::*;
+use static_assertions::assert_eq_size;
+use std::result::Result; // explicit import to override slog::Result
+
 use std::cell::RefCell;
 use std::io;
 use std::marker::PhantomData;
@@ -447,7 +449,7 @@ impl<O: ByteOrderCombiner + 'static> MappedReg for Reg<O, u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bus::le::{Reg16, Reg32, Reg8, RegFlags};
+    use crate::bus::le::{Reg16, Reg32, Reg8, RegFlags};
 
     extern crate byteorder;
     extern crate slog_term;
@@ -549,7 +551,7 @@ mod tests {
 
     #[test]
     fn combiner_be() {
-        use bus::be::{Reg16, Reg32, Reg8};
+        use crate::bus::be::{Reg16, Reg32, Reg8};
         let reg1 = Reg32::default();
         let reg2 = Reg16::default();
         let reg3 = Reg8::default();

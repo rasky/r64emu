@@ -2,6 +2,7 @@
 name = "mips64"
 version = "0.1.0"
 authors = ["Giovanni Bajo <rasky@develer.com>"]
+edition = "2018"
 
 [dependencies]
 emu = { path =  "../../../emu" }

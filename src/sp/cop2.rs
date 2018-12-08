@@ -9,7 +9,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
 use emu::bus::MemInt;
 use emu::int::Numerics;
-use errors::*;
+use crate::errors::*;
 use mips64::{Cop, CpuContext, DecodedInsn};
 use slog;
 use std::arch::x86_64::*;

@@ -1,6 +1,8 @@
-extern crate slog;
-use super::dbg;
-use int::Numerics;
+use slog::*;
+
+use crate::dbg;
+use crate::int::Numerics;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -185,7 +187,7 @@ impl Sync {
         .unwrap();
     }
 
-    fn run_until<T: dbg::Tracer>(&mut self, target: i64, tracer: &T) -> dbg::Result {
+    fn run_until<T: dbg::Tracer>(&mut self, target: i64, _tracer: &T) -> dbg::Result {
         for info in &self.subs {
             self.current_subinfo = Some(info.clone());
             let mut sub = info.sub.borrow_mut();

@@ -5,7 +5,7 @@ use super::cop0::SpCop0;
 use super::cop2::SpCop2;
 use emu::bus::be::{Bus, DevPtr, Mem, Reg32};
 use emu::int::Numerics;
-use errors::*;
+use crate::errors::*;
 use mips64;
 use std::cell::RefCell;
 use std::rc::Rc;

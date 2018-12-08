@@ -187,7 +187,7 @@ impl Rdp {
                 );
 
                 let fb_writer = self.main_bus.borrow().fetch_write::<u8>(self.fb.dram_addr);
-                let mut fb_mem = fb_writer.mem().unwrap();
+                let fb_mem = fb_writer.mem().unwrap();
                 let dst = (fb_mem, 320, 240, self.fb.pitch());
 
                 // FIXME: draw_rect_slopes() use inclusive rectangles... maybe we need clipping?

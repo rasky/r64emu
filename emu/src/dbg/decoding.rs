@@ -1,5 +1,6 @@
 /// Helper classes to write a CPU decoder / disassembler.
-extern crate runtime_fmt;
+use runtime_fmt::rt_format_args;
+
 use std::fmt;
 
 const MAX_OPERANDS_PER_INSN: usize = 4;

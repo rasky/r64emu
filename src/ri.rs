@@ -85,7 +85,7 @@ pub struct Ri {
 
 impl Ri {
     pub fn new(logger: slog::Logger) -> Ri {
-        let mut ri = Ri {
+        let ri = Ri {
             rdram: Mem::default(),
 
             reg_rdram_config: Reg32::default(),

@@ -1,7 +1,8 @@
-extern crate byteorder;
-
 use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW, MemIoR, MemIoW};
 use super::memint::{ByteOrderCombiner, MemInt};
+
+use bitflags::bitflags;
+
 use std::cell::RefCell;
 use std::fmt;
 use std::marker::PhantomData;
