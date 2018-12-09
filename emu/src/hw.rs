@@ -131,7 +131,7 @@ impl Output {
         let width = self.cfg.width as usize;
         let height = self.cfg.height as usize;
         assert_eq!(self.video.is_some(), true); // TODO: debugger could work without video as well
-        let mut dbg_ui = DebuggerUI::new(self.video.as_ref().unwrap().video.clone());
+        let mut dbg_ui = DebuggerUI::new(self.video.as_ref().unwrap().video.clone(), producer);
 
         let mut event_pump = self.context.event_pump().unwrap();
         let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);

@@ -1,6 +1,7 @@
-use super::{TraceEvent, DEBUGGER_MAX_CPU};
+use super::TraceEvent;
 use imgui::ImString;
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 #[derive(Default)]
@@ -16,11 +17,13 @@ pub(crate) struct UiCtxDisasm {
 // 2) Propagate cross-window information (eg: specific events that affect multiple windows).
 #[derive(Default)]
 pub(crate) struct UiCtx {
+    pub cpus: Vec<String>,
+
     // An event that was just triggered. This is kept only for one frame.
     pub event: Option<(Box<TraceEvent>, Instant)>,
 
     // Disasm views
-    pub disasm: [UiCtxDisasm; DEBUGGER_MAX_CPU],
+    pub disasm: HashMap<String, UiCtxDisasm>,
 
     // Popup "New breakpoint": local state
     pub new_bp_pc: u64,

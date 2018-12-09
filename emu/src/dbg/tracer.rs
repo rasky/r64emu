@@ -8,17 +8,18 @@ use crate::bus::{AccessSize, MemInt};
 
 use std::cell::Cell;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::time::Instant;
 
 pub(crate) const DEBUGGER_MAX_CPU: usize = 8;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum TraceEvent {
     Poll(), // Fake event used to poll back into the tracer to improve responsiveness
-    Breakpoint(usize, usize, u64), // A breakpoint was hit (cpu_idx, bp_idx, pc)
+    Breakpoint(String, usize, u64), // A breakpoint was hit (cpu_idx, bp_idx, pc)
     Breakhere(usize), // A break-here was hit
-    WatchpointWrite(usize, usize), // A watchpoint was hit during a write (cpu_idx, wp_idx)
-    WatchpointRead(usize, usize), // A watchpoint was hit during a read (cpu_idx, wp_idx)
+    WatchpointWrite(String, usize), // A watchpoint was hit during a write (cpu_idx, wp_idx)
+    WatchpointRead(String, usize), // A watchpoint was hit during a read (cpu_idx, wp_idx)
     GenericBreak(&'static str), // Another kind of condition was hit, and we want to stop the tracing.
 }
 
@@ -60,12 +61,17 @@ impl Tracer<'_> {
     }
 
     #[inline(always)]
-    pub fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result<()> {
+    pub fn trace_gpu(&self, line: usize) -> Result<()> {
+        self.dbg.map(|t| t.trace_gpu(line)).unwrap_or(Ok(()))
+    }
+
+    #[inline(always)]
+    pub fn trace_insn(&self, cpu_name: &str, pc: u64) -> Result<()> {
         if self.dbg.is_none() {
             return Ok(());
         }
         if self.trace_guards[TraceGuard::index(pc)].contains(TraceGuard::INSN) {
-            self.dbg.unwrap().trace_insn(cpu_idx, pc)
+            self.dbg.unwrap().trace_insn(cpu_name, pc)
         } else {
             Ok(())
         }
@@ -74,7 +80,7 @@ impl Tracer<'_> {
     #[inline(always)]
     pub fn trace_mem_write(
         &self,
-        cpu_idx: usize,
+        cpu_name: &str,
         addr: u64,
         size: AccessSize,
         val: u64,
@@ -83,7 +89,7 @@ impl Tracer<'_> {
             return Ok(());
         }
         if self.trace_guards[TraceGuard::index(addr)].contains(TraceGuard::MEM_WRITE) {
-            self.dbg.unwrap().trace_mem_write(cpu_idx, addr, size, val)
+            self.dbg.unwrap().trace_mem_write(cpu_name, addr, size, val)
         } else {
             Ok(())
         }
@@ -92,7 +98,7 @@ impl Tracer<'_> {
     #[inline(always)]
     pub fn trace_mem_read(
         &self,
-        cpu_idx: usize,
+        cpu_name: &str,
         addr: u64,
         size: AccessSize,
         val: u64,
@@ -101,15 +107,10 @@ impl Tracer<'_> {
             return Ok(());
         }
         if self.trace_guards[TraceGuard::index(addr)].contains(TraceGuard::MEM_READ) {
-            self.dbg.unwrap().trace_mem_read(cpu_idx, addr, size, val)
+            self.dbg.unwrap().trace_mem_read(cpu_name, addr, size, val)
         } else {
             Ok(())
         }
-    }
-
-    #[inline(always)]
-    pub fn trace_gpu(&self, line: usize) -> Result<()> {
-        self.dbg.map(|t| t.trace_gpu(line)).unwrap_or(Ok(()))
     }
 }
 
@@ -285,14 +286,19 @@ impl DbgCpu {
 }
 
 pub struct Debugger {
-    cpus: [DbgCpu; DEBUGGER_MAX_CPU],
+    cpus: HashMap<String, DbgCpu>,
     next_poll: Cell<Option<Instant>>,
 }
 
 impl Debugger {
-    pub fn new() -> Self {
+    pub fn new(cpus: &Vec<String>) -> Self {
+        let mut cpumap = HashMap::new();
+        for name in cpus {
+            cpumap.insert(name.clone(), DbgCpu::default());
+        }
+
         Self {
-            cpus: array![DbgCpu::default(); DEBUGGER_MAX_CPU],
+            cpus: cpumap,
             next_poll: Cell::new(None),
         }
     }
@@ -301,15 +307,18 @@ impl Debugger {
         self.next_poll.set(Some(when));
     }
 
-    pub fn add_breakpoint(&mut self, cpu_idx: usize, pc: u64, description: &str) {
-        self.cpus[cpu_idx].add_breakpoint(pc, description);
+    pub fn add_breakpoint(&mut self, cpu_name: &str, pc: u64, description: &str) {
+        self.cpus
+            .get_mut(cpu_name)
+            .unwrap()
+            .add_breakpoint(pc, description);
     }
 }
 
 impl Debugger {
     pub fn new_tracer(&self) -> Tracer {
         let mut trace_guards = array![TraceGuard::empty(); 256];
-        for cpu in &self.cpus {
+        for (_, cpu) in &self.cpus {
             for bp in &cpu.breakpoints {
                 trace_guards[TraceGuard::index(bp.pc)].insert(TraceGuard::INSN);
             }
@@ -326,20 +335,20 @@ impl Debugger {
         }
     }
 
-    fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result<()> {
-        match self.cpus[cpu_idx].bp_fastmap.get(&pc) {
-            Some(idx) => Err(box TraceEvent::Breakpoint(cpu_idx, *idx, pc)),
+    fn trace_insn(&self, cpu_name: &str, pc: u64) -> Result<()> {
+        match self.cpus[cpu_name].bp_fastmap.get(&pc) {
+            Some(idx) => Err(box TraceEvent::Breakpoint(cpu_name.to_owned(), *idx, pc)),
             None => Ok(()),
         }
     }
 
-    fn trace_mem_read(&self, cpu_idx: usize, addr: u64, _size: AccessSize, val: u64) -> Result<()> {
-        let cpu = &self.cpus[cpu_idx];
+    fn trace_mem_read(&self, cpu_name: &str, addr: u64, _size: AccessSize, val: u64) -> Result<()> {
+        let cpu = &self.cpus[cpu_name];
         match cpu.wp_fastmap.get(&addr) {
             Some(idx) => {
                 let wp = &cpu.watchpoints[*idx];
                 if wp.wtype == WatchpointType::Read && wp.condition.check(val) {
-                    Err(box TraceEvent::WatchpointRead(cpu_idx, *idx))
+                    Err(box TraceEvent::WatchpointRead(cpu_name.to_owned(), *idx))
                 } else {
                     Ok(())
                 }
@@ -350,17 +359,17 @@ impl Debugger {
 
     fn trace_mem_write(
         &self,
-        cpu_idx: usize,
+        cpu_name: &str,
         addr: u64,
         _size: AccessSize,
         val: u64,
     ) -> Result<()> {
-        let cpu = &self.cpus[cpu_idx];
+        let cpu = &self.cpus[cpu_name];
         match cpu.wp_fastmap.get(&addr) {
             Some(idx) => {
                 let wp = &cpu.watchpoints[*idx];
                 if wp.wtype == WatchpointType::Write && wp.condition.check(val) {
-                    Err(box TraceEvent::WatchpointRead(cpu_idx, *idx))
+                    Err(box TraceEvent::WatchpointRead(cpu_name.to_owned(), *idx))
                 } else {
                     Ok(())
                 }
@@ -384,8 +393,8 @@ impl Debugger {
 }
 
 impl Debugger {
-    fn render_breakpoints(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx, cpu_idx: usize) {
-        let cpu = &mut self.cpus[cpu_idx];
+    fn render_breakpoints(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx, cpu_name: &str) {
+        let cpu = self.cpus.get_mut(cpu_name).unwrap();
 
         ui.popup(im_str!("##bp#new"), || {
             ui.text(im_str!("PC:"));
@@ -453,8 +462,8 @@ impl Debugger {
         }
     }
 
-    fn render_watchpoints(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx, cpu_idx: usize) {
-        let cpu = &mut self.cpus[cpu_idx];
+    fn render_watchpoints(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx, cpu_name: &str) {
+        let cpu = self.cpus.get_mut(cpu_name).unwrap();
 
         ui.popup(im_str!("##wp#new"), || {
             ui.text(im_str!("Address:"));
@@ -570,25 +579,28 @@ impl Debugger {
     }
 
     fn render_points(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx) {
-        ui.window(im_str!("Breakpoints & Watchpoints"))
-            .size((200.0, 400.0), ImGuiCond::FirstUseEver)
-            .build(|| {
-                let cpu_idx: usize = 0;
-                if ui
-                    .collapsing_header(im_str!("Breakpoints"))
-                    .default_open(true)
-                    .build()
-                {
-                    self.render_breakpoints(ui, ctx, cpu_idx);
-                }
-                if ui
-                    .collapsing_header(im_str!("Watchpoints"))
-                    .default_open(true)
-                    .build()
-                {
-                    self.render_watchpoints(ui, ctx, cpu_idx);
-                }
-            });
+        for idx in 0..ctx.cpus.len() {
+            let cpu_name = ctx.cpus[idx].clone();
+
+            ui.window(im_str!("[{}] Breakpoints & Watchpoints", cpu_name))
+                .size((200.0, 400.0), ImGuiCond::FirstUseEver)
+                .build(|| {
+                    if ui
+                        .collapsing_header(im_str!("Breakpoints"))
+                        .default_open(true)
+                        .build()
+                    {
+                        self.render_breakpoints(ui, ctx, &cpu_name);
+                    }
+                    if ui
+                        .collapsing_header(im_str!("Watchpoints"))
+                        .default_open(true)
+                        .build()
+                    {
+                        self.render_watchpoints(ui, ctx, &cpu_name);
+                    }
+                });
+        }
     }
 
     pub(crate) fn render_main(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx) {

@@ -21,9 +21,13 @@ pub use self::decoding::*;
 mod tracer;
 pub use self::tracer::*;
 mod uictx;
-pub(crate) use self::uictx::UiCtx;
+pub(crate) use self::uictx::*;
 
 pub trait DebuggerModel {
+    /// Return a vector of the name of all CPUS.
+    /// TODO: the debugger could autodiscover the CPUs while rendering.
+    fn all_cpus(&self) -> Vec<String>;
+
     /// Run a frame with a tracer (debugger).
     ///
     /// The function is expected to respect trace API and call the trait methods at
@@ -53,7 +57,7 @@ pub struct DebuggerUI {
 }
 
 impl DebuggerUI {
-    pub(crate) fn new(video: sdl2::VideoSubsystem) -> Self {
+    pub(crate) fn new<T: DebuggerModel>(video: sdl2::VideoSubsystem, producer: &mut T) -> Self {
         let hidpi_factor = 1.0;
 
         let mut imgui = ImGui::init();
@@ -62,14 +66,21 @@ impl DebuggerUI {
         let imgui_sdl2 = ImguiSdl2::new(&mut imgui);
         let backend = Renderer::new(&mut imgui, move |s| video.gl_get_proc_address(s) as _);
 
+        let mut uictx = UiCtx::default();
+        uictx.cpus = producer.all_cpus();
+        for idx in 0..uictx.cpus.len() {
+            let name = &uictx.cpus[idx];
+            uictx.disasm.insert(name.clone(), UiCtxDisasm::default());
+        }
+
         Self {
             imgui: Rc::new(RefCell::new(imgui)),
             imgui_sdl2,
             backend,
             hidpi_factor,
             tex_screen: Texture::new(),
-            dbg: Debugger::new(),
-            uictx: RefCell::new(UiCtx::default()),
+            dbg: Debugger::new(&uictx.cpus),
+            uictx: RefCell::new(uictx),
             paused: false,
             last_render: Instant::now(),
         }

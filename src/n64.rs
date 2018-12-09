@@ -1,6 +1,6 @@
 use emu::bus::be::{Bus, DevPtr};
 use emu::dbg;
-use emu::dbg::{DebuggerModel, DebuggerRenderer, Tracer};
+use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
 use emu::sync;
@@ -193,5 +193,9 @@ impl DebuggerModel for N64 {
     fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>) {
         self.cpu.borrow_mut().render_debug(dr);
         self.sp.borrow_mut().core_cpu.borrow_mut().render_debug(dr);
+    }
+
+    fn all_cpus(&self) -> Vec<String> {
+        vec!["R4300".into(), "RSP".into()]
     }
 }

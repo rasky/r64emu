@@ -47,19 +47,19 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
     ctx: &mut UiCtx,
     v: &mut DV,
 ) {
-    let cpu_idx: usize = 0;
+    let cpu_name = v.name().to_owned();
     let cur_pc = v.pc();
     let mut force_pc: Option<u64> = None; // if Some, jump to this PC this frame
 
     // Process current event (if any)
     match ctx.event {
         Some((ref evt, _)) => match **evt {
-            TraceEvent::Breakpoint(bp_cpu_idx, _, bp_pc) if bp_cpu_idx == cpu_idx => {
+            TraceEvent::Breakpoint(ref bp_cpu_name, _, bp_pc) if *bp_cpu_name == cpu_name => {
                 // Center breakpoint PC
                 force_pc = Some(bp_pc.saturating_sub(10 * 4));
 
                 // Start blinking effect
-                ctx.disasm[cpu_idx].blink_pc = Some((bp_pc, Instant::now()));
+                ctx.disasm.get_mut(&cpu_name).unwrap().blink_pc = Some((bp_pc, Instant::now()));
 
                 // Focus this window
                 unsafe {
@@ -71,7 +71,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
         None => {}
     };
 
-    ui.window(im_str!("[{}] Disassembly", v.name()))
+    ui.window(im_str!("[{}] Disassembly", cpu_name))
         .size((450.0, 400.0), ImGuiCond::FirstUseEver)
         .build(|| {
             // *******************************************
@@ -143,6 +143,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                     }
 
                     // Display the non-clipped part of the listbox
+                    let blink_pc = ctx.disasm[&cpu_name].blink_pc;
                     ImGuiListClipper::new(num_lines as usize).build(|start, end| {
                         v.disasm_block(
                             (pc_range.0 + start as u64 * 4, pc_range.0 + end as u64 * 4),
@@ -161,7 +162,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                                 }
 
                                 // See if we need to do a blink animation over this PC
-                                if let Some((bpc, bwhen)) = ctx.disasm[0].blink_pc {
+                                if let Some((bpc, bwhen)) = blink_pc {
                                     if bpc == pc {
                                         match blink_color(bkg_color, bwhen) {
                                             Some(c1) => {

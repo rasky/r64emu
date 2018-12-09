@@ -598,7 +598,7 @@ impl Cpu {
             .bus
             .borrow()
             .read::<U>(addr & self.bus_read_mask & !(U::SIZE as u32 - 1));
-        t.trace_mem_read(0, addr.into(), U::ACCESS_SIZE, val.into())?;
+        t.trace_mem_read(&self.name, addr.into(), U::ACCESS_SIZE, val.into())?;
         Ok(val)
     }
 
@@ -606,7 +606,7 @@ impl Cpu {
         self.bus
             .borrow()
             .write::<U>(addr & self.bus_write_mask & !(U::SIZE as u32 - 1), val);
-        t.trace_mem_write(0, addr.into(), U::ACCESS_SIZE, val.into())
+        t.trace_mem_write(&self.name, addr.into(), U::ACCESS_SIZE, val.into())
     }
 
     pub fn run(&mut self, until: i64, t: &Tracer) -> Result<()> {
@@ -633,7 +633,7 @@ impl Cpu {
                 self.ctx.pc = self.ctx.next_pc;
                 self.ctx.next_pc += 4;
                 self.op(op, t)?;
-                t.trace_insn(0, self.pc_fetch_mask(self.ctx.pc))?;
+                t.trace_insn(&self.name, self.pc_fetch_mask(self.ctx.pc))?;
                 if self.ctx.clock >= self.until || self.ctx.tight_exit {
                     break;
                 }
