@@ -4,6 +4,7 @@ use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
 use emu::sync;
+use emu::sync::Subsystem;
 use slog;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -188,6 +189,20 @@ impl DebuggerModel for N64 {
 
         self.vi.borrow_mut().draw_frame(screen);
         Ok(())
+    }
+
+    fn trace_step(&mut self, cpu_name: &str, tracer: &dbg::Tracer) -> dbg::Result<()> {
+        match cpu_name {
+            "R4300" => self.cpu.borrow_mut().step(tracer),
+            "RSP" => {
+                // Do not keep sp borrowed by cloning the CPU. This allows
+                // RSP to recurse back into the SP (eg: write a SP register) without
+                // double-borrows.
+                let mut rsp = self.sp.borrow_mut().core_cpu.clone();
+                return rsp.borrow_mut().step(tracer);
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>) {

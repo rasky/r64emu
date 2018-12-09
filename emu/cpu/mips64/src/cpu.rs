@@ -648,6 +648,10 @@ impl sync::Subsystem for Box<Cpu> {
         Cpu::run(self, until, tracer)
     }
 
+    fn step(&mut self, tracer: &Tracer) -> Result<()> {
+        Cpu::run(self, self.ctx.clock + 1, tracer)
+    }
+
     fn cycles(&self) -> i64 {
         self.ctx.clock
     }
@@ -713,7 +717,7 @@ impl DisasmView for Box<Cpu> {
         )
     }
 
-    fn disasm_block<Func: Fn(u64, &[u8], &str)>(&self, pc_range: (u64, u64), f: Func) {
+    fn disasm_block<Func: FnMut(u64, &[u8], &str)>(&self, pc_range: (u64, u64), mut f: Func) {
         let mut buf = vec![0u8, 0u8, 0u8, 0u8];
         let mut pc = pc_range.0 as u32;
 
@@ -745,9 +749,5 @@ impl DisasmView for Box<Cpu> {
                 pc += 4;
             }
         }
-    }
-
-    fn step(&mut self) {
-        self.run(self.ctx.clock + 1, &Tracer::null()).unwrap();
     }
 }

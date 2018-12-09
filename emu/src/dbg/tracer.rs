@@ -11,8 +11,6 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::Instant;
 
-pub(crate) const DEBUGGER_MAX_CPU: usize = 8;
-
 #[derive(Debug, Clone)]
 pub enum TraceEvent {
     Poll(),   // Fake event used to poll back into the tracer to improve responsiveness

@@ -39,6 +39,11 @@ pub trait DebuggerModel {
     /// frame will be resumed by calling run_frame with the same screen buffer.
     fn trace_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>, tracer: &Tracer) -> Result<()>;
 
+    /// Run a single CPU step with a tracer (debugger).
+    /// Similar to trace_frame(), but blocks after the specified CPU has performed a single
+    /// step (opcode).
+    fn trace_step(&mut self, cpu_name: &str, tracer: &Tracer) -> Result<()>;
+
     fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>);
 }
 
@@ -184,6 +189,10 @@ impl DebuggerUI {
                 let cpu_name = cpu_name.clone();
                 self.dbg.set_breakpoint_oneshot(&cpu_name, Some(pc));
                 self.paused = false;
+            }
+            Some(UiCommand::CpuStep(ref cpu_name)) => {
+                let _ = model.trace_step(&cpu_name, &Tracer::null());
+                self.paused = true;
             }
             None => {}
         };

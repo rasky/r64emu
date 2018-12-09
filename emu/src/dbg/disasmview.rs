@@ -22,9 +22,7 @@ pub trait DisasmView {
 
     /// Disassemble a single instruction at the specified program counter;
     /// Returns the bytes composing the instruction and the string representation.
-    fn disasm_block<Func: Fn(u64, &[u8], &str)>(&self, pc_range: (u64, u64), f: Func);
-
-    fn step(&mut self);
+    fn disasm_block<Func: FnMut(u64, &[u8], &str)>(&self, pc_range: (u64, u64), f: Func);
 }
 
 struct ByteBuf<'a>(&'a [u8]);
@@ -48,7 +46,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
     v: &mut DV,
 ) {
     let cpu_name = v.name().to_owned();
-    let mut cur_pc = v.pc();
+    let cur_pc = v.pc();
     let mut force_pc: Option<u64> = None; // if Some, make sure this PC is visible in the scroll area
 
     // Process current event (if any)
@@ -147,9 +145,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
             if ui.small_button(im_str!("Step"))
                 || (ui.is_window_focused() && ui.imgui().is_key_pressed(Scancode::S as _))
             {
-                v.step();
-                cur_pc = v.pc();
-                force_pc = Some(cur_pc);
+                ctx.command = Some(UiCommand::CpuStep(cpu_name.clone()));
             }
             ui.same_line(0.0);
             if ui.small_button(im_str!("Here"))

@@ -169,6 +169,10 @@ impl sync::Subsystem for Dp {
         }
     }
 
+    fn step(&mut self, t: &dbg::Tracer) -> dbg::Result<()> {
+        self.run(self.cycles + 1, t)
+    }
+
     fn cycles(&self) -> i64 {
         self.cycles
     }

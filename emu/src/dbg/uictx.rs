@@ -4,9 +4,12 @@ use imgui::ImString;
 use std::collections::HashMap;
 use std::time::Instant;
 
+// UiCommand is an action triggered by the GUI that is executed
+// by the main debugger loop (cannot be done while drawing the window)
 pub(crate) enum UiCommand {
     BreakpointOneShot(String, u64), // Run with a temporary breakpoint set
-    Pause(bool),                    // Set pause status
+    CpuStep(String),                // Step a single opcode for the specified CPU
+    Pause(bool),                    // Set global pause status
 }
 
 #[derive(Default)]

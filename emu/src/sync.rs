@@ -26,6 +26,9 @@ pub trait Subsystem {
     // Optionally, report events to the specified tracer (debugger).
     fn run(&mut self, target_cycles: i64, tracer: &dbg::Tracer) -> dbg::Result<()>;
 
+    // Do a single CPU step.
+    fn step(&mut self, tracer: &dbg::Tracer) -> dbg::Result<()>;
+
     // Return the current number of cycles elapsed in the subsytem.
     // Notice that this might be called from within run(), and it's supposed
     // to always hold the updated value
