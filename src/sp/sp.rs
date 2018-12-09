@@ -3,9 +3,9 @@ extern crate slog;
 
 use super::cop0::SpCop0;
 use super::cop2::SpCop2;
+use crate::errors::*;
 use emu::bus::be::{Bus, DevPtr, Mem, Reg32};
 use emu::int::Numerics;
-use crate::errors::*;
 use mips64;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -59,8 +59,14 @@ pub struct Sp {
     #[reg(bank = 1, offset = 0x10, init = 0x1, wcb)]
     reg_status: Reg32,
 
-    #[reg(bank = 1, offset = 0x18, init = 0, rwmask = 0x1, readonly)]
+    #[reg(bank = 1, offset = 0x14, readonly, rcb)]
+    reg_dma_full: Reg32,
+
+    #[reg(bank = 1, offset = 0x18, readonly, rcb)]
     reg_dma_busy: Reg32,
+
+    #[reg(bank = 1, offset = 0x1C, init = 0x0, rwmask = 0x1, rcb)]
+    reg_semaphore: Reg32,
 
     logger: slog::Logger,
 
@@ -89,6 +95,8 @@ impl Sp {
             reg_dma_wr_len: Reg32::default(),
             reg_dma_rd_len: Reg32::default(),
             reg_rsp_pc: Reg32::default(),
+            reg_dma_full: Reg32::default(),
+            reg_semaphore: Reg32::default(),
 
             core_bus: bus,
             core_cpu: cpu,
@@ -206,7 +214,7 @@ impl Sp {
             status.insert(StatusFlags::SIG7);
         }
 
-        info!(self.logger, "write status reg"; o!("status" => format!("{:?}", status)));
+        info!(self.logger, "write status reg"; "val" => new.hex(), "status" => ?status);
         let mut cpu = self.core_cpu.borrow_mut();
         self.set_status(status, cpu.ctx_mut());
     }
@@ -227,8 +235,24 @@ impl Sp {
                 // execution continues from the point where it was halted
                 // before (verified on real hardware).
                 ctx.set_halt_line(false);
+                info!(self.logger, "RSP started");
             }
         }
+    }
+
+    fn cb_read_reg_dma_full(&self, _old: u32) -> u32 {
+        self.get_status().contains(StatusFlags::DMAFULL) as u32
+    }
+    fn cb_read_reg_dma_busy(&self, _old: u32) -> u32 {
+        self.get_status().contains(StatusFlags::DMABUSY) as u32
+    }
+
+    fn cb_read_reg_semaphore(&self, old: u32) -> u32 {
+        if old == 0 {
+            // Semaphore is acquired when read as 0.
+            self.reg_semaphore.set(1);
+        }
+        old
     }
 
     fn dma_xfer(

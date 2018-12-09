@@ -1,7 +1,7 @@
 use super::{Sp, StatusFlags};
+use crate::errors::*;
 use emu::bus::be::{Bus, DevPtr, Device};
 use emu::dbg::Operand;
-use crate::errors::*;
 use mips64;
 use mips64::{DecodedInsn, REG_NAMES};
 
@@ -13,7 +13,7 @@ const RSP_COP0_REG_NAMES: [&'static str; 32] = [
     "SP_STATUS",
     "DMA_FULL",
     "DMA_BUSY",
-    "SP_RESERVED",
+    "SP_SEMAPHORE",
     "CMD_START",
     "CMD_END",
     "CMD_CURRENT",
