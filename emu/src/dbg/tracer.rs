@@ -15,9 +15,10 @@ pub(crate) const DEBUGGER_MAX_CPU: usize = 8;
 
 #[derive(Debug, Clone)]
 pub enum TraceEvent {
-    Poll(), // Fake event used to poll back into the tracer to improve responsiveness
+    Poll(),   // Fake event used to poll back into the tracer to improve responsiveness
+    Paused(), // A pause was requested
     Breakpoint(String, usize, u64), // A breakpoint was hit (cpu_idx, bp_idx, pc)
-    Breakhere(usize), // A break-here was hit
+    BreakpointOneShot(String, u64), // A one-shot breakpoint was hit (cpu_idx, pc)
     WatchpointWrite(String, usize), // A watchpoint was hit during a write (cpu_idx, wp_idx)
     WatchpointRead(String, usize), // A watchpoint was hit during a read (cpu_idx, wp_idx)
     GenericBreak(&'static str), // Another kind of condition was hit, and we want to stop the tracing.
@@ -233,6 +234,8 @@ struct DbgCpu {
     breakpoints: Vec<Breakpoint>,
     watchpoints: Vec<Watchpoint>,
 
+    bp_oneshot: Option<u64>, // Special one-shot breakpoint
+
     bp_fastmap: IntHashMap<u64, usize>,
     wp_fastmap: IntHashMap<u64, usize>,
 }
@@ -246,6 +249,11 @@ impl DbgCpu {
         });
         self.update_bp_fastmap();
     }
+
+    fn set_breakpoint_oneshot(&mut self, pc: Option<u64>) {
+        self.bp_oneshot = pc;
+    }
+
     fn add_watchpoint(
         &mut self,
         addr: u64,
@@ -303,6 +311,19 @@ impl Debugger {
         }
     }
 
+    pub fn set_breakpoint_oneshot(&mut self, cpu_name: &str, pc: Option<u64>) {
+        self.cpus
+            .get_mut(cpu_name)
+            .unwrap()
+            .set_breakpoint_oneshot(pc);
+    }
+
+    pub fn disable_breakpoint_oneshot(&mut self) {
+        for (_, cpu) in &mut self.cpus {
+            cpu.set_breakpoint_oneshot(None);
+        }
+    }
+
     pub fn set_poll_event(&mut self, when: Instant) {
         self.next_poll.set(Some(when));
     }
@@ -322,6 +343,9 @@ impl Debugger {
             for bp in &cpu.breakpoints {
                 trace_guards[TraceGuard::index(bp.pc)].insert(TraceGuard::INSN);
             }
+            if let Some(pc) = cpu.bp_oneshot {
+                trace_guards[TraceGuard::index(pc)].insert(TraceGuard::INSN);
+            }
             for wp in &cpu.watchpoints {
                 trace_guards[TraceGuard::index(wp.addr)].insert(match wp.wtype {
                     WatchpointType::Read => TraceGuard::MEM_READ,
@@ -336,9 +360,15 @@ impl Debugger {
     }
 
     fn trace_insn(&self, cpu_name: &str, pc: u64) -> Result<()> {
-        match self.cpus[cpu_name].bp_fastmap.get(&pc) {
+        let cpu = &self.cpus[cpu_name];
+        match cpu.bp_fastmap.get(&pc) {
             Some(idx) => Err(box TraceEvent::Breakpoint(cpu_name.to_owned(), *idx, pc)),
-            None => Ok(()),
+            None => match cpu.bp_oneshot {
+                Some(bp_pc) if bp_pc == pc => {
+                    Err(box TraceEvent::BreakpointOneShot(cpu_name.to_owned(), pc))
+                }
+                _ => Ok(()),
+            },
         }
     }
 

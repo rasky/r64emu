@@ -126,6 +126,12 @@ impl DebuggerUI {
                     TraceEvent::Poll() => return false, // Polling
                     TraceEvent::Breakpoint(_, _, _) => {
                         self.paused = true;
+                        self.dbg.disable_breakpoint_oneshot();
+                        return false;
+                    }
+                    TraceEvent::BreakpointOneShot(_, _) => {
+                        self.paused = true;
+                        self.dbg.disable_breakpoint_oneshot();
                         return false;
                     }
                     _ => unimplemented!(),
@@ -147,6 +153,7 @@ impl DebuggerUI {
         // Global key shortcuts
         if imgui.is_key_pressed(Scancode::Space as _) {
             self.paused = !self.paused;
+            self.uictx.get_mut().event = Some((box TraceEvent::Paused(), Instant::now()));
         }
 
         let ui = self.imgui_sdl2.frame(&window, &mut imgui, &event_pump);
@@ -170,6 +177,17 @@ impl DebuggerUI {
 
         self.backend.render(ui);
         self.last_render = Instant::now();
+
+        match self.uictx.get_mut().command {
+            Some(UiCommand::Pause(paused)) => self.paused = paused,
+            Some(UiCommand::BreakpointOneShot(ref cpu_name, pc)) => {
+                let cpu_name = cpu_name.clone();
+                self.dbg.set_breakpoint_oneshot(&cpu_name, Some(pc));
+                self.paused = false;
+            }
+            None => {}
+        };
+        self.uictx.get_mut().command = None;
         self.uictx.get_mut().event = None;
     }
 

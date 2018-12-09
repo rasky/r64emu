@@ -3,7 +3,7 @@ use imgui_sys;
 use sdl2::keyboard::Scancode;
 
 use super::uisupport::*;
-use super::{TraceEvent, UiCtx};
+use super::{TraceEvent, UiCommand, UiCtx};
 
 use std::time::Instant;
 
@@ -48,23 +48,42 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
     v: &mut DV,
 ) {
     let cpu_name = v.name().to_owned();
-    let cur_pc = v.pc();
-    let mut force_pc: Option<u64> = None; // if Some, jump to this PC this frame
+    let mut cur_pc = v.pc();
+    let mut force_pc: Option<u64> = None; // if Some, make sure this PC is visible in the scroll area
 
     // Process current event (if any)
     match ctx.event {
         Some((ref evt, _)) => match **evt {
             TraceEvent::Breakpoint(ref bp_cpu_name, _, bp_pc) if *bp_cpu_name == cpu_name => {
                 // Center breakpoint PC
-                force_pc = Some(bp_pc.saturating_sub(10 * 4));
-
-                // Start blinking effect
-                ctx.disasm.get_mut(&cpu_name).unwrap().blink_pc = Some((bp_pc, Instant::now()));
+                force_pc = Some(bp_pc);
 
                 // Focus this window
                 unsafe {
                     imgui_sys::igSetNextWindowFocus();
                 }
+
+                ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = None;
+
+                // Start blinking effect
+                ctx.disasm.get_mut(&cpu_name).unwrap().blink_pc = Some((bp_pc, Instant::now()));
+            }
+            TraceEvent::BreakpointOneShot(ref bp_cpu_name, bp_pc) if *bp_cpu_name == cpu_name => {
+                // Center breakpoint PC
+                force_pc = Some(bp_pc);
+
+                // Focus this window
+                unsafe {
+                    imgui_sys::igSetNextWindowFocus();
+                }
+
+                ctx.disasm.get_mut(&cpu_name).unwrap().blink_pc = None;
+                ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = None;
+            }
+            TraceEvent::Paused() => {
+                force_pc = Some(cur_pc);
+                ctx.disasm.get_mut(&cpu_name).unwrap().blink_pc = None;
+                ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = None;
             }
             _ => {}
         },
@@ -93,6 +112,26 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
             });
 
             // *******************************************
+            // Cursor input
+            // *******************************************
+            if ui.is_window_focused() {
+                if ui.imgui().is_key_pressed(Scancode::Up as _) {
+                    let cpc = match ctx.disasm[&cpu_name].cursor_pc {
+                        Some(cpc) => cpc - 4,
+                        None => cur_pc - 4,
+                    };
+                    ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = Some(cpc);
+                }
+                if ui.imgui().is_key_pressed(Scancode::Down as _) {
+                    let cpc = match ctx.disasm[&cpu_name].cursor_pc {
+                        Some(cpc) => cpc + 4,
+                        None => cur_pc + 4,
+                    };
+                    ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = Some(cpc);
+                }
+            }
+
+            // *******************************************
             // Button toolbar
             // *******************************************
             if ui.small_button(im_str!("Goto")) {
@@ -102,13 +141,23 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
             if ui.small_button(im_str!("Center"))
                 || (ui.is_window_focused() && ui.imgui().is_key_pressed(Scancode::C as _))
             {
-                force_pc = Some(cur_pc.saturating_sub(10 * 4));
+                force_pc = Some(cur_pc);
             }
             ui.same_line(0.0);
             if ui.small_button(im_str!("Step"))
                 || (ui.is_window_focused() && ui.imgui().is_key_pressed(Scancode::S as _))
             {
                 v.step();
+                cur_pc = v.pc();
+                force_pc = Some(cur_pc);
+            }
+            ui.same_line(0.0);
+            if ui.small_button(im_str!("Here"))
+                || (ui.is_window_focused() && ui.imgui().is_key_pressed(Scancode::Return as _))
+            {
+                if let Some(cpc) = ctx.disasm[&cpu_name].cursor_pc {
+                    ctx.command = Some(UiCommand::BreakpointOneShot(cpu_name.clone(), cpc));
+                }
             }
 
             // *******************************************
@@ -132,23 +181,52 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                     let num_lines = pc_range.1 - pc_range.0 + 1;
 
                     // Check if we were asked to scroll to a specific PC.
-                    if let Some(start_pc) = force_pc {
-                        let start_pc = start_pc.max(pc_range.0).min(pc_range.1);
+                    if let Some(force_pc) = force_pc {
+                        let size = ui.get_content_region_avail();
                         let row_height = ui.get_text_line_height_with_spacing();
-                        unsafe {
-                            imgui_sys::igSetScrollY(
-                                row_height * ((start_pc - pc_range.0) / 4) as f32,
-                            );
+                        let scroll_y = unsafe { imgui_sys::igGetScrollY() };
+
+                        let first_pc = pc_range
+                            .0
+                            .saturating_add((scroll_y / row_height) as u64 * 4);
+                        let last_pc = first_pc.saturating_add((size.1 / row_height) as u64 * 4);
+
+                        if force_pc < first_pc.saturating_add(4 * 4)
+                            || force_pc > last_pc.saturating_sub(4 * 4)
+                        {
+                            let start_pc = force_pc
+                                .saturating_sub(10 * 4)
+                                .max(pc_range.0)
+                                .min(pc_range.1);
+                            unsafe {
+                                imgui_sys::igSetScrollY(
+                                    row_height * ((start_pc - pc_range.0) / 4) as f32,
+                                );
+                            }
                         }
                     }
 
                     // Display the non-clipped part of the listbox
                     let blink_pc = ctx.disasm[&cpu_name].blink_pc;
+                    let cursor_pc = ctx.disasm[&cpu_name].cursor_pc;
                     ImGuiListClipper::new(num_lines as usize).build(|start, end| {
                         v.disasm_block(
                             (pc_range.0 + start as u64 * 4, pc_range.0 + end as u64 * 4),
                             |pc, mem, text| {
                                 let mut bkg_color = color(0, 0, 0);
+
+                                // Highlight this line if it's the current cursor position
+                                if let Some(cpc) = cursor_pc {
+                                    if cpc == pc {
+                                        let wsize = ui.get_content_region_avail();
+                                        let dl = ui.get_window_draw_list();
+                                        let pos = ui.get_cursor_screen_pos();
+                                        let end = (pos.0 + wsize.0, pos.1 + 15.0);
+                                        let c1 = color(151, 39, 77);
+                                        dl.add_rect_filled_multicolor(pos, end, c1, c1, c1, c1);
+                                        bkg_color = c1;
+                                    }
+                                }
 
                                 // Highlight this line if it is PC.
                                 if pc == cur_pc {

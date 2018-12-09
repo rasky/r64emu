@@ -4,9 +4,15 @@ use imgui::ImString;
 use std::collections::HashMap;
 use std::time::Instant;
 
+pub(crate) enum UiCommand {
+    BreakpointOneShot(String, u64), // Run with a temporary breakpoint set
+    Pause(bool),                    // Set pause status
+}
+
 #[derive(Default)]
 pub(crate) struct UiCtxDisasm {
     pub blink_pc: Option<(u64, Instant)>,
+    pub cursor_pc: Option<u64>,
 }
 
 // Global state shared by all debugger UIs, passed to all rendere functions.
@@ -21,6 +27,9 @@ pub(crate) struct UiCtx {
 
     // An event that was just triggered. This is kept only for one frame.
     pub event: Option<(Box<TraceEvent>, Instant)>,
+
+    // A command requested by the UI to the debugger
+    pub command: Option<UiCommand>,
 
     // Disasm views
     pub disasm: HashMap<String, UiCtxDisasm>,
