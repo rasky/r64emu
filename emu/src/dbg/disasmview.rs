@@ -254,21 +254,30 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                                 }
 
                                 let fields: Vec<&str> = text.splitn(2, "\t").collect();
+                                let mut hovered = false;
 
                                 // Address
                                 ui.text_colored(color(174, 129, 255), im_str!("{:08x}", pc));
+                                hovered |= ui.is_item_hovered();
 
                                 // Hex dump
                                 ui.same_line(80.0);
                                 ui.text_colored(color(102, 99, 83), im_str!("{:x}", ByteBuf(mem)));
+                                hovered |= ui.is_item_hovered();
 
                                 // Opcode
                                 ui.same_line(160.0);
                                 ui.text_colored(color(165, 224, 46), im_str!("{}", fields[0]));
+                                hovered |= ui.is_item_hovered();
 
                                 // Args
                                 ui.same_line(220.0);
                                 ui.text_colored(color(230, 219, 116), im_str!("{}", fields[1]));
+                                hovered |= ui.is_item_hovered();
+
+                                if hovered && ui.is_window_focused() && ui.imgui().is_mouse_clicked(ImMouseButton::Left) {
+                                    ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = Some(pc);
+                                }
                             },
                         );
                     })
