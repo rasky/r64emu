@@ -20,6 +20,8 @@ mod decoding;
 pub use self::decoding::*;
 mod tracer;
 pub use self::tracer::*;
+mod uictx;
+pub(crate) use self::uictx::UiCtx;
 
 pub trait DebuggerModel {
     /// Run a frame with a tracer (debugger).
@@ -44,6 +46,8 @@ pub struct DebuggerUI {
     tex_screen: Texture,
 
     pub dbg: Debugger,
+    uictx: RefCell<UiCtx>,
+
     paused: bool,
     last_render: Instant, // last instant the debugger refreshed its UI
 }
@@ -65,6 +69,7 @@ impl DebuggerUI {
             hidpi_factor,
             tex_screen: Texture::new(),
             dbg: Debugger::new(),
+            uictx: RefCell::new(UiCtx::default()),
             paused: false,
             last_render: Instant::now(),
         }
@@ -104,14 +109,17 @@ impl DebuggerUI {
                 self.tex_screen.copy_from_buffer_mut(screen);
                 return true;
             }
-            Err(event) => match *event {
-                TraceEvent::Poll() => return false, // Polling
-                TraceEvent::Breakpoint(_cpu_idx, _bp_idx) => {
-                    self.paused = true;
-                    return false;
+            Err(event) => {
+                self.uictx.get_mut().event = Some((event.clone(), Instant::now()));
+                match *event {
+                    TraceEvent::Poll() => return false, // Polling
+                    TraceEvent::Breakpoint(_, _, _) => {
+                        self.paused = true;
+                        return false;
+                    }
+                    _ => unimplemented!(),
                 }
-                _ => unimplemented!(),
-            },
+            }
         };
     }
 
@@ -136,7 +144,10 @@ impl DebuggerUI {
         ui.show_demo_window(&mut true);
 
         {
-            let dr = DebuggerRenderer { ui: &ui };
+            let dr = DebuggerRenderer {
+                ui: &ui,
+                ctx: &self.uictx,
+            };
             model.render_debug(&dr);
         }
 
@@ -148,6 +159,7 @@ impl DebuggerUI {
 
         self.backend.render(ui);
         self.last_render = Instant::now();
+        self.uictx.get_mut().event = None;
     }
 
     fn render_main<'ui>(&mut self, ui: &Ui<'ui>) {
@@ -166,19 +178,20 @@ impl DebuggerUI {
                 image.build();
             });
 
-        self.dbg.render_main(ui);
+        self.dbg.render_main(ui, self.uictx.get_mut());
     }
 }
 
 pub struct DebuggerRenderer<'a, 'ui> {
     ui: &'a Ui<'ui>,
+    ctx: &'a RefCell<UiCtx>,
 }
 
 impl<'a, 'ui> DebuggerRenderer<'a, 'ui> {
     pub fn render_regview<V: RegisterView>(&self, v: &mut V) {
-        render_regview(self.ui, v)
+        render_regview(self.ui, &mut self.ctx.borrow_mut(), v)
     }
     pub fn render_disasmview<V: DisasmView>(&self, v: &mut V) {
-        render_disasmview(self.ui, v)
+        render_disasmview(self.ui, &mut self.ctx.borrow_mut(), v)
     }
 }

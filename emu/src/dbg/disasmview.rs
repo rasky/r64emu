@@ -1,9 +1,11 @@
-extern crate imgui;
-extern crate imgui_sys;
-extern crate sdl2;
-use self::imgui::*;
-use self::sdl2::keyboard::Scancode;
+use imgui::*;
+use imgui_sys;
+use sdl2::keyboard::Scancode;
+
 use super::uisupport::*;
+use super::{TraceEvent, UiCtx};
+
+use std::time::Instant;
 
 /// A trait for an object that can display register contents to
 /// a debugger view.
@@ -40,13 +42,38 @@ fn color(r: usize, g: usize, b: usize) -> ImVec4 {
     ImVec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0)
 }
 
-pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(ui: &'a Ui<'ui>, v: &mut DV) {
+pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
+    ui: &'a Ui<'ui>,
+    ctx: &mut UiCtx,
+    v: &mut DV,
+) {
+    let cpu_idx: usize = 0;
+    let cur_pc = v.pc();
+    let mut force_pc: Option<u64> = None; // if Some, jump to this PC this frame
+
+    // Process current event (if any)
+    match ctx.event {
+        Some((ref evt, _)) => match **evt {
+            TraceEvent::Breakpoint(bp_cpu_idx, _, bp_pc) if bp_cpu_idx == cpu_idx => {
+                // Center breakpoint PC
+                force_pc = Some(bp_pc.saturating_sub(10 * 4));
+
+                // Start blinking effect
+                ctx.disasm[cpu_idx].blink_pc = Some((bp_pc, Instant::now()));
+
+                // Focus this window
+                unsafe {
+                    imgui_sys::igSetNextWindowFocus();
+                }
+            }
+            _ => {}
+        },
+        None => {}
+    };
+
     ui.window(im_str!("[{}] Disassembly", v.name()))
         .size((450.0, 400.0), ImGuiCond::FirstUseEver)
         .build(|| {
-            let cur_pc = v.pc();
-            let mut force_pc: Option<u64> = None; // if Some, jump to this PC this frame
-
             // *******************************************
             // Goto popup
             // *******************************************
@@ -120,6 +147,8 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(ui: &'a Ui<'ui>, v: &mu
                         v.disasm_block(
                             (pc_range.0 + start as u64 * 4, pc_range.0 + end as u64 * 4),
                             |pc, mem, text| {
+                                let mut bkg_color = color(0, 0, 0);
+
                                 // Highlight this line if it is PC.
                                 if pc == cur_pc {
                                     let wsize = ui.get_content_region_avail();
@@ -128,6 +157,25 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(ui: &'a Ui<'ui>, v: &mu
                                     let end = (pos.0 + wsize.0, pos.1 + 15.0);
                                     let c1 = color(41, 65, 100);
                                     dl.add_rect_filled_multicolor(pos, end, c1, c1, c1, c1);
+                                    bkg_color = c1;
+                                }
+
+                                // See if we need to do a blink animation over this PC
+                                if let Some((bpc, bwhen)) = ctx.disasm[0].blink_pc {
+                                    if bpc == pc {
+                                        match blink_color(bkg_color, bwhen) {
+                                            Some(c1) => {
+                                                let wsize = ui.get_content_region_avail();
+                                                let dl = ui.get_window_draw_list();
+                                                let pos = ui.get_cursor_screen_pos();
+                                                let end = (pos.0 + wsize.0, pos.1 + 15.0);
+                                                dl.add_rect_filled_multicolor(
+                                                    pos, end, c1, c1, c1, c1,
+                                                )
+                                            }
+                                            None => {}
+                                        }
+                                    }
                                 }
 
                                 let fields: Vec<&str> = text.splitn(2, "\t").collect();

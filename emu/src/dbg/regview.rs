@@ -1,5 +1,5 @@
-extern crate imgui;
-use self::imgui::*;
+use super::UiCtx;
+use imgui::*;
 
 pub enum RegisterSize<'a> {
     Reg8(&'a mut u8),
@@ -19,7 +19,11 @@ pub trait RegisterView {
         F: for<'a> FnMut(&'a str, RegisterSize<'a>);
 }
 
-pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(ui: &'a Ui<'ui>, v: &mut RV) {
+pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(
+    ui: &'a Ui<'ui>,
+    _ctx: &mut UiCtx,
+    v: &mut RV,
+) {
     ui.window(im_str!("[{}] Registers", v.name()))
         .size(RV::WINDOW_SIZE, ImGuiCond::FirstUseEver)
         .build(|| {

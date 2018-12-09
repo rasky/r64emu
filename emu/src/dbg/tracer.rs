@@ -1,4 +1,5 @@
 use super::uisupport::imgui_input_hex;
+use super::UiCtx;
 use array_macro::array;
 use bitflags::bitflags;
 use imgui::*;
@@ -9,12 +10,12 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use std::time::Instant;
 
-const DEBUGGER_MAX_CPU: usize = 8;
+pub(crate) const DEBUGGER_MAX_CPU: usize = 8;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum TraceEvent {
     Poll(), // Fake event used to poll back into the tracer to improve responsiveness
-    Breakpoint(usize, usize), // A breakpoint was hit (cpu_idx, bp_idx)
+    Breakpoint(usize, usize, u64), // A breakpoint was hit (cpu_idx, bp_idx, pc)
     Breakhere(usize), // A break-here was hit
     WatchpointWrite(usize, usize), // A watchpoint was hit during a write (cpu_idx, wp_idx)
     WatchpointRead(usize, usize), // A watchpoint was hit during a read (cpu_idx, wp_idx)
@@ -233,8 +234,6 @@ struct DbgCpu {
 
     bp_fastmap: IntHashMap<u64, usize>,
     wp_fastmap: IntHashMap<u64, usize>,
-
-    ui: DebuggerUi,
 }
 
 impl DbgCpu {
@@ -244,7 +243,6 @@ impl DbgCpu {
             pc: pc,
             description: description.to_owned(),
         });
-        self.breakpoints.sort();
         self.update_bp_fastmap();
     }
     fn add_watchpoint(
@@ -261,11 +259,11 @@ impl DbgCpu {
             wtype,
             condition,
         });
-        self.breakpoints.sort();
         self.update_wp_fastmap();
     }
 
     fn update_bp_fastmap(&mut self) {
+        self.breakpoints.sort();
         self.bp_fastmap = self
             .breakpoints
             .iter()
@@ -275,6 +273,7 @@ impl DbgCpu {
             .collect();
     }
     fn update_wp_fastmap(&mut self) {
+        self.breakpoints.sort();
         self.wp_fastmap = self
             .watchpoints
             .iter()
@@ -329,7 +328,7 @@ impl Debugger {
 
     fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result<()> {
         match self.cpus[cpu_idx].bp_fastmap.get(&pc) {
-            Some(idx) => Err(box TraceEvent::Breakpoint(cpu_idx, *idx)),
+            Some(idx) => Err(box TraceEvent::Breakpoint(cpu_idx, *idx, pc)),
             None => Ok(()),
         }
     }
@@ -384,42 +383,30 @@ impl Debugger {
     }
 }
 
-#[derive(Default)]
-struct DebuggerUi {
-    new_bp_pc: u64,
-    new_bp_desc: ImString,
-
-    new_wp_addr: u64,
-    new_wp_desc: ImString,
-    new_wp_type: i32,
-    new_wp_cond: i32,
-    new_wp_value: u64,
-}
-
 impl Debugger {
-    fn render_breakpoints(&mut self, ui: &Ui<'_>, cpu_idx: usize) {
+    fn render_breakpoints(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx, cpu_idx: usize) {
         let cpu = &mut self.cpus[cpu_idx];
 
         ui.popup(im_str!("##bp#new"), || {
             ui.text(im_str!("PC:"));
             ui.same_line(60.0);
-            imgui_input_hex(ui, im_str!("###bp#new_pc"), &mut cpu.ui.new_bp_pc);
+            imgui_input_hex(ui, im_str!("###bp#new_pc"), &mut ctx.new_bp_pc, false);
 
             ui.text(im_str!("Desc:"));
             ui.same_line(60.0);
-            ui.input_text(im_str!("###bp#new_desc"), &mut cpu.ui.new_bp_desc)
+            ui.input_text(im_str!("###bp#new_desc"), &mut ctx.new_bp_desc)
                 .auto_select_all(true)
                 .build();
 
             if ui.button(im_str!("Add"), (40.0, 20.0)) {
-                let desc = cpu.ui.new_bp_desc.to_str().to_owned();
-                cpu.add_breakpoint(cpu.ui.new_bp_pc, &desc);
+                let desc = ctx.new_bp_desc.to_str().to_owned();
+                cpu.add_breakpoint(ctx.new_bp_pc, &desc);
                 ui.close_current_popup();
             }
         });
         if ui.small_button(im_str!("New BP")) {
-            cpu.ui.new_bp_pc = 0;
-            cpu.ui.new_bp_desc = ImString::new("New breakpoint");
+            ctx.new_bp_pc = 0;
+            ctx.new_bp_desc = ImString::new("New breakpoint");
             ui.open_popup(im_str!("##bp#new"));
         }
 
@@ -437,7 +424,7 @@ impl Debugger {
             ui.next_column();
 
             let name = im_str!("###breakpoints#pc#{}", idx);
-            if imgui_input_hex(ui, name, &mut bp.pc) {
+            if imgui_input_hex(ui, name, &mut bp.pc, true) {
                 // Changing PC requires update to fastmap
                 bp_changed = true;
             }
@@ -466,31 +453,31 @@ impl Debugger {
         }
     }
 
-    fn render_watchpoints(&mut self, ui: &Ui<'_>, cpu_idx: usize) {
+    fn render_watchpoints(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx, cpu_idx: usize) {
         let cpu = &mut self.cpus[cpu_idx];
 
         ui.popup(im_str!("##wp#new"), || {
             ui.text(im_str!("Address:"));
             ui.same_line(80.0);
-            imgui_input_hex(ui, im_str!("###wp#new_addr"), &mut cpu.ui.new_wp_addr);
+            imgui_input_hex(ui, im_str!("###wp#new_addr"), &mut ctx.new_wp_addr, false);
 
             ui.text(im_str!("Desc:"));
             ui.same_line(80.0);
-            ui.input_text(im_str!("###wp#new_desc"), &mut cpu.ui.new_wp_desc)
+            ui.input_text(im_str!("###wp#new_desc"), &mut ctx.new_wp_desc)
                 .auto_select_all(true)
                 .build();
 
             ui.text(im_str!("Type:"));
             ui.same_line(80.0);
-            ui.radio_button(im_str!("Read"), &mut cpu.ui.new_wp_type, 0);
+            ui.radio_button(im_str!("Read"), &mut ctx.new_wp_type, 0);
             ui.same_line(150.0);
-            ui.radio_button(im_str!("Write"), &mut cpu.ui.new_wp_type, 1);
+            ui.radio_button(im_str!("Write"), &mut ctx.new_wp_type, 1);
 
             ui.text(im_str!("Condition:"));
             ui.same_line(80.0);
             ui.combo(
                 im_str!("###wp#new_cond"),
-                &mut cpu.ui.new_wp_cond,
+                &mut ctx.new_wp_cond,
                 &[
                     im_str!("Always"),
                     im_str!("=="),
@@ -503,39 +490,39 @@ impl Debugger {
                 0,
             );
 
-            if cpu.ui.new_wp_cond != 0 {
+            if ctx.new_wp_cond != 0 {
                 ui.text(im_str!("Value:"));
                 ui.same_line(80.0);
-                imgui_input_hex(ui, im_str!("###wp#new_value"), &mut cpu.ui.new_wp_value);
+                imgui_input_hex(ui, im_str!("###wp#new_value"), &mut ctx.new_wp_value, false);
             }
 
             if ui.button(im_str!("Add"), (40.0, 20.0)) {
-                let desc = cpu.ui.new_wp_desc.to_str().to_owned();
-                let wtype = if cpu.ui.new_wp_type == 0 {
+                let desc = ctx.new_wp_desc.to_str().to_owned();
+                let wtype = if ctx.new_wp_type == 0 {
                     WatchpointType::Read
                 } else {
                     WatchpointType::Write
                 };
-                let cond = match cpu.ui.new_wp_cond {
+                let cond = match ctx.new_wp_cond {
                     0 => WatchpointCondition::Always,
-                    1 => WatchpointCondition::Eq(cpu.ui.new_wp_value),
-                    2 => WatchpointCondition::Ne(cpu.ui.new_wp_value),
-                    3 => WatchpointCondition::Ge(cpu.ui.new_wp_value),
-                    4 => WatchpointCondition::Le(cpu.ui.new_wp_value),
-                    5 => WatchpointCondition::Gt(cpu.ui.new_wp_value),
-                    6 => WatchpointCondition::Lt(cpu.ui.new_wp_value),
+                    1 => WatchpointCondition::Eq(ctx.new_wp_value),
+                    2 => WatchpointCondition::Ne(ctx.new_wp_value),
+                    3 => WatchpointCondition::Ge(ctx.new_wp_value),
+                    4 => WatchpointCondition::Le(ctx.new_wp_value),
+                    5 => WatchpointCondition::Gt(ctx.new_wp_value),
+                    6 => WatchpointCondition::Lt(ctx.new_wp_value),
                     _ => unreachable!(),
                 };
-                cpu.add_watchpoint(cpu.ui.new_wp_addr, &desc, wtype, cond);
+                cpu.add_watchpoint(ctx.new_wp_addr, &desc, wtype, cond);
                 ui.close_current_popup();
             }
         });
         if ui.small_button(im_str!("New WP")) {
-            cpu.ui.new_wp_addr = 0;
-            cpu.ui.new_wp_desc = ImString::new("New watchpoint");
-            cpu.ui.new_wp_type = 0;
-            cpu.ui.new_wp_cond = 0;
-            cpu.ui.new_wp_value = 0;
+            ctx.new_wp_addr = 0;
+            ctx.new_wp_desc = ImString::new("New watchpoint");
+            ctx.new_wp_type = 0;
+            ctx.new_wp_cond = 0;
+            ctx.new_wp_value = 0;
             ui.open_popup(im_str!("##wp#new"));
         }
 
@@ -553,7 +540,7 @@ impl Debugger {
             ui.next_column();
 
             let name = im_str!("###watchpoints#addr#{}", idx);
-            if imgui_input_hex(ui, name, &mut wp.addr) {
+            if imgui_input_hex(ui, name, &mut wp.addr, true) {
                 // Changing addr requires update to fastmap
                 wp_changed = true;
             }
@@ -582,7 +569,7 @@ impl Debugger {
         }
     }
 
-    fn render_points(&mut self, ui: &Ui<'_>) {
+    fn render_points(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx) {
         ui.window(im_str!("Breakpoints & Watchpoints"))
             .size((200.0, 400.0), ImGuiCond::FirstUseEver)
             .build(|| {
@@ -592,20 +579,20 @@ impl Debugger {
                     .default_open(true)
                     .build()
                 {
-                    self.render_breakpoints(ui, cpu_idx);
+                    self.render_breakpoints(ui, ctx, cpu_idx);
                 }
                 if ui
                     .collapsing_header(im_str!("Watchpoints"))
                     .default_open(true)
                     .build()
                 {
-                    self.render_watchpoints(ui, cpu_idx);
+                    self.render_watchpoints(ui, ctx, cpu_idx);
                 }
             });
     }
 
-    pub fn render_main(&mut self, ui: &Ui<'_>) {
-        self.render_points(ui);
+    pub(crate) fn render_main(&mut self, ui: &Ui<'_>, ctx: &mut UiCtx) {
+        self.render_points(ui, ctx);
     }
 }
 

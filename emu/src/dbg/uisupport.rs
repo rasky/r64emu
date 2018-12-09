@@ -1,5 +1,6 @@
 use imgui::sys;
 use imgui::*;
+use std::time::{Duration, Instant};
 
 pub(crate) struct ImGuiListClipper {
     items_count: usize,
@@ -44,13 +45,14 @@ impl ImGuiListClipper {
     }
 }
 
-pub fn imgui_input_hex(ui: &Ui<'_>, name: &ImStr, val: &mut u64) -> bool {
+pub fn imgui_input_hex(ui: &Ui<'_>, name: &ImStr, val: &mut u64, wait_enter: bool) -> bool {
     let mut changed = false;
     ui.with_item_width(70.0, || {
         let mut spc = ImString::new(format!("{:08x}", val));
         if ui
             .input_text(name, &mut spc)
             .chars_hexadecimal(true)
+            .enter_returns_true(wait_enter)
             .auto_select_all(true)
             .build()
         {
@@ -59,4 +61,30 @@ pub fn imgui_input_hex(ui: &Ui<'_>, name: &ImStr, val: &mut u64) -> bool {
         }
     });
     changed
+}
+
+fn interp4(a: ImVec4, b: ImVec4, d: f32) -> ImVec4 {
+    ImVec4::new(
+        a.x + (b.x - a.x) * d,
+        a.y + (b.y - a.y) * d,
+        a.z + (b.z - a.z) * d,
+        a.w + (b.w - a.w) * d,
+    )
+}
+
+pub fn blink_color(base: ImVec4, start: Instant) -> Option<ImVec4> {
+    let elapsed = start.elapsed();
+    let white = ImVec4::new(1.0, 1.0, 1.0, 1.0);
+    let end = Duration::from_millis(1000);
+    let mid = end / 2;
+
+    if elapsed < mid {
+        let d = (mid - elapsed).subsec_millis() as f32 / mid.subsec_millis() as f32;
+        Some(interp4(base, white, d))
+    } else if elapsed < end {
+        let d = (end - elapsed).subsec_millis() as f32 / mid.subsec_millis() as f32;
+        Some(interp4(white, base, d))
+    } else {
+        None
+    }
 }
