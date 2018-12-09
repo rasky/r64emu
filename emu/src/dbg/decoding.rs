@@ -196,19 +196,22 @@ where
     // Return a string representation of the insn, which represents
     // the disassembled instruction.
     pub fn disasm(&self) -> String {
+        // Get all args which are not hidden
+        let args = self.args().filter(|o| !o.is_hidden()).collect::<Vec<_>>();
+
         if let Some(ref f) = self.fmt {
             // Custom formatting strings. Use rt_format
-            match self.args().count() {
-                4 => rt_format_args!(f, self.args[0], self.args[1], self.args[2], self.args[3])
+            match args.len() {
+                4 => rt_format_args!(f, args[0], args[1], args[2], args[3])
                     .unwrap_or(rt_format_args!("<INVALID ARGUMENTS>").unwrap())
                     .with(|args| format!("{}\t{}", self.op, args)),
-                3 => rt_format_args!(f, self.args[0], self.args[1], self.args[2])
+                3 => rt_format_args!(f, args[0], args[1], args[2])
                     .unwrap_or(rt_format_args!("<INVALID ARGUMENTS>").unwrap())
                     .with(|args| format!("{}\t{}", self.op, args)),
-                2 => rt_format_args!(f, self.args[0], self.args[1])
+                2 => rt_format_args!(f, args[0], args[1])
                     .unwrap_or(rt_format_args!("<INVALID ARGUMENTS>").unwrap())
                     .with(|args| format!("{}\t{}", self.op, args)),
-                1 => rt_format_args!(f, self.args[0])
+                1 => rt_format_args!(f, args[0])
                     .unwrap_or(rt_format_args!("<INVALID ARGUMENTS>").unwrap())
                     .with(|args| format!("{}\t{}", self.op, args)),
                 0 => rt_format_args!(f)
@@ -218,17 +221,14 @@ where
             }
         } else {
             // Standard formatting with commas. Use compile-time formatting.
-            match self.args().count() {
+            match args.len() {
                 4 => format!(
                     "{}\t{},{},{},{}",
-                    self.op, self.args[0], self.args[1], self.args[2], self.args[3]
+                    self.op, args[0], args[1], args[2], args[3]
                 ),
-                3 => format!(
-                    "{}\t{},{},{}",
-                    self.op, self.args[0], self.args[1], self.args[2]
-                ),
-                2 => format!("{}\t{},{}", self.op, self.args[0], self.args[1]),
-                1 => format!("{}\t{}", self.op, self.args[0]),
+                3 => format!("{}\t{},{},{}", self.op, args[0], args[1], args[2]),
+                2 => format!("{}\t{},{}", self.op, args[0], args[1]),
+                1 => format!("{}\t{}", self.op, args[0]),
                 0 => format!("{}\t", self.op),
                 _ => unreachable!(),
             }
