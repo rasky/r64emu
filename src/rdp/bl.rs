@@ -79,11 +79,13 @@ impl Blender {
 
     pub(crate) unsafe fn setup_cycle_pm(&self, cyc: usize, p_or_m: u32) -> *const MultiColor {
         match p_or_m {
-            0 => if cyc == 0 {
-                &self.combined
-            } else {
-                &self.partial_blended
-            },
+            0 => {
+                if cyc == 0 {
+                    &self.combined
+                } else {
+                    &self.partial_blended
+                }
+            }
             1 => &self.framebuffer,
             2 => &self.reg_blend,
             3 => &self.reg_fog,
