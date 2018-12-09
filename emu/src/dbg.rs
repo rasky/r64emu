@@ -1,16 +1,10 @@
-extern crate gl;
-extern crate imgui;
-extern crate imgui_opengl_renderer;
-extern crate imgui_sdl2;
-extern crate imgui_sys;
-extern crate sdl2;
 use super::gfx::{GfxBufferMutLE, Rgb888};
 use super::hw::glutils::Texture;
 
-use self::imgui::*;
-use self::imgui_opengl_renderer::Renderer;
-use self::imgui_sdl2::ImguiSdl2;
-use self::sdl2::keyboard::Scancode;
+use imgui::*;
+use imgui_opengl_renderer::Renderer;
+use imgui_sdl2::ImguiSdl2;
+use sdl2::keyboard::Scancode;
 mod uisupport;
 
 use std::cell::RefCell;
@@ -96,8 +90,10 @@ impl DebuggerUI {
         // If the emulation core is paused, we can simply wait here to avoid hogging CPU.
         // Refresh every 16ms / 60FPS.
         if self.paused {
-            let trace_until = self.last_render + Duration::from_millis(16);
-            std::thread::sleep(trace_until - Instant::now());
+            match Duration::from_millis(16).checked_sub(self.last_render.elapsed()) {
+                Some(d) => std::thread::sleep(d),
+                None => {}
+            }
             return false;
         }
 
@@ -170,6 +166,8 @@ impl DebuggerUI {
                 let image = Image::new(ui, tsid.into(), reg);
                 image.build();
             });
+
+        self.dbg.render_main(ui);
     }
 }
 

@@ -1,6 +1,5 @@
-extern crate imgui;
-
-use self::imgui::sys;
+use imgui::sys;
+use imgui::*;
 
 pub(crate) struct ImGuiListClipper {
     items_count: usize,
@@ -43,4 +42,21 @@ impl ImGuiListClipper {
             sys::ImGuiListClipper_End(&mut clip);
         }
     }
+}
+
+pub fn imgui_input_hex(ui: &Ui<'_>, name: &ImStr, val: &mut u64) -> bool {
+    let mut changed = false;
+    ui.with_item_width(70.0, || {
+        let mut spc = ImString::new(format!("{:08x}", val));
+        if ui
+            .input_text(name, &mut spc)
+            .chars_hexadecimal(true)
+            .auto_select_all(true)
+            .build()
+        {
+            *val = u64::from_str_radix(spc.as_ref(), 16).unwrap();
+            changed = true;
+        }
+    });
+    changed
 }

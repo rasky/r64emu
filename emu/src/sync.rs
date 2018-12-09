@@ -187,13 +187,13 @@ impl Sync {
 
     pub fn trace_frame<F: FnMut(Event), T: dbg::Tracer>(
         &mut self,
-        mut cb: F,
+        cb: F,
         tracer: &T,
     ) -> dbg::Result<()> {
         self.do_frame(cb, Some(tracer))
     }
 
-    pub fn run_frame<F: FnMut(Event)>(&mut self, mut cb: F) {
+    pub fn run_frame<F: FnMut(Event)>(&mut self, cb: F) {
         self.do_frame(cb, None).unwrap();
     }
 
