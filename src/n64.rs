@@ -170,10 +170,10 @@ impl hw::OutputProducer for N64 {
 }
 
 impl DebuggerModel for N64 {
-    fn trace_frame<T: Tracer>(
+    fn trace_frame(
         &mut self,
         screen: &mut GfxBufferMutLE<Rgb888>,
-        tracer: &T,
+        tracer: &dbg::Tracer,
     ) -> dbg::Result<()> {
         let mut vi = self.vi.clone();
         self.sync.trace_frame(

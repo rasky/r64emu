@@ -367,7 +367,7 @@ impl Cpu {
         unimplemented!();
     }
 
-    fn op(&mut self, opcode: u32, t: Option<&dyn Tracer>) -> Result<()> {
+    fn op(&mut self, opcode: u32, t: &Tracer) -> Result<()> {
         self.ctx.clock += 1;
         let mut op = Mipsop { opcode, cpu: self };
         match op.op() {
@@ -547,32 +547,37 @@ impl Cpu {
         Ok(())
     }
 
-    fn lwl(&self, addr: u32, reg: u32, t: Option<&dyn Tracer>) -> Result<u32> {
+    fn lwl(&self, addr: u32, reg: u32, t: &Tracer) -> Result<u32> {
         let mem = self.read::<u32>(addr, t)?;
         let shift = (addr & 3) * 8;
         let mask = (1 << shift) - 1;
         Ok((reg & mask) | ((mem << shift) & !mask))
     }
 
-    fn lwr(&self, addr: u32, reg: u32, t: Option<&dyn Tracer>) -> Result<u32> {
+    fn lwr(&self, addr: u32, reg: u32, t: &Tracer) -> Result<u32> {
         let mem = self.read::<u32>(addr, t)?;
         let shift = (!addr & 3) * 8;
         let mask = ((1u64 << (32 - shift)) - 1) as u32;
         Ok((reg & !mask) | ((mem >> shift) & mask))
     }
 
-    fn swl(&self, addr: u32, reg: u32, t: Option<&dyn Tracer>) -> Result<u32> {
+    fn swl(&self, addr: u32, reg: u32, t: &Tracer) -> Result<u32> {
         let mem = self.read::<u32>(addr, t)?;
         let shift = (addr & 3) * 8;
         let mask = ((1u64 << (32 - shift)) - 1) as u32;
         Ok((mem & !mask) | ((reg >> shift) & mask))
     }
 
-    fn swr(&self, addr: u32, reg: u32, t: Option<&dyn Tracer>) -> Result<u32> {
+    fn swr(&self, addr: u32, reg: u32, t: &Tracer) -> Result<u32> {
         let mem = self.read::<u32>(addr, t)?;
         let shift = (!addr & 3) * 8;
         let mask = (1 << shift) - 1;
         Ok((mem & mask) | ((reg << shift) & !mask))
+    }
+
+    fn pc_fetch_mask(&self, pc: u64) -> u64 {
+        let pc = pc as u32;
+        ((pc & 0xFFFF_FFFC & self.bus_fetch_mask) | self.bus_fetch_fixed) as u64
     }
 
     fn fetch(&mut self, addr: u64) -> &MemIoR<u32> {
@@ -580,34 +585,31 @@ impl Cpu {
         let addr = addr as u32;
         if self.last_fetch_addr != addr {
             self.last_fetch_addr = addr;
-            self.last_fetch_mem = self.bus.borrow().fetch_read::<u32>(
-                (addr & 0xFFFF_FFFC & self.bus_fetch_mask) | self.bus_fetch_fixed,
-            );
+            self.last_fetch_mem = self
+                .bus
+                .borrow()
+                .fetch_read::<u32>(self.pc_fetch_mask(addr as u64) as u32);
         }
         &self.last_fetch_mem
     }
 
-    fn read<U: MemInt>(&self, addr: u32, tracer: Option<&dyn Tracer>) -> Result<U> {
+    fn read<U: MemInt>(&self, addr: u32, t: &Tracer) -> Result<U> {
         let val = self
             .bus
             .borrow()
             .read::<U>(addr & self.bus_read_mask & !(U::SIZE as u32 - 1));
-        tracer
-            .map(|t| t.trace_mem_read(0, addr.into(), U::ACCESS_SIZE, val.into()))
-            .unwrap_or(Ok(()))?;
+        t.trace_mem_read(0, addr.into(), U::ACCESS_SIZE, val.into())?;
         Ok(val)
     }
 
-    fn write<U: MemInt>(&self, addr: u32, val: U, tracer: Option<&dyn Tracer>) -> Result<()> {
+    fn write<U: MemInt>(&self, addr: u32, val: U, t: &Tracer) -> Result<()> {
         self.bus
             .borrow()
             .write::<U>(addr & self.bus_write_mask & !(U::SIZE as u32 - 1), val);
-        tracer
-            .map(|t| t.trace_mem_write(0, addr.into(), U::ACCESS_SIZE, val.into()))
-            .unwrap_or(Ok(()))
+        t.trace_mem_write(0, addr.into(), U::ACCESS_SIZE, val.into())
     }
 
-    pub fn run(&mut self, until: i64, tracer: Option<&dyn Tracer>) -> Result<()> {
+    pub fn run(&mut self, until: i64, t: &Tracer) -> Result<()> {
         self.until = until;
         while self.ctx.clock < self.until {
             if self.ctx.lines.halt {
@@ -630,10 +632,8 @@ impl Cpu {
                 self.ctx.delay_slot = false;
                 self.ctx.pc = self.ctx.next_pc;
                 self.ctx.next_pc += 4;
-                self.op(op, tracer)?;
-                if let Some(t) = tracer {
-                    t.trace_insn(0, self.ctx.next_pc)?;
-                }
+                self.op(op, t)?;
+                t.trace_insn(0, self.pc_fetch_mask(self.ctx.pc))?;
                 if self.ctx.clock >= self.until || self.ctx.tight_exit {
                     break;
                 }
@@ -644,7 +644,7 @@ impl Cpu {
 }
 
 impl sync::Subsystem for Box<Cpu> {
-    fn run(&mut self, until: i64, tracer: Option<&dyn Tracer>) -> Result<()> {
+    fn run(&mut self, until: i64, tracer: &Tracer) -> Result<()> {
         Cpu::run(self, until, tracer)
     }
 
@@ -703,13 +703,13 @@ impl DisasmView for Box<Cpu> {
     }
 
     fn pc(&self) -> u64 {
-        self.ctx.pc & (self.bus_fetch_mask as u64) | (self.bus_fetch_fixed as u64)
+        self.pc_fetch_mask(self.ctx.pc)
     }
 
     fn pc_range(&self) -> (u64, u64) {
         (
-            0x0 | self.bus_fetch_fixed as u64,
-            0xFFFF_FFFF_FFFF_FFFF & (self.bus_fetch_mask as u64) | (self.bus_fetch_fixed as u64),
+            self.pc_fetch_mask(0x0),
+            self.pc_fetch_mask(0xFFFF_FFFF_FFFF_FFFF),
         )
     }
 
@@ -724,9 +724,10 @@ impl DisasmView for Box<Cpu> {
         };
 
         while pc < pc_range.1 as u32 {
-            let mem = self.bus.borrow().fetch_read_nolog::<u32>(
-                (pc & 0xFFFF_FFFC & self.bus_fetch_mask) | self.bus_fetch_fixed,
-            );
+            let mem = self
+                .bus
+                .borrow()
+                .fetch_read_nolog::<u32>(self.pc_fetch_mask(pc.into()) as u32);
 
             let iter = mem.iter();
             if iter.is_none() {
@@ -747,6 +748,6 @@ impl DisasmView for Box<Cpu> {
     }
 
     fn step(&mut self) {
-        self.run(self.ctx.clock + 1, None).unwrap();
+        self.run(self.ctx.clock + 1, &Tracer::null()).unwrap();
     }
 }

@@ -1,5 +1,6 @@
 use super::uisupport::imgui_input_hex;
 use array_macro::array;
+use bitflags::bitflags;
 use imgui::*;
 
 use crate::bus::{AccessSize, MemInt};
@@ -22,45 +23,92 @@ pub enum TraceEvent {
 
 pub type Result<T> = std::result::Result<T, Box<TraceEvent>>;
 
+bitflags! {
+    struct TraceGuard: u8 {
+        const INSN      = 0b00000001;
+        const MEM_READ  = 0b00000010;
+        const MEM_WRITE = 0b00000100;
+    }
+}
+
+impl TraceGuard {
+    fn index<T: MemInt>(addr: T) -> usize {
+        let addr: u64 = addr.into();
+        ((addr >> 2) & 0xFF) as usize
+    }
+}
+
 /// A tracer is a debugger that can do fine-grained tracing of an emulator
 /// and trigger specific events when a certain condition is reached (eg: a
 /// breakpoint is hit).
 /// It is passed as argument to DebuggerModel::trace, as entry-point for
 /// debugger tracing.
-pub trait Tracer {
-    fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result<()>;
-    fn trace_mem_write(&self, cpu_idx: usize, addr: u64, size: AccessSize, val: u64) -> Result<()>;
-    fn trace_mem_read(&self, cpu_idx: usize, addr: u64, size: AccessSize, val: u64) -> Result<()>;
-    fn trace_gpu(&self, line: usize) -> Result<()>;
+pub struct Tracer<'a> {
+    dbg: Option<&'a Debugger>,
+    trace_guards: [TraceGuard; 256],
 }
 
-// A dummy tracer that never returns a tracing event.
-pub struct NullTracer {}
+impl Tracer<'_> {
+    /// Create a null tracer, not connected to a real debugger. All operations
+    /// will be nops.
+    pub fn null() -> Tracer<'static> {
+        Tracer {
+            dbg: None,
+            trace_guards: array![TraceGuard::empty(); 256],
+        }
+    }
 
-impl Tracer for NullTracer {
-    fn trace_insn(&self, _cpu_idx: usize, _pc: u64) -> Result<()> {
-        Ok(())
+    #[inline(always)]
+    pub fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result<()> {
+        if self.dbg.is_none() {
+            return Ok(());
+        }
+        if self.trace_guards[TraceGuard::index(pc)].contains(TraceGuard::INSN) {
+            self.dbg.unwrap().trace_insn(cpu_idx, pc)
+        } else {
+            Ok(())
+        }
     }
-    fn trace_mem_write(
+
+    #[inline(always)]
+    pub fn trace_mem_write(
         &self,
-        _cpu_idx: usize,
-        _addr: u64,
-        _size: AccessSize,
-        _val: u64,
+        cpu_idx: usize,
+        addr: u64,
+        size: AccessSize,
+        val: u64,
     ) -> Result<()> {
-        Ok(())
+        if self.dbg.is_none() {
+            return Ok(());
+        }
+        if self.trace_guards[TraceGuard::index(addr)].contains(TraceGuard::MEM_WRITE) {
+            self.dbg.unwrap().trace_mem_write(cpu_idx, addr, size, val)
+        } else {
+            Ok(())
+        }
     }
-    fn trace_mem_read(
+
+    #[inline(always)]
+    pub fn trace_mem_read(
         &self,
-        _cpu_idx: usize,
-        _addr: u64,
-        _size: AccessSize,
-        _val: u64,
+        cpu_idx: usize,
+        addr: u64,
+        size: AccessSize,
+        val: u64,
     ) -> Result<()> {
-        Ok(())
+        if self.dbg.is_none() {
+            return Ok(());
+        }
+        if self.trace_guards[TraceGuard::index(addr)].contains(TraceGuard::MEM_READ) {
+            self.dbg.unwrap().trace_mem_read(cpu_idx, addr, size, val)
+        } else {
+            Ok(())
+        }
     }
-    fn trace_gpu(&self, _line: usize) -> Result<()> {
-        Ok(())
+
+    #[inline(always)]
+    pub fn trace_gpu(&self, line: usize) -> Result<()> {
+        self.dbg.map(|t| t.trace_gpu(line)).unwrap_or(Ok(()))
     }
 }
 
@@ -259,7 +307,26 @@ impl Debugger {
     }
 }
 
-impl Tracer for Debugger {
+impl Debugger {
+    pub fn new_tracer(&self) -> Tracer {
+        let mut trace_guards = array![TraceGuard::empty(); 256];
+        for cpu in &self.cpus {
+            for bp in &cpu.breakpoints {
+                trace_guards[TraceGuard::index(bp.pc)].insert(TraceGuard::INSN);
+            }
+            for wp in &cpu.watchpoints {
+                trace_guards[TraceGuard::index(wp.addr)].insert(match wp.wtype {
+                    WatchpointType::Read => TraceGuard::MEM_READ,
+                    WatchpointType::Write => TraceGuard::MEM_WRITE,
+                });
+            }
+        }
+        Tracer {
+            dbg: Some(&self),
+            trace_guards: trace_guards,
+        }
+    }
+
     fn trace_insn(&self, cpu_idx: usize, pc: u64) -> Result<()> {
         match self.cpus[cpu_idx].bp_fastmap.get(&pc) {
             Some(idx) => Err(box TraceEvent::Breakpoint(cpu_idx, *idx)),

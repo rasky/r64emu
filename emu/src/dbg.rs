@@ -31,11 +31,7 @@ pub trait DebuggerModel {
     ///
     /// After a TraceEvent is returned and processed by the debugger, emulation of the
     /// frame will be resumed by calling run_frame with the same screen buffer.
-    fn trace_frame<T: Tracer>(
-        &mut self,
-        screen: &mut GfxBufferMutLE<Rgb888>,
-        tracer: &T,
-    ) -> Result<()>;
+    fn trace_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>, tracer: &Tracer) -> Result<()>;
 
     fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>);
 }
@@ -100,20 +96,23 @@ impl DebuggerUI {
         // Request a Poll event after 50ms to keep the debugger at least at 20 FPS during emulation.
         let trace_until = self.last_render + Duration::from_millis(50);
         self.dbg.set_poll_event(trace_until);
-        loop {
-            match producer.trace_frame(screen, &self.dbg) {
-                Ok(()) => {
-                    // A frame is finished. Copy it into the texture so that it's available
-                    // starting from next render().
-                    self.tex_screen.copy_from_buffer_mut(screen);
-                    return true;
+
+        match producer.trace_frame(screen, &self.dbg.new_tracer()) {
+            Ok(()) => {
+                // A frame is finished. Copy it into the texture so that it's available
+                // starting from next render().
+                self.tex_screen.copy_from_buffer_mut(screen);
+                return true;
+            }
+            Err(event) => match *event {
+                TraceEvent::Poll() => return false, // Polling
+                TraceEvent::Breakpoint(_cpu_idx, _bp_idx) => {
+                    self.paused = true;
+                    return false;
                 }
-                Err(event) => match *event {
-                    TraceEvent::Poll() => return false, // Polling
-                    _ => unimplemented!(),
-                },
-            };
-        }
+                _ => unimplemented!(),
+            },
+        };
     }
 
     /// Render the current debugger UI.

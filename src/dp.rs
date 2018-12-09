@@ -138,7 +138,7 @@ impl Dp {
 }
 
 impl sync::Subsystem for Dp {
-    fn run(&mut self, until: i64, _: Option<&dyn dbg::Tracer>) -> dbg::Result<()> {
+    fn run(&mut self, until: i64, _: &dbg::Tracer) -> dbg::Result<()> {
         loop {
             if !self.running {
                 self.cycles = until;

@@ -24,7 +24,7 @@ pub struct Config {
 pub trait Subsystem {
     // Run the subsytem until the specified target of cycles is reached.
     // Optionally, report events to the specified tracer (debugger).
-    fn run(&mut self, target_cycles: i64, tracer: Option<&dyn dbg::Tracer>) -> dbg::Result<()>;
+    fn run(&mut self, target_cycles: i64, tracer: &dbg::Tracer) -> dbg::Result<()>;
 
     // Return the current number of cycles elapsed in the subsytem.
     // Notice that this might be called from within run(), and it's supposed
@@ -154,11 +154,7 @@ impl Sync {
         (x as usize, y as usize)
     }
 
-    fn do_frame<F: FnMut(Event)>(
-        &mut self,
-        mut cb: F,
-        tracer: Option<&dyn dbg::Tracer>,
-    ) -> dbg::Result<()> {
+    fn do_frame<F: FnMut(Event)>(&mut self, mut cb: F, tracer: &dbg::Tracer) -> dbg::Result<()> {
         let (frame_start, idx) = self.curr_frame.unwrap_or((self.cycles, 0));
         let frame_end = frame_start + self.frame_cycles;
         assert_eq!(frame_start % self.frame_cycles, 0);
@@ -168,14 +164,14 @@ impl Sync {
             let (cyc, evt) = self.frame_syncs[idx];
             self.run_until(frame_start + cyc, tracer)?;
             cb(evt);
-            if let Some(t) = tracer {
-                match evt {
-                    // FIXME: this relies on the fact that this specific HSync event
-                    // was requested. Find out how to handle more generally.
-                    Event::HSync(x, y) if x == 0 => t.trace_gpu(y)?,
-                    _ => {}
-                };
-            }
+
+            // Trace GPU lines.
+            // FIXME: this relies on the fact that this specific HSync event
+            // was requested. Find out how to handle more generally.
+            match evt {
+                Event::HSync(x, y) if x == 0 => tracer.trace_gpu(y)?,
+                _ => {}
+            };
         }
 
         self.curr_frame = Some((frame_start, self.frame_syncs.len()));
@@ -185,24 +181,20 @@ impl Sync {
         Ok(())
     }
 
-    pub fn trace_frame<F: FnMut(Event), T: dbg::Tracer>(
-        &mut self,
-        cb: F,
-        tracer: &T,
-    ) -> dbg::Result<()> {
-        self.do_frame(cb, Some(tracer))
+    pub fn trace_frame<F: FnMut(Event)>(&mut self, cb: F, tracer: &dbg::Tracer) -> dbg::Result<()> {
+        self.do_frame(cb, tracer)
     }
 
     pub fn run_frame<F: FnMut(Event)>(&mut self, cb: F) {
-        self.do_frame(cb, None).unwrap();
+        self.do_frame(cb, &dbg::Tracer::null()).unwrap();
     }
 
-    fn run_until(&mut self, target: i64, tracer: Option<&dyn dbg::Tracer>) -> dbg::Result<()> {
+    fn run_until(&mut self, target: i64, tracer: &dbg::Tracer) -> dbg::Result<()> {
         for info in &self.subs {
             self.current_subinfo = Some(info.clone());
             let mut sub = info.sub.borrow_mut();
             self.current_sub = Some(&*sub);
-            sub.run((target as f64 / info.scaler) as i64, tracer);
+            sub.run((target as f64 / info.scaler) as i64, tracer)?;
             self.current_sub = None;
             self.current_subinfo = None;
         }
