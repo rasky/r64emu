@@ -141,6 +141,10 @@ impl Sync {
         self.current_sub.map_or(None, |sub| unsafe { &*sub }.pc())
     }
 
+    pub fn frames(&self) -> i64 {
+        self.frames
+    }
+
     pub fn cycles(&self) -> i64 {
         let scaler: f64 = self.current_subinfo.as_ref().map_or(0.0, |i| i.scaler);
         match self.current_sub {

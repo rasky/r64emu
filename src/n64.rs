@@ -213,4 +213,12 @@ impl DebuggerModel for N64 {
     fn all_cpus(&self) -> Vec<String> {
         vec!["R4300".into(), "RSP".into()]
     }
+
+    fn cycles(&self) -> i64 {
+        self.sync.cycles()
+    }
+
+    fn frames(&self) -> i64 {
+        self.sync.frames()
+    }
 }

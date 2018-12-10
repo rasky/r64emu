@@ -22,11 +22,19 @@ mod tracer;
 pub use self::tracer::*;
 mod uictx;
 pub(crate) use self::uictx::*;
+mod miscview;
+pub(crate) use self::miscview::*;
 
 pub trait DebuggerModel {
     /// Return a vector of the name of all CPUS.
     /// TODO: the debugger could autodiscover the CPUs while rendering.
     fn all_cpus(&self) -> Vec<String>;
+
+    // Return the total elapsed cycles since the beginning of emulation
+    fn cycles(&self) -> i64;
+
+    // Return the number of emulated frames since the beginning of emulation
+    fn frames(&self) -> i64;
 
     /// Run a frame with a tracer (debugger).
     ///
@@ -86,7 +94,7 @@ impl DebuggerUI {
             tex_screen: Texture::new(),
             dbg: Debugger::new(&uictx.cpus),
             uictx: RefCell::new(uictx),
-            paused: false,
+            paused: true,
             last_render: Instant::now(),
         }
     }
@@ -154,16 +162,9 @@ impl DebuggerUI {
     ) {
         let imgui = self.imgui.clone();
         let mut imgui = imgui.borrow_mut();
-
-        // Global key shortcuts
-        if imgui.is_key_pressed(Scancode::Space as _) {
-            self.paused = !self.paused;
-            self.uictx.get_mut().event = Some((box TraceEvent::Paused(), Instant::now()));
-        }
-
         let ui = self.imgui_sdl2.frame(&window, &mut imgui, &event_pump);
 
-        self.render_main(&ui);
+        self.render_main(&ui, model);
         ui.show_demo_window(&mut true);
 
         {
@@ -200,11 +201,45 @@ impl DebuggerUI {
         self.uictx.get_mut().event = None;
     }
 
-    fn render_main<'ui>(&mut self, ui: &Ui<'ui>) {
+    fn render_main<'ui, T: DebuggerModel>(&mut self, ui: &Ui<'ui>, model: &mut T) {
+        if ui.imgui().is_key_pressed(Scancode::Space as _) {
+            self.paused = !self.paused;
+            if self.paused {
+                self.uictx.get_mut().event = Some((box TraceEvent::Paused(), Instant::now()));
+            }
+        }
+
+        let help = render_help(ui);
+        if ui.imgui().is_key_pressed(Scancode::H as _) {
+            ui.open_popup(&help);
+        }
+
         ui.main_menu_bar(|| {
             ui.menu(im_str!("Emulation")).build(|| {
                 ui.menu_item(im_str!("Reset")).build();
-            })
+            });
+
+            ui.same_line(200.0);
+            ui.text(im_str!("State:"));
+            if self.paused {
+                ui.text(im_str!("PAUSED"));
+                if ui.button(im_str!("Run"), (40.0, 20.0)) {
+                    self.paused = false;
+                }
+            } else {
+                ui.text(im_str!("RUNNING"));
+                if ui.button(im_str!("Pause"), (40.0, 20.0)) {
+                    self.paused = true;
+                    self.uictx.get_mut().event = Some((box TraceEvent::Paused(), Instant::now()));
+                }
+            }
+
+            ui.same_line(400.0);
+            ui.text(format!(
+                "Cycles: {}, Frames: {}",
+                model.cycles(),
+                model.frames()
+            ));
         });
 
         ui.window(im_str!("Screen"))
