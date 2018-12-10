@@ -155,6 +155,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                     ctx.command = Some(UiCommand::BreakpointOneShot(cpu_name.clone(), cpc));
                 }
             }
+            ui.separator();
 
             // *******************************************
             // Main scroll view with disasm
@@ -275,7 +276,10 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                                 ui.text_colored(color(230, 219, 116), im_str!("{}", fields[1]));
                                 hovered |= ui.is_item_hovered();
 
-                                if hovered && ui.is_window_focused() && ui.imgui().is_mouse_clicked(ImMouseButton::Left) {
+                                if hovered
+                                    && ui.is_window_focused()
+                                    && ui.imgui().is_mouse_clicked(ImMouseButton::Left)
+                                {
                                     ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = Some(pc);
                                 }
                             },
