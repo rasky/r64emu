@@ -48,7 +48,7 @@ $ cargo test --release
 **CPU interpreter cores:**
 
 | Core | Completion | Comments |
-| -- | -- | -- |
+| -- | :--: | -- |
 | CPU       | 80%  | |
 | CPU COP0  | 5%   | |
 | CPU COP1 (FPU)   | 20%  | |
@@ -59,7 +59,7 @@ $ cargo test --release
 **Hardware subsystems:**
 
 | Sub | Completion | Comments |
-| -- | -- | -- |
+| -- | :--: | -- |
 | SP       | 20%  | |
 | DP       | 1%  | Just rects, with no effects, to get something on screen |
 | VI       | 5%  | Basic resolutions, wrong timing |
@@ -70,7 +70,7 @@ $ cargo test --release
 **Emulator features:**
 
 | Feature | Completion | Comments |
-| -- | -- | -- |
+| -- | :--: | -- |
 | Save states | 0% | |
 | Debugger | 30% | Done: disassembly, registers, stepping, breakpoints, watchpoints |
 
