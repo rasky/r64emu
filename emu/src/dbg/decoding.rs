@@ -64,6 +64,7 @@ pub enum Operand<Reg: fmt::Display + Copy + Clone + PartialEq> {
     Imm16(u16),   // 16-bit immediate
     Imm32(u32),   // 32-bit immediate
     Imm64(u64),   // 64-bit immediate
+    Target(u64),  // A branch target (absolute address)
 }
 
 impl<Reg> fmt::Display for Operand<Reg>
@@ -81,6 +82,7 @@ where
             Imm16(v) => write!(f, "0x{:x}", v),
             Imm32(v) => write!(f, "0x{:x}", v),
             Imm64(v) => write!(f, "0x{:x}", v),
+            Target(v) => write!(f, "0x{:x}", v),
             HidIReg(r) => write!(f, "{}", r),
             HidOReg(r) => write!(f, "{}", r),
         }
