@@ -455,7 +455,7 @@ mod tests {
     extern crate slog_term;
     use self::byteorder::{BigEndian, LittleEndian};
     use super::super::mem::MemFlags;
-    use super::slog::Drain;
+    use slog::Drain;
     use std;
 
     fn logger() -> slog::Logger {
