@@ -60,6 +60,14 @@ impl Tracer<'_> {
     }
 
     #[inline(always)]
+    pub fn break_here(&self, msg: &'static str) -> Result<()> {
+        if self.dbg.is_none() {
+            return Ok(());
+        }
+        Err(box TraceEvent::GenericBreak(msg))
+    }
+
+    #[inline(always)]
     pub fn trace_gpu(&self, line: usize) -> Result<()> {
         self.dbg.map(|t| t.trace_gpu(line)).unwrap_or(Ok(()))
     }

@@ -147,6 +147,14 @@ impl DebuggerUI {
                         self.dbg.disable_breakpoint_oneshot();
                         return false;
                     }
+                    TraceEvent::GenericBreak(msg) => {
+                        self.paused = true;
+                        self.dbg.disable_breakpoint_oneshot();
+                        self.uictx
+                            .get_mut()
+                            .add_flash_msg(&format!("Emulation stopped:\n{}", msg));
+                        return false;
+                    }
                     _ => unimplemented!(),
                 }
             }
@@ -208,6 +216,8 @@ impl DebuggerUI {
                 self.uictx.get_mut().event = Some((box TraceEvent::Paused(), Instant::now()));
             }
         }
+
+        render_flash_msgs(ui, self.uictx.get_mut());
 
         let help = render_help(ui);
         if ui.imgui().is_key_pressed(Scancode::H as _) {

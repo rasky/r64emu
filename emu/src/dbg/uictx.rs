@@ -37,6 +37,9 @@ pub(crate) struct UiCtx {
     // Disasm views
     pub disasm: HashMap<String, UiCtxDisasm>,
 
+    // Flash messages (auto-hide after 2s)
+    pub flash_msg: Option<(String, Instant)>,
+
     // Popup "New breakpoint": local state
     pub new_bp_pc: u64,
     pub new_bp_desc: ImString,
@@ -47,4 +50,10 @@ pub(crate) struct UiCtx {
     pub new_wp_type: i32,
     pub new_wp_cond: i32,
     pub new_wp_value: u64,
+}
+
+impl UiCtx {
+    pub fn add_flash_msg(&mut self, msg: &str) {
+        self.flash_msg = Some((msg.to_owned(), Instant::now()));
+    }
 }

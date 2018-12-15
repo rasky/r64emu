@@ -1,5 +1,9 @@
+use super::UiCtx;
 use imgui::*;
+use imgui_sys::*;
+use std::time::Duration;
 
+// Rendere the help tooltip showing keyboard shortcuts
 pub(crate) fn render_help(ui: &Ui<'_>) -> ImString {
     let title = ImString::new("Keyboard shortcuts");
     ui.popup_modal(&title).resizable(false).build(|| {
@@ -42,4 +46,52 @@ pub(crate) fn render_help(ui: &Ui<'_>) -> ImString {
         }
     });
     title
+}
+
+// Render the flash messages
+pub(crate) fn render_flash_msgs(ui: &Ui<'_>, ctx: &mut UiCtx) {
+    if ctx.flash_msg.is_none() {
+        return;
+    }
+    let (msg, when) = ctx.flash_msg.as_ref().unwrap();
+    const CORNER: usize = 1; // top-right
+    const DISTANCE_X: f32 = 10.0;
+    const DISTANCE_Y: f32 = 25.0;
+
+    let disp_size = ui.imgui().display_size();
+    let wpos_x = if CORNER & 1 != 0 {
+        disp_size.0 - DISTANCE_X
+    } else {
+        DISTANCE_X
+    };
+    let wpos_y = if CORNER & 2 != 0 {
+        disp_size.1 - DISTANCE_Y
+    } else {
+        DISTANCE_Y
+    };
+    let pivot_x = if CORNER & 1 != 0 { 1.0 } else { 0.0 };
+    let pivot_y = if CORNER & 2 != 0 { 1.0 } else { 0.0 };
+
+    unsafe {
+        igSetNextWindowPos(
+            (wpos_x, wpos_y).into(),
+            ImGuiCond::Always,
+            (pivot_x, pivot_y).into(),
+        );
+        igSetNextWindowBgAlpha(0.5);
+    }
+    ui.window(im_str!(""))
+        .resizable(false)
+        .movable(false)
+        .collapsible(false)
+        .title_bar(false)
+        .save_settings(false)
+        .inputs(false)
+        .build(|| {
+            ui.text(im_str!("{}", msg));
+        });
+
+    if when.elapsed() > Duration::from_secs(4) {
+        ctx.flash_msg = None;
+    }
 }
