@@ -17,7 +17,7 @@ pub trait Cop {
     fn reg(&self, idx: usize) -> u128;
     fn set_reg(&mut self, idx: usize, val: u128);
 
-    fn op(&mut self, cpu: &mut CpuContext, opcode: u32);
+    fn op(&mut self, cpu: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()>;
     fn decode(&self, _opcode: u32, _pc: u64) -> DecodedInsn {
         DecodedInsn::new0("unkcop")
     }
@@ -214,9 +214,12 @@ impl CpuContext {
         self.tight_exit = true;
     }
 
+    // Directly set PC to a specific value. Used at reset,
+    // and by ERET to do a non-delayed-slot branch.
     pub fn set_pc(&mut self, pc: u64) {
         self.pc = pc;
         self.next_pc = pc + 4;
+        self.tight_exit = true;
     }
 
     pub fn get_pc(&self) -> u64 {
@@ -495,16 +498,16 @@ impl Cpu {
             0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),      // XORI
             0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(), // LUI
 
-            0x10 => if_cop!(op, cop0, { cop0.op(&mut op.cpu.ctx, opcode) }), // COP0
-            0x11 => if_cop!(op, cop1, { cop1.op(&mut op.cpu.ctx, opcode) }), // COP1
-            0x12 => if_cop!(op, cop2, { cop2.op(&mut op.cpu.ctx, opcode) }), // COP2
-            0x13 => if_cop!(op, cop3, { cop3.op(&mut op.cpu.ctx, opcode) }), // COP3
-            0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)), // BEQL
-            0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)), // BNEL
-            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)),   // BLEZL
-            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),    // BGTZL
-            0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()), // DADDI
-            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,        // DADDIU
+            0x10 => if_cop!(op, cop0, { return cop0.op(&mut op.cpu.ctx, opcode, t) }), // COP0
+            0x11 => if_cop!(op, cop1, { return cop1.op(&mut op.cpu.ctx, opcode, t) }), // COP1
+            0x12 => if_cop!(op, cop2, { return cop2.op(&mut op.cpu.ctx, opcode, t) }), // COP2
+            0x13 => if_cop!(op, cop3, { return cop3.op(&mut op.cpu.ctx, opcode, t) }), // COP3
+            0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)),      // BEQL
+            0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)),      // BNEL
+            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)),             // BLEZL
+            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),              // BGTZL
+            0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()),    // DADDI
+            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,                  // DADDIU
 
             0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)?.sx64(), // LB
             0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)?.sx64(), // LH

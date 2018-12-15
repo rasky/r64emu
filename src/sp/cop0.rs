@@ -1,7 +1,8 @@
 use super::{Sp, StatusFlags};
 use crate::errors::*;
 use emu::bus::be::{Bus, DevPtr, Device};
-use emu::dbg::Operand;
+use emu::dbg;
+use emu::dbg::{Operand, Tracer};
 use mips64;
 use mips64::{DecodedInsn, REG_NAMES};
 
@@ -122,7 +123,7 @@ impl mips64::Cop for SpCop0 {
         panic!("unsupported COP0 reg access in RSP")
     }
 
-    fn op(&mut self, cpu: &mut mips64::CpuContext, opcode: u32) {
+    fn op(&mut self, cpu: &mut mips64::CpuContext, opcode: u32, t: &Tracer) -> dbg::Result<()> {
         let mut op = C0op {
             opcode,
             cpu,
@@ -141,6 +142,7 @@ impl mips64::Cop for SpCop0 {
             }
             _ => panic!("unimplemented RSP COP0 opcode: func={:x?}", op.func()),
         }
+        Ok(())
     }
 
     fn decode(&self, opcode: u32, _pc: u64) -> DecodedInsn {

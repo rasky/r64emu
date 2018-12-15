@@ -2,9 +2,18 @@ extern crate num;
 
 use self::num::Float;
 use super::cpu::{Cop, CpuContext};
+use super::decode::{DecodedInsn, REG_NAMES};
+use emu::dbg::{Operand, Result, Tracer};
 use emu::int::Numerics;
 use slog;
+use slog::*;
 use std::marker::PhantomData;
+
+const FPU_CREG_NAMES: [&'static str; 32] = [
+    "?0?", "?1?", "?2?", "?3?", "?4?", "?5?", "?6?", "?7?", "?8?", "?9?", "?10?", "?11?", "?12?",
+    "?13?", "?14?", "?15?", "?16?", "?17?", "?18?", "?19?", "?20?", "?21?", "?22?", "?23?", "?24?",
+    "?25?", "?26?", "?27?", "?28?", "?29?", "?30?", "FCSR",
+];
 
 pub struct Fpu {
     regs: [u64; 32],
@@ -14,7 +23,7 @@ pub struct Fpu {
     _fenr: u64,
     fcsr: u64,
 
-    _logger: slog::Logger,
+    logger: slog::Logger,
 }
 
 trait FloatRawConvert {
@@ -130,7 +139,7 @@ impl Fpu {
             _fexr: 0,
             _fenr: 0,
             fcsr: 0,
-            _logger: logger,
+            logger: logger,
         })
     }
 
@@ -153,7 +162,12 @@ impl Fpu {
         (self.fccr & (1 << cc)) != 0
     }
 
-    fn fop<M: Float + FloatRawConvert>(&mut self, cpu: &mut CpuContext, opcode: u32) {
+    fn fop<M: Float + FloatRawConvert>(
+        &mut self,
+        cpu: &mut CpuContext,
+        opcode: u32,
+        t: &Tracer,
+    ) -> Result<()> {
         let mut op = Fop::<M> {
             opcode,
             fpu: self,
@@ -229,6 +243,7 @@ impl Fpu {
 
             _ => panic!("unimplemented COP1 opcode: func={:x?}", op.func()),
         }
+        Ok(())
     }
 }
 
@@ -240,7 +255,7 @@ impl Cop for Fpu {
         self.regs[idx] = val as u64;
     }
 
-    fn op(&mut self, cpu: &mut CpuContext, opcode: u32) {
+    fn op(&mut self, cpu: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()> {
         let fmt = (opcode >> 21) & 0x1F;
         match fmt {
             8 => {
@@ -250,10 +265,50 @@ impl Cop for Fpu {
                 let tf = opcode & (1 << 16) != 0;
                 let cond = self.get_cc(cc) == tf;
                 cpu.branch(cond, tgt, nd);
+                Ok(())
             }
-            16 => self.fop::<f32>(cpu, opcode),
-            17 => self.fop::<f64>(cpu, opcode),
-            _ => panic!("unimplemented COP1 fmt: fmt={:x?}", fmt),
+            16 => self.fop::<f32>(cpu, opcode, t),
+            17 => self.fop::<f64>(cpu, opcode, t),
+            _ => {
+                error!(self.logger, "unimplemented COP1 fmt: fmt={:x?}", fmt);
+                t.break_here("unimplemented COP1 opcode")
+            }
+        }
+    }
+
+    fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
+        use self::Operand::*;
+        let fmt = (opcode >> 21) & 0x1F;
+        let rt = REG_NAMES[((opcode >> 16) & 0x1f) as usize].into();
+        let fs = FPU_CREG_NAMES[((opcode >> 11) & 0x1f) as usize].into();
+        match fmt {
+            2 => DecodedInsn::new2("cfc1", OReg(rt), IReg(fs)),
+            6 => DecodedInsn::new2("ctc1", IReg(rt), OReg(fs)),
+            8 => {
+                let tgt = pc + (opcode & 0xffff).sx64() * 4;
+                let cc = ((opcode >> 18) & 3) as usize;
+                let nd = opcode & (1 << 17) != 0;
+                let tf = opcode & (1 << 16) != 0;
+                let name = if tf {
+                    if nd {
+                        "BC1TL"
+                    } else {
+                        "BC1T"
+                    }
+                } else {
+                    if nd {
+                        "BC1FL"
+                    } else {
+                        "BC1F"
+                    }
+                };
+                if cc != 0 {
+                    DecodedInsn::new2(name, Imm8(cc as u8), Target(tgt))
+                } else {
+                    DecodedInsn::new1(name, Target(tgt))
+                }
+            }
+            _ => DecodedInsn::new1("cop1?", Imm32(fmt)),
         }
     }
 }

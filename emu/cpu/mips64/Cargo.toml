@@ -9,3 +9,4 @@ emu = { path =  "../../../emu" }
 slog = "^2"
 num = "0.1.42"
 byteorder = "1"
+bitfield = "0.13.1"

@@ -5,11 +5,12 @@ use super::sp::Sp;
 use super::vmul;
 use super::vrcp;
 
+use crate::errors::*;
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use emu::bus::be::{Bus, DevPtr};
 use emu::bus::MemInt;
+use emu::dbg;
 use emu::int::Numerics;
-use crate::errors::*;
 use mips64::{Cop, CpuContext, DecodedInsn};
 use slog;
 use std::arch::x86_64::*;
@@ -257,7 +258,7 @@ macro_rules! op_vmul {
 
 impl SpCop2 {
     #[target_feature(enable = "sse2")]
-    unsafe fn uop(&mut self, cpu: &mut CpuContext, op: u32) {
+    unsafe fn uop(&mut self, cpu: &mut CpuContext, op: u32, t: &dbg::Tracer) -> dbg::Result<()> {
         let mut op = Vectorop { op, spv: self };
         let vzero = _mm_setzero_si128();
         #[allow(overflowing_literals)]
@@ -720,6 +721,7 @@ impl SpCop2 {
                 _ => panic!("unimplemented COP2 non-VU opcode={:x}", op.e()),
             }
         }
+        Ok(())
     }
 }
 
@@ -797,8 +799,8 @@ impl Cop for SpCop2 {
         }
     }
 
-    fn op(&mut self, cpu: &mut CpuContext, op: u32) {
-        unsafe { self.uop(cpu, op) }
+    fn op(&mut self, cpu: &mut CpuContext, op: u32, t: &dbg::Tracer) -> dbg::Result<()> {
+        unsafe { self.uop(cpu, op, t) }
     }
 
     fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
