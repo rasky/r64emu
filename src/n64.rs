@@ -80,7 +80,10 @@ impl N64 {
             //   COP0 -> standard MIPS64 CP0
             //   COP1 -> standard MIPS64 FPU
             let mut cpu = cpu.borrow_mut();
-            cpu.set_cop0(mips64::Cp0::new("R4300-COP0", sync::Sync::new_logger(&sync)));
+            cpu.set_cop0(mips64::Cp0::new(
+                "R4300-COP0",
+                sync::Sync::new_logger(&sync),
+            ));
             cpu.set_cop1(mips64::Fpu::new("R4300-FPU", sync::Sync::new_logger(&sync)));
         }
 

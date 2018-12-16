@@ -1,8 +1,8 @@
 extern crate emu;
 extern crate slog;
+use crate::errors::*;
 use emu::bus::be::{Bus, Mem, MemFlags, Reg32};
 use emu::int::Numerics;
-use crate::errors::*;
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::Read;

@@ -237,14 +237,16 @@ impl Rdp {
                         copy_width,
                         height,
                         tmem_pitch,
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     let tex = GfxBufferLE::<Rgba5551>::new(
                         &tex_mem,
                         copy_width,
                         height,
                         self.tex.pitch(),
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     draw_rect(
                         &mut tmem,
@@ -258,7 +260,8 @@ impl Rdp {
                         copy_width,
                         height,
                         tmem_pitch,
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     let tex =
                         GfxBufferLE::<I8>::new(&tex_mem, copy_width, height, self.tex.pitch())
@@ -330,15 +333,16 @@ impl Rdp {
                             fb.1 / bppconv as usize,
                             fb.2,
                             fb.3,
-                        ).unwrap();
+                        )
+                        .unwrap();
                         let color = Color::<Rgba8888>::from_bits(self.fill_color);
                         fill_rect(&mut dst, rect, color);
                     }
                     CycleMode::One => {
                         let fb = self.framebuffer();
-                        let mut dst = GfxBufferMut::<Rgba8888, LittleEndian>::new(
-                            fb.0, fb.1, fb.2, fb.3,
-                        ).unwrap();
+                        let mut dst =
+                            GfxBufferMut::<Rgba8888, LittleEndian>::new(fb.0, fb.1, fb.2, fb.3)
+                                .unwrap();
 
                         if rect.truncate().cast::<U30F2>() != rect {
                             panic!("Coordinates in DP Fill Rectangle were not 32-bit aligned");
