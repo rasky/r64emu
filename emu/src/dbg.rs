@@ -4,6 +4,7 @@ use super::hw::glutils::Texture;
 use imgui::*;
 use imgui_opengl_renderer::Renderer;
 use imgui_sdl2::ImguiSdl2;
+use imgui_sys::{igSetNextWindowSizeConstraints, ImGuiSizeCallbackData};
 use sdl2::keyboard::Scancode;
 mod uisupport;
 
@@ -61,6 +62,7 @@ pub struct DebuggerUI {
     backend: Renderer,
     hidpi_factor: f32,
     tex_screen: Texture,
+    screen_size: (usize, usize),
 
     pub dbg: Debugger,
     uictx: RefCell<UiCtx>,
@@ -92,6 +94,7 @@ impl DebuggerUI {
             backend,
             hidpi_factor,
             tex_screen: Texture::new(),
+            screen_size: (320, 240),
             dbg: Debugger::new(&uictx.cpus),
             uictx: RefCell::new(uictx),
             paused: true,
@@ -131,6 +134,7 @@ impl DebuggerUI {
                 // A frame is finished. Copy it into the texture so that it's available
                 // starting from next render().
                 self.tex_screen.copy_from_buffer_mut(screen);
+                self.screen_size = (screen.width(), screen.height());
                 return true;
             }
             Err(event) => {
@@ -252,6 +256,15 @@ impl DebuggerUI {
             ));
         });
 
+        unsafe {
+            // Set constraint to avoid distortion of the screen window
+            igSetNextWindowSizeConstraints(
+                (100.0, 100.0).into(),
+                (10000.0, 10000.0).into(),
+                Some(screen_resize_callback),
+                (&mut self.screen_size as *mut (usize, usize)) as *mut ::std::ffi::c_void,
+            );
+        }
         ui.window(im_str!("Screen"))
             .size((320.0, 240.0), ImGuiCond::FirstUseEver)
             .build(|| {
@@ -262,6 +275,16 @@ impl DebuggerUI {
             });
 
         self.dbg.render_main(ui, self.uictx.get_mut());
+    }
+}
+
+extern "C" fn screen_resize_callback(data: *mut ImGuiSizeCallbackData) {
+    unsafe {
+        // Constraint the screen window to the ratio of the actual framebuffer
+        // (as stored in the last frame).
+        let screen_size = (*data).user_data as *mut (usize, usize);
+        let ratio = ((*screen_size).1 as f32) / ((*screen_size).0 as f32);
+        (*data).desired_size.y = (*data).desired_size.x * ratio;
     }
 }
 
