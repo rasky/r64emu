@@ -24,6 +24,7 @@ static KROM_PATH: &'static str = "roms/tests";
 const FPS10: u32 = 0x10;
 const RES_320: u32 = 0x20;
 const APPROX: u32 = 0x40;
+const FPS30: u32 = 0x80;
 
 fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let logger = slog::Logger::root(Discard, o!());
@@ -38,7 +39,13 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     n64.setup_cic().unwrap();
     let mut screen1 = OwnedGfxBufferLE::<Rgb888>::new(640, 480);
 
-    let numfps = if flags & FPS10 != 0 { 10 } else { 5 };
+    let numfps = if flags & FPS30 != 0 {
+        30
+    } else if flags & FPS10 != 0 {
+        10
+    } else {
+        5
+    };
     for _ in 0..numfps {
         n64.render_frame(&mut screen1.buf_mut());
     }
@@ -249,23 +256,19 @@ krom_fpu!(fpu_ceq, "C/EQ/CP1CEQ.N64", 0);
 krom_fpu!(fpu_colt, "C/OLT/CP1COLT.N64", 0);
 krom_fpu!(fpu_cole, "C/OLE/CP1COLE.N64", 0);
 krom_fpu!(fpu_cf, "C/F/CP1CF.N64", 0);
-
-// ******************************************************************
-// NOT IMPLEMENTED
-// ******************************************************************
-// krom_fpu!(fpu_cun, "C/UN/CP1CUN.N64", 0);
-// krom_fpu!(fpu_cnge, "C/NGE/CP1CNGE.N64", 0);
-// krom_fpu!(fpu_cngl, "C/NGL/CP1CNGL.N64", 0);
-// krom_fpu!(fpu_cseq, "C/SEQ/CP1CSEQ.N64", 0);
-// krom_fpu!(fpu_cle, "C/LE/CP1CLE.N64", FIX_L40 | FIX_L120 | FIX_L360);
-// krom_fpu!(fpu_cult, "C/ULT/CP1CULT.N64", 0);
-// krom_fpu!(fpu_csf, "C/SF/CP1CSF.N64", 0);
-// krom_fpu!(fpu_cngle, "C/NGLE/CP1CNGLE.N64", 0);
-// krom_fpu!(fpu_cngt, "C/NGT/CP1CNGT.N64", 0);
-// krom_fpu!(fpu_clt, "C/LT/CP1CLT.N64", 0);
-// krom_fpu!(fpu_cule, "C/ULE/CP1CULE.N64", 0);
-// krom_fpu!(fpu_cueq, "C/UEQ/CP1CUEQ.N64", 0);
-// krom_fpu!(fpu_cvt, "CVT/CP1CVT.N64", FIX_L40 | FIX_L120);
+krom_fpu!(fpu_cvt, "CVT/CP1CVT.N64", 0);
+krom_fpu!(fpu_cun, "C/UN/CP1CUN.N64", 0);
+krom_fpu!(fpu_cnge, "C/NGE/CP1CNGE.N64", 0);
+krom_fpu!(fpu_cngl, "C/NGL/CP1CNGL.N64", 0);
+krom_fpu!(fpu_cseq, "C/SEQ/CP1CSEQ.N64", 0);
+krom_fpu!(fpu_cle, "C/LE/CP1CLE.N64", 0);
+krom_fpu!(fpu_cult, "C/ULT/CP1CULT.N64", 0);
+krom_fpu!(fpu_csf, "C/SF/CP1CSF.N64", 0);
+krom_fpu!(fpu_cngle, "C/NGLE/CP1CNGLE.N64", 0);
+krom_fpu!(fpu_cngt, "C/NGT/CP1CNGT.N64", 0);
+krom_fpu!(fpu_clt, "C/LT/CP1CLT.N64", 0);
+krom_fpu!(fpu_cule, "C/ULE/CP1CULE.N64", 0);
+krom_fpu!(fpu_cueq, "C/UEQ/CP1CUEQ.N64", 0);
 
 krom_rspcpu!(rspcpu_xor, "XOR/RSPCPUXOR.N64", 0);
 krom_rspcpu!(rspcpu_nor, "NOR/RSPCPUNOR.N64", 0);
@@ -409,3 +412,35 @@ krom_video!(
 //     "32BPP/Rectangle/FillRectangle/Cycle1FillRectangle320x240/Cycle1FillRectangle32BPP320X240.N64",
 //     RES_320 | FIX_LINES
 // );
+
+krom!(cmp_dct, "Compress/DCT/DCTBlockGFX/DCTBlockGFX.N64", RES_320);
+krom!(
+    cmp_quant,
+    "Compress/DCT/QuantizationBlockGFX/QuantizationBlockGFX.N64",
+    RES_320
+);
+krom!(
+    cmp_fastdct,
+    "Compress/DCT/FastDCTBlockGFX/FastDCTBlockGFX.N64",
+    RES_320
+);
+krom!(
+    cmp_fastquant,
+    "Compress/DCT/FastQuantizationBlockGFX/FastQuantizationBlockGFX.N64",
+    RES_320
+);
+krom!(
+    cmp_fastquantmulti8,
+    "Compress/DCT/FastQuantizationMultiBlockGFX8BIT/FastQuantizationMultiBlockGFX8BIT.N64",
+    RES_320
+);
+krom!(
+    cmp_fastquantmulti16,
+    "Compress/DCT/FastQuantizationMultiBlockGFX16BIT/FastQuantizationMultiBlockGFX16BIT.N64",
+    RES_320
+);
+krom!(
+    cmp_huff,
+    "Compress/HUFFMAN/HUFFMANGFX/HUFFMANGFX.N64",
+    FPS30
+);
