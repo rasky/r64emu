@@ -2,7 +2,7 @@ use bitfield::bitfield;
 
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
 use super::decode::{DecodedInsn, REG_NAMES};
-use emu::dbg::{Operand, Result, Tracer, RegisterView, RegisterSize, DebuggerRenderer};
+use emu::dbg::{DebuggerRenderer, Operand, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
 use slog;
 
@@ -374,7 +374,7 @@ impl RegisterView for Cp0 {
                 visit("EntryHi", Reg64(&mut self.reg_entryhi), None);
                 visit("EntryLo0", Reg64(&mut self.reg_entrylo0), None);
                 visit("EntryLo1", Reg64(&mut self.reg_entrylo1), None);
-            },
+            }
             _ => unreachable!(),
         }
     }

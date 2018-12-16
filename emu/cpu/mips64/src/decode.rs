@@ -3,7 +3,7 @@ use super::cpu::Cpu;
 use emu::dbg::Operand;
 
 // Decoding format for arguments of load/store ops
-const MEMOP_FMT: &'static str = "{},{}({})";
+pub const MEMOP_FMT: &'static str = "{},{}({})";
 
 // Register names
 pub const REG_NAMES: [&'static str; 34] = [

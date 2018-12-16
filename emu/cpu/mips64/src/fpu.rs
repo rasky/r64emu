@@ -2,12 +2,18 @@ extern crate num;
 
 use self::num::Float;
 use super::cpu::{Cop, CpuContext};
-use super::decode::{DecodedInsn, REG_NAMES};
+use super::decode::{DecodedInsn, MEMOP_FMT, REG_NAMES};
 use emu::dbg::{Operand, Result, Tracer};
 use emu::int::Numerics;
 use slog;
 use slog::*;
 use std::marker::PhantomData;
+
+const FPU_REG_NAMES: [&'static str; 32] = [
+    "f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12", "f13", "f14",
+    "f15", "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23", "f24", "f25", "f26", "f27",
+    "f28", "f29", "f30", "f31",
+];
 
 const FPU_CREG_NAMES: [&'static str; 32] = [
     "?0?", "?1?", "?2?", "?3?", "?4?", "?5?", "?6?", "?7?", "?8?", "?9?", "?10?", "?11?", "?12?",
@@ -129,6 +135,16 @@ macro_rules! cond {
         let cc = $op.cc();
         $op.fpu.set_cc(cc, cond);
     }};
+}
+
+macro_rules! fp_suffix {
+    ($name:expr, $op:ident) => {
+        match $op {
+            0x10 => concat!($name, ".s"),
+            0x11 => concat!($name, ".d"),
+            _ => unreachable!(),
+        }
+    };
 }
 
 impl Fpu {
@@ -262,30 +278,30 @@ impl Cop for Fpu {
         let rt = ((opcode >> 16) & 0x1F) as usize;
         let rs = (opcode >> 11) & 0x1F;
         match fmt {
-            2 => match rs {
+            0x2 => match rs {
                 31 => cpu.regs[rt] = self.fcsr,
                 _ => {
                     error!(self.logger, "CFC1 from unknown register: {:x}", rs);
                     return t.break_here("CFC1 from unknown register");
-                },
-            }
-            6 => match rs {
+                }
+            },
+            0x6 => match rs {
                 31 => self.fcsr = cpu.regs[rt],
                 _ => {
                     error!(self.logger, "CTC1 to unknown register: {:x}", rs);
                     return t.break_here("CTC1 to unknown register");
-                },
-            }
-            8 => {
-                let tgt = cpu.pc + (opcode & 0xffff).sx64() * 4;
+                }
+            },
+            0x8 => {
+                let tgt = cpu.pc + (opcode as u16).sx64() * 4;
                 let cc = ((opcode >> 18) & 3) as usize;
                 let nd = opcode & (1 << 17) != 0;
                 let tf = opcode & (1 << 16) != 0;
                 let cond = self.get_cc(cc) == tf;
                 cpu.branch(cond, tgt, nd);
             }
-            16 => return self.fop::<f32>(cpu, opcode, t),
-            17 => return self.fop::<f64>(cpu, opcode, t),
+            0x10 => return self.fop::<f32>(cpu, opcode, t),
+            0x11 => return self.fop::<f64>(cpu, opcode, t),
             _ => {
                 error!(self.logger, "unimplemented COP1 fmt: fmt={:x?}", fmt);
                 return t.break_here("unimplemented COP1 opcode");
@@ -296,37 +312,109 @@ impl Cop for Fpu {
 
     fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
         use self::Operand::*;
-        let fmt = (opcode >> 21) & 0x1F;
-        let rt = REG_NAMES[((opcode >> 16) & 0x1f) as usize].into();
-        let fs = FPU_CREG_NAMES[((opcode >> 11) & 0x1f) as usize].into();
-        match fmt {
-            2 => DecodedInsn::new2("cfc1", OReg(rt), IReg(fs)),
-            6 => DecodedInsn::new2("ctc1", IReg(rt), OReg(fs)),
-            8 => {
-                let tgt = pc + (opcode & 0xffff).sx64() * 4;
-                let cc = ((opcode >> 18) & 3) as usize;
-                let nd = opcode & (1 << 17) != 0;
-                let tf = opcode & (1 << 16) != 0;
-                let name = if tf {
-                    if nd {
-                        "BC1TL"
-                    } else {
-                        "BC1T"
+        let op = opcode >> 26;
+        match op {
+            // Regular COP opcode. FPU is usually installed as COP1
+            // (so we'll see 0x11), but let's be generic.
+            0x10 | 0x11 | 0x12 | 0x13 => {
+                let fmt = (opcode >> 21) & 0x1F;
+                let rt = REG_NAMES[((opcode >> 16) & 0x1f) as usize].into();
+                let fs = FPU_REG_NAMES[((opcode >> 11) & 0x1f) as usize].into();
+                let cfs = FPU_CREG_NAMES[((opcode >> 11) & 0x1f) as usize].into();
+                match fmt {
+                    0x2 => DecodedInsn::new2("cfc1", OReg(rt), IReg(cfs)),
+                    0x6 => DecodedInsn::new2("ctc1", IReg(rt), OReg(cfs)),
+                    0x8 => {
+                        let tgt = pc + (opcode as u16).sx64() * 4;
+                        let cc = ((opcode >> 18) & 3) as usize;
+                        let nd = opcode & (1 << 17) != 0;
+                        let tf = opcode & (1 << 16) != 0;
+                        let name = if tf {
+                            if nd {
+                                "bc1tl"
+                            } else {
+                                "bc1t"
+                            }
+                        } else {
+                            if nd {
+                                "bc1fl"
+                            } else {
+                                "bc1f"
+                            }
+                        };
+                        if cc != 0 {
+                            DecodedInsn::new2(name, Imm8(cc as u8), Target(tgt))
+                        } else {
+                            DecodedInsn::new1(name, Target(tgt))
+                        }
                     }
-                } else {
-                    if nd {
-                        "BC1FL"
-                    } else {
-                        "BC1F"
+                    // Single/Double precision
+                    0x10 | 0x11 => {
+                        let func = opcode & 0x3f;
+                        let ft = FPU_REG_NAMES[((opcode >> 16) & 0x1f) as usize].into();
+                        let fd = FPU_REG_NAMES[((opcode >> 6) & 0x1f) as usize].into();
+                        match func {
+                            0x00 => DecodedInsn::new3(
+                                fp_suffix!("add", op),
+                                OReg(fd),
+                                IReg(fs),
+                                IReg(ft),
+                            ),
+                            0x01 => DecodedInsn::new3(
+                                fp_suffix!("sub", op),
+                                OReg(fd),
+                                IReg(fs),
+                                IReg(ft),
+                            ),
+                            0x02 => DecodedInsn::new3(
+                                fp_suffix!("mul", op),
+                                OReg(fd),
+                                IReg(fs),
+                                IReg(ft),
+                            ),
+                            0x03 => DecodedInsn::new3(
+                                fp_suffix!("div", op),
+                                OReg(fd),
+                                IReg(fs),
+                                IReg(ft),
+                            ),
+                            0x06 => DecodedInsn::new3(
+                                fp_suffix!("mov", op),
+                                OReg(fd),
+                                IReg(fs),
+                                IReg(ft),
+                            ),
+                            0x32 => DecodedInsn::new2(fp_suffix!("c.eq", op), IReg(fs), IReg(ft)),
+                            0x3E => DecodedInsn::new2(fp_suffix!("c.le", op), IReg(fs), IReg(ft)),
+                            _ => DecodedInsn::new1("cop1op?", Imm32(func)),
+                        }
                     }
-                };
-                if cc != 0 {
-                    DecodedInsn::new2(name, Imm8(cc as u8), Target(tgt))
-                } else {
-                    DecodedInsn::new1(name, Target(tgt))
+                    _ => DecodedInsn::new1("cop1?", Imm32(fmt)),
                 }
             }
-            _ => DecodedInsn::new1("cop1?", Imm32(fmt)),
+            // LWC1/LWC2/LDC1/LDC2
+            0x31 | 0x32 | 0x35 | 0x36 | 0x39 | 0x3A | 0x3D | 0x3E => {
+                let name: &str = match op {
+                    0x31 => "lwc1",
+                    0x32 => "lwc2",
+                    0x35 => "ldc1",
+                    0x36 => "ldc2",
+                    0x39 => "swc1",
+                    0x3A => "swc2",
+                    0x3D => "sdc1",
+                    0x3E => "sdc2",
+                    _ => unreachable!(),
+                };
+                let ft = FPU_REG_NAMES[((opcode >> 16) & 0x1f) as usize].into();
+                let rd = REG_NAMES[((opcode >> 21) & 0x1f) as usize].into();
+                let off = (opcode & 0xffff) as i16 as i32 as u32;
+                if op >= 0x39 {
+                    DecodedInsn::new3(name, IReg(ft), Imm32(off), IReg(rd)).with_fmt(MEMOP_FMT)
+                } else {
+                    DecodedInsn::new3(name, OReg(ft), Imm32(off), IReg(rd)).with_fmt(MEMOP_FMT)
+                }
+            }
+            _ => DecodedInsn::new1("unkfpu", Imm8(op as u8)),
         }
     }
 }
