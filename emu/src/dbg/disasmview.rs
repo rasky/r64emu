@@ -78,7 +78,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                 ctx.disasm.get_mut(&cpu_name).unwrap().blink_pc = None;
                 ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = None;
             }
-            TraceEvent::Paused() | TraceEvent::GenericBreak(_) => {
+            TraceEvent::Stepped() | TraceEvent::Paused() | TraceEvent::GenericBreak(_) => {
                 force_pc = Some(cur_pc);
                 ctx.disasm.get_mut(&cpu_name).unwrap().blink_pc = None;
                 ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = None;

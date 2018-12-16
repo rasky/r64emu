@@ -13,8 +13,9 @@ use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub enum TraceEvent {
-    Poll(),   // Fake event used to poll back into the tracer to improve responsiveness
-    Paused(), // A pause was requested
+    Poll(),    // Fake event used to poll back into the tracer to improve responsiveness
+    Paused(),  // A pause was requested
+    Stepped(), // A CPU just stepped
     Breakpoint(String, usize, u64), // A breakpoint was hit (cpu_idx, bp_idx, pc)
     BreakpointOneShot(String, u64), // A one-shot breakpoint was hit (cpu_idx, pc)
     WatchpointWrite(String, usize), // A watchpoint was hit during a write (cpu_idx, wp_idx)

@@ -88,6 +88,9 @@ impl DebuggerUI {
             uictx.disasm.insert(name.clone(), UiCtxDisasm::default());
         }
 
+        // Initial event
+        uictx.event = Some((box TraceEvent::Paused(), Instant::now()));
+
         Self {
             imgui: Rc::new(RefCell::new(imgui)),
             imgui_sdl2,
@@ -196,7 +199,9 @@ impl DebuggerUI {
         self.backend.render(ui);
         self.last_render = Instant::now();
 
-        match self.uictx.get_mut().command {
+        let uictx = self.uictx.get_mut();
+        uictx.event = None;
+        match uictx.command {
             Some(UiCommand::Pause(paused)) => self.paused = paused,
             Some(UiCommand::BreakpointOneShot(ref cpu_name, pc)) => {
                 let cpu_name = cpu_name.clone();
@@ -206,11 +211,11 @@ impl DebuggerUI {
             Some(UiCommand::CpuStep(ref cpu_name)) => {
                 let _ = model.trace_step(&cpu_name, &Tracer::null());
                 self.paused = true;
+                uictx.event = Some((box TraceEvent::Stepped(), Instant::now()));
             }
             None => {}
         };
-        self.uictx.get_mut().command = None;
-        self.uictx.get_mut().event = None;
+        uictx.command = None;
     }
 
     fn render_main<'ui, T: DebuggerModel>(&mut self, ui: &Ui<'ui>, model: &mut T) {
