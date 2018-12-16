@@ -174,7 +174,9 @@ fn humanize(insn: DecodedInsn) -> DecodedInsn {
         "bne" if op1 == IReg(zr) => DecodedInsn::new2("bnez", op0, op2),
         "beq" if op0 == IReg(zr) && op1 == IReg(zr) => DecodedInsn::new1("j", op2), // relocatable encoding
         "beq" if op1 == IReg(zr) => DecodedInsn::new2("beqz", op0, op2),
+        "bnel" if op0 == IReg(zr) => DecodedInsn::new2("bnezl", op1, op2),
         "bnel" if op1 == IReg(zr) => DecodedInsn::new2("bnezl", op0, op2),
+        "beql" if op0 == IReg(zr) => DecodedInsn::new2("beqzl", op1, op2),
         "beql" if op1 == IReg(zr) => DecodedInsn::new2("beqzl", op0, op2),
         "bgez" if op0 == IReg(zr) => DecodedInsn::new1("j", op1), // relocatable encoding
         "bgezal" if op0 == IReg(zr) => DecodedInsn::new1("jal", op1), // relocatable encoding
