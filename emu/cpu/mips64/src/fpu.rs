@@ -37,6 +37,9 @@ trait FloatRawConvert {
     fn from_u64bits(v: u64) -> Self;
     fn to_u64bits(self) -> u64;
     fn bankers_round(self) -> Self;
+    fn to_f32(self) -> f32;
+    fn to_f64(self) -> f64;
+    fn to_u64(self) -> u64;
 }
 
 impl FloatRawConvert for f32 {
@@ -54,6 +57,15 @@ impl FloatRawConvert for f32 {
             y
         }
     }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+    fn to_u64(self) -> u64 {
+        self as u64
+    }
 }
 
 impl FloatRawConvert for f64 {
@@ -70,6 +82,15 @@ impl FloatRawConvert for f64 {
         } else {
             y
         }
+    }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+    fn to_u64(self) -> u64 {
+        self as u64
     }
 }
 
@@ -142,6 +163,8 @@ macro_rules! fp_suffix {
         match $op {
             0x10 => concat!($name, ".s"),
             0x11 => concat!($name, ".d"),
+            0x14 => concat!($name, ".w"),
+            0x15 => concat!($name, ".l"),
             _ => unreachable!(),
         }
     };
@@ -184,7 +207,7 @@ impl Fpu {
         &mut self,
         cpu: &mut CpuContext,
         opcode: u32,
-        _t: &Tracer,
+        t: &Tracer,
     ) -> Result<()> {
         let mut op = Fop::<M> {
             opcode,
@@ -242,6 +265,11 @@ impl Fpu {
             0x0E => approx!(op, ceil, to_i32),          // CEIL.W.fmt
             0x0F => approx!(op, floor, to_i32),         // FLOOR.W.fmt
 
+            0x20 => *op.mfd64() = op.fs().to_f32().to_u64bits(), // CVT.S.fmt
+            0x21 => *op.mfd64() = op.fs().to_f64().to_u64bits(), // CVT.D.fmt
+            0x24 => *op.mfd64() = op.fs().to_u64() as u32 as u64, // CVT.W.fmt
+            0x25 => *op.mfd64() = op.fs().to_u64(),              // CVT.L.fmt
+
             0x30 => cond!(op, 0x30),
             0x31 => cond!(op, 0x31),
             0x32 => cond!(op, 0x32),
@@ -259,7 +287,14 @@ impl Fpu {
             0x3E => cond!(op, 0x3E),
             0x3F => cond!(op, 0x3F),
 
-            _ => panic!("unimplemented COP1 opcode: func={:x?}", op.func()),
+            _ => {
+                error!(
+                    op.fpu.logger,
+                    "unimplemented COP1 opcode: func={:x?}",
+                    op.func()
+                );
+                return t.break_here("unimplemented COP1 opcode");
+            }
         }
         Ok(())
     }
@@ -274,18 +309,23 @@ impl Cop for Fpu {
     }
 
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()> {
+        let func = opcode & 0x3f;
         let fmt = (opcode >> 21) & 0x1F;
         let rt = ((opcode >> 16) & 0x1F) as usize;
-        let rs = (opcode >> 11) & 0x1F;
+        let rs = ((opcode >> 11) & 0x1F) as usize;
         match fmt {
+            0x0 => cpu.regs[rt] = (self.regs[rs] as u32).sx64(), // MFC1
             0x2 => match rs {
+                // CFC1
                 31 => cpu.regs[rt] = self.fcsr,
                 _ => {
                     error!(self.logger, "CFC1 from unknown register: {:x}", rs);
                     return t.break_here("CFC1 from unknown register");
                 }
             },
+            0x4 => self.regs[rs] = (cpu.regs[rt] as u32) as u64, // MTC1
             0x6 => match rs {
+                // CTC1
                 31 => self.fcsr = cpu.regs[rt],
                 _ => {
                     error!(self.logger, "CTC1 to unknown register: {:x}", rs);
@@ -302,6 +342,24 @@ impl Cop for Fpu {
             }
             0x10 => return self.fop::<f32>(cpu, opcode, t),
             0x11 => return self.fop::<f64>(cpu, opcode, t),
+
+            0x14 => match func {
+                0x20 => self.regs[rt] = (self.regs[rs] as i32 as f32).to_u64bits(), // CVT.S.W
+                0x21 => self.regs[rt] = (self.regs[rs] as i32 as f64).to_u64bits(), // CVT.D.W
+                _ => {
+                    error!(self.logger, "unimplemented COP1 W: func={:x?}", func);
+                    return t.break_here("unimplemented COP1 W opcode");
+                }
+            },
+            0x15 => match func {
+                0x20 => self.regs[rt] = (self.regs[rs] as i64 as f32).to_u64bits(), // CVT.S.L
+                0x21 => self.regs[rt] = (self.regs[rs] as i64 as f64).to_u64bits(), // CVT.D.L
+                _ => {
+                    error!(self.logger, "unimplemented COP1 L: func={:x?}", func);
+                    return t.break_here("unimplemented COP1 L opcode");
+                }
+            },
+
             _ => {
                 error!(self.logger, "unimplemented COP1 fmt: fmt={:x?}", fmt);
                 return t.break_here("unimplemented COP1 opcode");
@@ -313,6 +371,7 @@ impl Cop for Fpu {
     fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
         use self::Operand::*;
         let op = opcode >> 26;
+        let func = opcode & 0x3f;
         match op {
             // Regular COP opcode. FPU is usually installed as COP1
             // (so we'll see 0x11), but let's be generic.
@@ -322,7 +381,9 @@ impl Cop for Fpu {
                 let fs = FPU_REG_NAMES[((opcode >> 11) & 0x1f) as usize].into();
                 let cfs = FPU_CREG_NAMES[((opcode >> 11) & 0x1f) as usize].into();
                 match fmt {
+                    0x0 => DecodedInsn::new2("mfc1", OReg(rt), IReg(fs)),
                     0x2 => DecodedInsn::new2("cfc1", OReg(rt), IReg(cfs)),
+                    0x4 => DecodedInsn::new2("mtc1", IReg(rt), OReg(fs)),
                     0x6 => DecodedInsn::new2("ctc1", IReg(rt), OReg(cfs)),
                     0x8 => {
                         let tgt = pc + (opcode as u16).sx64() * 4;
@@ -350,7 +411,6 @@ impl Cop for Fpu {
                     }
                     // Single/Double precision
                     0x10 | 0x11 => {
-                        let func = opcode & 0x3f;
                         let ft = FPU_REG_NAMES[((opcode >> 16) & 0x1f) as usize].into();
                         let fd = FPU_REG_NAMES[((opcode >> 6) & 0x1f) as usize].into();
                         match func {
@@ -384,11 +444,20 @@ impl Cop for Fpu {
                                 IReg(fs),
                                 IReg(ft),
                             ),
-                            0x32 => DecodedInsn::new2(fp_suffix!("c.eq", op), IReg(fs), IReg(ft)),
-                            0x3E => DecodedInsn::new2(fp_suffix!("c.le", op), IReg(fs), IReg(ft)),
+                            0x20 => DecodedInsn::new0(fp_suffix!("cvt.s", fmt)),
+                            0x21 => DecodedInsn::new0(fp_suffix!("cvt.d", fmt)),
+                            0x24 => DecodedInsn::new0(fp_suffix!("cvt.w", fmt)),
+                            0x25 => DecodedInsn::new0(fp_suffix!("cvt.l", fmt)),
+                            0x32 => DecodedInsn::new2(fp_suffix!("c.eq", fmt), IReg(fs), IReg(ft)),
+                            0x3E => DecodedInsn::new2(fp_suffix!("c.le", fmt), IReg(fs), IReg(ft)),
                             _ => DecodedInsn::new1("cop1op?", Imm32(func)),
                         }
                     }
+                    0x14 | 0x15 => match func {
+                        0x20 => DecodedInsn::new0(fp_suffix!("cvt.s", fmt)),
+                        0x21 => DecodedInsn::new0(fp_suffix!("cvt.d", fmt)),
+                        _ => DecodedInsn::new1("cop1cvt?", Imm32(func)),
+                    },
                     _ => DecodedInsn::new1("cop1?", Imm32(fmt)),
                 }
             }
