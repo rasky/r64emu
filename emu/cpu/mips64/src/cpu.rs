@@ -652,7 +652,7 @@ impl Cpu {
                 }
             }
 
-            let mut iter = self.fetch(self.ctx.pc).iter().unwrap();
+            let mut iter = self.fetch(self.ctx.pc).iter().expect(&format!("non linear memory at PC: {:016x}", self.ctx.pc));
 
             // Tight loop: go through continuous memory, no branches, no IRQs
             while let Some(op) = iter.next() {
