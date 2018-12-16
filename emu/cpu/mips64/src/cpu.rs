@@ -10,7 +10,7 @@ use emu::sync;
 use byteorder::ByteOrder;
 use slog;
 
-use std::cell::{RefCell, Ref, RefMut};
+use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
 /// Cop is a MIPS64 coprocessor that can be installed within the core.
@@ -522,7 +522,9 @@ impl Cpu {
             0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),      // XORI
             0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(), // LUI
 
-            0x10 => if_cop!(op, cop0, { return cop0.borrow_mut().op(&mut op.cpu.ctx, opcode, t) }), // COP0
+            0x10 => if_cop!(op, cop0, {
+                return cop0.borrow_mut().op(&mut op.cpu.ctx, opcode, t);
+            }), // COP0
             0x11 => if_cop!(op, cop1, { return cop1.op(&mut op.cpu.ctx, opcode, t) }), // COP1
             0x12 => if_cop!(op, cop2, { return cop2.op(&mut op.cpu.ctx, opcode, t) }), // COP2
             0x13 => if_cop!(op, cop3, { return cop3.op(&mut op.cpu.ctx, opcode, t) }), // COP3
@@ -652,7 +654,10 @@ impl Cpu {
                 }
             }
 
-            let mut iter = self.fetch(self.ctx.pc).iter().expect(&format!("non linear memory at PC: {:016x}", self.ctx.pc));
+            let mut iter = self
+                .fetch(self.ctx.pc)
+                .iter()
+                .expect(&format!("non linear memory at PC: {:016x}", self.ctx.pc));
 
             // Tight loop: go through continuous memory, no branches, no IRQs
             while let Some(op) = iter.next() {
@@ -696,19 +701,19 @@ impl Cpu {
 
         match self.cop0_mut() {
             Some(mut c) => c.render_debug(dr),
-            None => {},
+            None => {}
         };
         match self.cop1_mut() {
             Some(c) => c.render_debug(dr),
-            None => {},
+            None => {}
         };
         match self.cop2_mut() {
             Some(c) => c.render_debug(dr),
-            None => {},
+            None => {}
         };
         match self.cop3_mut() {
             Some(c) => c.render_debug(dr),
-            None => {},
+            None => {}
         };
     }
 }
