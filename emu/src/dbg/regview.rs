@@ -16,7 +16,7 @@ pub trait RegisterView {
     fn name<'a>(&'a self) -> &'a str;
     fn visit_regs<'s, F>(&'s mut self, col: usize, visit: F)
     where
-        F: for<'a> FnMut(&'a str, RegisterSize<'a>);
+        F: for<'a> FnMut(&'a str, RegisterSize<'a>, Option<&str>);
 }
 
 pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(
@@ -29,7 +29,7 @@ pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(
         .build(|| {
             ui.columns(RV::COLUMNS as _, im_str!("columns"), true);
             for col in 0..RV::COLUMNS {
-                v.visit_regs(col, |name, val| {
+                v.visit_regs(col, |name, val, desc| {
                     let name = im_str!("{}", name);
                     let mut buf = match val {
                         RegisterSize::Reg8(ref v) => im_str!("{:02x}", v).to_owned(),
@@ -58,6 +58,9 @@ pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(
                                 *v = u64::from_str_radix(buf.as_ref(), 16).unwrap();
                             }
                         };
+                    }
+                    if let Some(desc) = desc {
+                        ui.text(im_str!("{}", desc));
                     }
                 });
                 ui.next_column();

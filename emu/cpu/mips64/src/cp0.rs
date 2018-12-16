@@ -2,7 +2,7 @@ use bitfield::bitfield;
 
 use super::cpu::{Cop, Cop0, CpuContext, Exception};
 use super::decode::{DecodedInsn, REG_NAMES};
-use emu::dbg::{Operand, Result, Tracer};
+use emu::dbg::{Operand, Result, Tracer, RegisterView, RegisterSize, DebuggerRenderer};
 use emu::int::Numerics;
 use slog;
 
@@ -79,10 +79,11 @@ pub struct Cp0 {
     reg_entrylo1: u64,
 
     logger: slog::Logger,
+    name: &'static str,
 }
 
 impl Cp0 {
-    pub fn new(logger: slog::Logger) -> Box<Cp0> {
+    pub fn new(name: &'static str, logger: slog::Logger) -> Box<Cp0> {
         Box::new(Cp0 {
             reg_status: RegStatus(0),
             reg_cause: RegCause(0),
@@ -94,6 +95,7 @@ impl Cp0 {
             reg_entrylo1: 0,
             reg_entryhi: 0,
             logger: logger,
+            name,
         })
     }
 }
@@ -325,6 +327,55 @@ impl Cop for Cp0 {
                 _ => DecodedInsn::new1("cop0op?", Imm32(func)),
             },
             _ => DecodedInsn::new1("cop0?", Imm32(rs)),
+        }
+    }
+
+    fn render_debug(&mut self, dr: &DebuggerRenderer) {
+        dr.render_regview(self);
+    }
+}
+
+impl RegisterView for Cp0 {
+    const WINDOW_SIZE: (f32, f32) = (180.0, 400.0);
+    const COLUMNS: usize = 1;
+
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)
+    where
+        F: for<'a> FnMut(&'a str, RegisterSize<'a>, Option<&str>),
+    {
+        use self::RegisterSize::*;
+
+        match col {
+            0 => {
+                let status = format!(
+                    "IM:{:08b} IE:{} EXL:{} ERL:{}",
+                    self.reg_status.im(),
+                    self.reg_status.ie() as u8,
+                    self.reg_status.exl() as u8,
+                    self.reg_status.erl() as u8,
+                );
+                let cause = format!(
+                    "IP:{:08b} EXC:{} BD:{}",
+                    self.reg_cause.ip(),
+                    self.reg_cause.exc(),
+                    self.reg_cause.bd() as u8,
+                );
+                visit("Status", Reg32(&mut self.reg_status.0), Some(&status));
+                visit("Cause", Reg32(&mut self.reg_cause.0), Some(&cause));
+                visit("EPC", Reg64(&mut self.reg_epc), None);
+                visit("ErrorEPC", Reg64(&mut self.reg_errorepc), None);
+
+                visit("Index", Reg32(&mut self.reg_index), None);
+                visit("PageMask", Reg32(&mut self.reg_pagemask), None);
+                visit("EntryHi", Reg64(&mut self.reg_entryhi), None);
+                visit("EntryLo0", Reg64(&mut self.reg_entrylo0), None);
+                visit("EntryLo1", Reg64(&mut self.reg_entrylo1), None);
+            },
+            _ => unreachable!(),
         }
     }
 }

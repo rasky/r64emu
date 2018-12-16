@@ -21,6 +21,10 @@ use super::si::Si;
 use super::sp::Sp;
 use super::vi::Vi;
 
+// Used in debugger windows
+const MAINCPU_NAME: &'static str = "R4300";
+const RSPCPU_NAME: &'static str = "RSP";
+
 pub struct N64 {
     logger: slog::Logger,
     sync: Box<sync::Sync>,
@@ -67,7 +71,7 @@ impl N64 {
 
         let bus = Rc::new(RefCell::new(Bus::new(sync::Sync::new_logger(&sync))));
         let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
-            "R4300",
+            MAINCPU_NAME,
             sync::Sync::new_logger(&sync),
             bus.clone(),
         ))));
@@ -76,8 +80,8 @@ impl N64 {
             //   COP0 -> standard MIPS64 CP0
             //   COP1 -> standard MIPS64 FPU
             let mut cpu = cpu.borrow_mut();
-            cpu.set_cop0(mips64::Cp0::new(sync::Sync::new_logger(&sync)));
-            cpu.set_cop1(mips64::Fpu::new(sync::Sync::new_logger(&sync)));
+            cpu.set_cop0(mips64::Cp0::new("R4300-COP0", sync::Sync::new_logger(&sync)));
+            cpu.set_cop1(mips64::Fpu::new("R4300-FPU", sync::Sync::new_logger(&sync)));
         }
 
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
@@ -202,8 +206,8 @@ impl DebuggerModel for N64 {
 
     fn trace_step(&mut self, cpu_name: &str, tracer: &dbg::Tracer) -> dbg::Result<()> {
         match cpu_name {
-            "R4300" => self.cpu.borrow_mut().step(tracer),
-            "RSP" => {
+            MAINCPU_NAME => self.cpu.borrow_mut().step(tracer),
+            RSPCPU_NAME => {
                 // Do not keep sp borrowed by cloning the CPU. This allows
                 // RSP to recurse back into the SP (eg: write a SP register) without
                 // double-borrows.
@@ -220,7 +224,7 @@ impl DebuggerModel for N64 {
     }
 
     fn all_cpus(&self) -> Vec<String> {
-        vec!["R4300".into(), "RSP".into()]
+        vec![MAINCPU_NAME.into(), RSPCPU_NAME.into()]
     }
 
     fn cycles(&self) -> i64 {

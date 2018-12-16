@@ -50,6 +50,9 @@ pub trait Cop {
         let val = self.reg(rt) as u64;
         bus.borrow().write::<u64>(ea & 0x1FFF_FFFC, val);
     }
+
+    // Implement some debugger views
+    fn render_debug<'a, 'ui>(&mut self, _dr: &DebuggerRenderer<'a, 'ui>) {}
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -645,7 +648,6 @@ impl Cpu {
                 let mut cop0 = cop0.borrow_mut();
                 if cop0.pending_int() {
                     cop0.exception(&mut self.ctx, Exception::Interrupt);
-                    return t.break_here("interrupt generated");
                     continue;
                 }
             }
@@ -689,8 +691,25 @@ impl sync::Subsystem for Box<Cpu> {
 
 impl Cpu {
     pub fn render_debug<'a, 'ui>(self: &mut Box<Cpu>, dr: &DebuggerRenderer<'a, 'ui>) {
-        dr.render_regview(self);
         dr.render_disasmview(self);
+        dr.render_regview(self);
+
+        match self.cop0_mut() {
+            Some(mut c) => c.render_debug(dr),
+            None => {},
+        };
+        match self.cop1_mut() {
+            Some(c) => c.render_debug(dr),
+            None => {},
+        };
+        match self.cop2_mut() {
+            Some(c) => c.render_debug(dr),
+            None => {},
+        };
+        match self.cop3_mut() {
+            Some(c) => c.render_debug(dr),
+            None => {},
+        };
     }
 }
 
@@ -704,8 +723,9 @@ impl RegisterView for Box<Cpu> {
 
     fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)
     where
-        F: for<'a> FnMut(&'a str, RegisterSize<'a>),
+        F: for<'a> FnMut(&'a str, RegisterSize<'a>, Option<&str>),
     {
+        use self::RegisterSize::*;
         match col {
             0 | 1 => {
                 let regs = vec![
@@ -714,13 +734,18 @@ impl RegisterView for Box<Cpu> {
                     "k0", "k1", "gp", "sp", "fp", "ra",
                 ];
                 for (n, v) in regs.iter().zip(&mut self.ctx.regs).skip(col * 16).take(16) {
-                    visit(n, RegisterSize::Reg64(v));
+                    visit(n, Reg64(v), None);
                 }
             }
             2 => {
-                visit("pc", RegisterSize::Reg64(&mut self.ctx.pc));
-                visit("hi", RegisterSize::Reg64(&mut self.ctx.hi));
-                visit("lo", RegisterSize::Reg64(&mut self.ctx.lo));
+                visit("hi", Reg64(&mut self.ctx.hi), None);
+                visit("lo", Reg64(&mut self.ctx.lo), None);
+
+                let mut pcdesc = format!("DelaySlot:{}", self.ctx.delay_slot);
+                if self.ctx.delay_slot {
+                    pcdesc += &format!("\nJumpTo:{:x}", self.ctx.next_pc);
+                }
+                visit("pc", Reg64(&mut self.ctx.pc), Some(&pcdesc));
             }
             _ => unreachable!(),
         };

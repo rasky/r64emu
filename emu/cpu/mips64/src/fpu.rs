@@ -24,6 +24,7 @@ pub struct Fpu {
     fcsr: u64,
 
     logger: slog::Logger,
+    name: &'static str,
 }
 
 trait FloatRawConvert {
@@ -131,7 +132,7 @@ macro_rules! cond {
 }
 
 impl Fpu {
-    pub fn new(logger: slog::Logger) -> Box<Fpu> {
+    pub fn new(name: &'static str, logger: slog::Logger) -> Box<Fpu> {
         Box::new(Fpu {
             regs: [0u64; 32],
             _fir: 0,
@@ -139,7 +140,8 @@ impl Fpu {
             _fexr: 0,
             _fenr: 0,
             fcsr: 0,
-            logger: logger,
+            logger,
+            name,
         })
     }
 
@@ -257,7 +259,23 @@ impl Cop for Fpu {
 
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()> {
         let fmt = (opcode >> 21) & 0x1F;
+        let rt = ((opcode >> 16) & 0x1F) as usize;
+        let rs = (opcode >> 11) & 0x1F;
         match fmt {
+            2 => match rs {
+                31 => cpu.regs[rt] = self.fcsr,
+                _ => {
+                    error!(self.logger, "CFC1 from unknown register: {:x}", rs);
+                    return t.break_here("CFC1 from unknown register");
+                },
+            }
+            6 => match rs {
+                31 => self.fcsr = cpu.regs[rt],
+                _ => {
+                    error!(self.logger, "CTC1 to unknown register: {:x}", rs);
+                    return t.break_here("CTC1 to unknown register");
+                },
+            }
             8 => {
                 let tgt = cpu.pc + (opcode & 0xffff).sx64() * 4;
                 let cc = ((opcode >> 18) & 3) as usize;
@@ -265,15 +283,15 @@ impl Cop for Fpu {
                 let tf = opcode & (1 << 16) != 0;
                 let cond = self.get_cc(cc) == tf;
                 cpu.branch(cond, tgt, nd);
-                Ok(())
             }
-            16 => self.fop::<f32>(cpu, opcode, t),
-            17 => self.fop::<f64>(cpu, opcode, t),
+            16 => return self.fop::<f32>(cpu, opcode, t),
+            17 => return self.fop::<f64>(cpu, opcode, t),
             _ => {
                 error!(self.logger, "unimplemented COP1 fmt: fmt={:x?}", fmt);
-                t.break_here("unimplemented COP1 opcode")
+                return t.break_here("unimplemented COP1 opcode");
             }
         }
+        Ok(())
     }
 
     fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
