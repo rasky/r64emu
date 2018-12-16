@@ -1,3 +1,4 @@
+use super::uisupport::*;
 use super::UiCtx;
 use imgui::*;
 
@@ -30,35 +31,14 @@ pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(
             ui.columns(RV::COLUMNS as _, im_str!("columns"), true);
             for col in 0..RV::COLUMNS {
                 v.visit_regs(col, |name, val, desc| {
+                    use self::RegisterSize::*;
                     let name = im_str!("{}", name);
-                    let mut buf = match val {
-                        RegisterSize::Reg8(ref v) => im_str!("{:02x}", v).to_owned(),
-                        RegisterSize::Reg16(ref v) => im_str!("{:04x}", v).to_owned(),
-                        RegisterSize::Reg32(ref v) => im_str!("{:08x}", v).to_owned(),
-                        RegisterSize::Reg64(ref v) => im_str!("{:016x}", v).to_owned(),
+                    match val {
+                        Reg8(v) => imgui_input_hex(ui, name, v, true),
+                        Reg16(v) => imgui_input_hex(ui, name, v, true),
+                        Reg32(v) => imgui_input_hex(ui, name, v, true),
+                        Reg64(v) => imgui_input_hex(ui, name, v, true),
                     };
-                    if ui
-                        .input_text(name, &mut buf)
-                        .chars_hexadecimal(true)
-                        .chars_noblank(true)
-                        .enter_returns_true(true)
-                        .build()
-                    {
-                        match val {
-                            RegisterSize::Reg8(v) => {
-                                *v = u8::from_str_radix(buf.as_ref(), 16).unwrap();
-                            }
-                            RegisterSize::Reg16(v) => {
-                                *v = u16::from_str_radix(buf.as_ref(), 16).unwrap();
-                            }
-                            RegisterSize::Reg32(v) => {
-                                *v = u32::from_str_radix(buf.as_ref(), 16).unwrap();
-                            }
-                            RegisterSize::Reg64(v) => {
-                                *v = u64::from_str_radix(buf.as_ref(), 16).unwrap();
-                            }
-                        };
-                    }
                     if let Some(desc) = desc {
                         ui.text(im_str!("{}", desc));
                     }

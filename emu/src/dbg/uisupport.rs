@@ -1,5 +1,6 @@
 use imgui::sys;
 use imgui::*;
+use std::fmt;
 use std::time::{Duration, Instant};
 
 pub(crate) struct ImGuiListClipper {
@@ -45,10 +46,58 @@ impl ImGuiListClipper {
     }
 }
 
-pub fn imgui_input_hex(ui: &Ui<'_>, name: &ImStr, val: &mut u64, wait_enter: bool) -> bool {
+pub trait HexableInt: Copy + fmt::Display {
+    const HEX_DIGITS: usize;
+    fn format(self) -> String;
+    fn parse(s: &str) -> Option<Self>;
+}
+
+impl HexableInt for u8 {
+    const HEX_DIGITS: usize = 2;
+    fn format(self) -> String {
+        format!("{:02x}", self)
+    }
+    fn parse(s: &str) -> Option<Self> {
+        u8::from_str_radix(s, 16).ok()
+    }
+}
+impl HexableInt for u16 {
+    const HEX_DIGITS: usize = 4;
+    fn format(self) -> String {
+        format!("{:04x}", self)
+    }
+    fn parse(s: &str) -> Option<Self> {
+        u16::from_str_radix(s, 16).ok()
+    }
+}
+impl HexableInt for u32 {
+    const HEX_DIGITS: usize = 8;
+    fn format(self) -> String {
+        format!("{:08x}", self)
+    }
+    fn parse(s: &str) -> Option<Self> {
+        u32::from_str_radix(s, 16).ok()
+    }
+}
+impl HexableInt for u64 {
+    const HEX_DIGITS: usize = 16;
+    fn format(self) -> String {
+        format!("{:016x}", self)
+    }
+    fn parse(s: &str) -> Option<Self> {
+        u64::from_str_radix(s, 16).ok()
+    }
+}
+
+pub fn imgui_input_hex<T: HexableInt>(
+    ui: &Ui<'_>,
+    name: &ImStr,
+    val: &mut T,
+    wait_enter: bool,
+) -> bool {
     let mut changed = false;
-    ui.with_item_width(70.0, || {
-        let mut spc = ImString::new(format!("{:08x}", val));
+    ui.with_item_width(T::HEX_DIGITS as f32 * 7.0 + 8.0, || {
+        let mut spc = ImString::new(val.format());
         if ui
             .input_text(name, &mut spc)
             .chars_hexadecimal(true)
@@ -56,8 +105,10 @@ pub fn imgui_input_hex(ui: &Ui<'_>, name: &ImStr, val: &mut u64, wait_enter: boo
             .auto_select_all(true)
             .build()
         {
-            *val = u64::from_str_radix(spc.as_ref(), 16).unwrap();
-            changed = true;
+            if let Some(v) = T::parse(spc.as_ref()) {
+                *val = v;
+                changed = true;
+            }
         }
     });
     changed
