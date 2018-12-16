@@ -9,6 +9,7 @@ members = [
     "emu",
     "emu/emu-derive",
     "emu/cpu/mips64",
+    "tests/gengolden",
 ]
 
 [dependencies]
