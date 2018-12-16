@@ -1,4 +1,5 @@
 use super::decode::{decode, DecodedInsn};
+use super::mmu::Mmu;
 
 use emu::bus::be::{Bus, MemIoR};
 use emu::bus::MemInt;
@@ -9,7 +10,7 @@ use emu::sync;
 use byteorder::ByteOrder;
 use slog;
 
-use std::cell::RefCell;
+use std::cell::{RefCell, Ref, RefMut};
 use std::rc::Rc;
 
 /// Cop is a MIPS64 coprocessor that can be installed within the core.
@@ -51,21 +52,30 @@ pub trait Cop {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub enum Exception {
-    INT = 0x00,  // Interrupt
-    MOD = 0x01,  // TLB modification exception
-    TLBL = 0x02, // TLB load/fetch
-    TLBS = 0x03, // TLB store
-    ADEL = 0x04, // Address error (load/fetch)
-    ADES = 0x05, // Address error (store)
-    SYS = 0x08,  // Syscall
-    BP = 0x09,   // Breakpoint
-    RI = 0x0A,   // Reserved instruction
+    Interrupt,  // Interrupt
+    Breakpoint, // Breakpoint
+    Reset,
+    Nmi,
+    SoftReset,
+    TlbRefill,
+    XTlbRefill,
+}
 
-    // Special exceptions that are not specified in the Cause register
-    RESET = 0x100,
-    SOFTRESET = 0x101,
-    NMI = 0x102,
+impl Exception {
+    pub(crate) fn exc_code(&self) -> Option<u32> {
+        use self::Exception::*;
+        match self {
+            Interrupt => Some(0x00),
+            Breakpoint => Some(0x09),
+            Reset => None,
+            Nmi => None,
+            SoftReset => None,
+            TlbRefill => None,
+            XTlbRefill => None,
+        }
+    }
 }
 
 struct Lines {
@@ -75,6 +85,11 @@ struct Lines {
 /// Cop0 is a MIPS64 coprocessor #0, which (in addition to being a normal coprocessor)
 /// it is able to control execution of the core by triggering exceptions.
 pub trait Cop0: Cop {
+    // Change a single external interrupt line.
+    // Notice that hwint line 0 is mapped to bit IP2 in Cause
+    // (because IP0/IP1 are used for software interrupts).
+    fn set_hwint_line(&mut self, line: usize, status: bool);
+
     /// Check if there's a pending interrupt. It is expected that if this
     /// function returns true, Cop0::exception() is immediately called with
     /// exc == Exception::Int.
@@ -93,13 +108,14 @@ pub struct CpuContext {
     pub clock: i64,
     pub tight_exit: bool,
     pub delay_slot: bool,
+    pub mmu: Mmu,
     lines: Lines,
 }
 
 pub struct Cpu {
     ctx: CpuContext,
 
-    cop0: Option<Box<Cop0>>,
+    cop0: Option<Rc<RefCell<Box<Cop0>>>>,
     cop1: Option<Box<Cop>>,
     cop2: Option<Box<Cop>>,
     cop3: Option<Box<Cop>>,
@@ -215,7 +231,7 @@ impl CpuContext {
     }
 
     // Directly set PC to a specific value. Used at reset,
-    // and by ERET to do a non-delayed-slot branch.
+    // ERET, and exceptions to do a non-delayed-slot branch.
     pub fn set_pc(&mut self, pc: u64) {
         self.pc = pc;
         self.next_pc = pc + 4;
@@ -291,6 +307,7 @@ impl Cpu {
                 tight_exit: false,
                 delay_slot: false,
                 lines: Lines { halt: false },
+                mmu: Mmu::default(),
             },
             bus: bus,
             name: name.into(),
@@ -318,7 +335,7 @@ impl Cpu {
     }
 
     pub fn set_cop0(&mut self, cop0: Box<dyn Cop0>) {
-        self.cop0 = Some(cop0);
+        self.cop0 = Some(Rc::new(RefCell::new(cop0)));
     }
     pub fn set_cop1(&mut self, cop1: Box<dyn Cop>) {
         self.cop1 = Some(cop1);
@@ -330,8 +347,8 @@ impl Cpu {
         self.cop3 = Some(cop3);
     }
 
-    pub fn cop0(&self) -> Option<&Box<dyn Cop0>> {
-        self.cop0.as_ref()
+    pub fn cop0(&self) -> Option<Ref<Box<dyn Cop0>>> {
+        self.cop0.as_ref().map(|c| c.borrow())
     }
     pub fn cop1(&self) -> Option<&Box<dyn Cop>> {
         self.cop1.as_ref()
@@ -343,8 +360,8 @@ impl Cpu {
         self.cop3.as_ref()
     }
 
-    pub fn cop0_mut(&mut self) -> Option<&mut Box<dyn Cop0>> {
-        self.cop0.as_mut()
+    pub fn cop0_mut(&mut self) -> Option<RefMut<Box<dyn Cop0>>> {
+        self.cop0.as_ref().map(|c| c.borrow_mut())
     }
     pub fn cop1_mut(&mut self) -> Option<&mut Box<dyn Cop>> {
         self.cop1.as_mut()
@@ -356,13 +373,17 @@ impl Cpu {
         self.cop3.as_mut()
     }
 
+    pub fn cop0_clone(&self) -> Option<Rc<RefCell<Box<dyn Cop0>>>> {
+        self.cop0.as_ref().map(|c| c.clone())
+    }
+
     pub fn reset(&mut self) {
-        self.exception(Exception::RESET);
+        self.exception(Exception::Reset);
     }
 
     fn exception(&mut self, exc: Exception) {
         if let Some(ref mut cop0) = self.cop0 {
-            cop0.exception(&mut self.ctx, exc);
+            cop0.borrow_mut().exception(&mut self.ctx, exc);
         }
     }
 
@@ -384,7 +405,7 @@ impl Cpu {
                 0x07 => *op.mrd64() = (op.irt32() >> (op.rs32() & 0x1F)).sx64(), // SRAV
                 0x08 => branch!(op, true, op.rs64(), link(false)),   // JR
                 0x09 => branch!(op, true, op.rs64(), link(true)),    // JALR
-                0x0D => op.cpu.exception(Exception::BP),             // BREAK
+                0x0D => op.cpu.exception(Exception::Breakpoint),     // BREAK
                 0x0F => {}                                           // SYNC
 
                 0x10 => *op.mrd64() = op.cpu.ctx.hi, // MFHI
@@ -498,7 +519,7 @@ impl Cpu {
             0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),      // XORI
             0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(), // LUI
 
-            0x10 => if_cop!(op, cop0, { return cop0.op(&mut op.cpu.ctx, opcode, t) }), // COP0
+            0x10 => if_cop!(op, cop0, { return cop0.borrow_mut().op(&mut op.cpu.ctx, opcode, t) }), // COP0
             0x11 => if_cop!(op, cop1, { return cop1.op(&mut op.cpu.ctx, opcode, t) }), // COP1
             0x12 => if_cop!(op, cop2, { return cop2.op(&mut op.cpu.ctx, opcode, t) }), // COP2
             0x13 => if_cop!(op, cop3, { return cop3.op(&mut op.cpu.ctx, opcode, t) }), // COP3
@@ -621,8 +642,10 @@ impl Cpu {
             }
 
             if let Some(ref mut cop0) = self.cop0 {
+                let mut cop0 = cop0.borrow_mut();
                 if cop0.pending_int() {
-                    cop0.exception(&mut self.ctx, Exception::INT);
+                    cop0.exception(&mut self.ctx, Exception::Interrupt);
+                    return t.break_here("interrupt generated");
                     continue;
                 }
             }

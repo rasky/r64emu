@@ -42,18 +42,41 @@ const COP0_REG_NAMES: [&'static str; 32] = [
 ];
 
 bitfield! {
-    struct RegStatus(u64);
+    struct RegStatus(u32);
     impl Debug;
-    pub ie, set_ie2: 0;
-    pub exl, set_exl: 1;
-    pub erl, set_erl: 2;
+    pub ie, set_ie: 0;    // Interrupt enable
+    pub exl, set_exl: 1;  // Is within standard exception
+    pub erl, set_erl: 2;  // Is within special exception (reset/nmi)
+    pub im, set_im: 15,8; // Interrupt mask (8 lines)
+    pub nmi, set_nmi: 19; // Are we under NMI?
+    pub bev, set_bev: 22; // Exception vector location (normal/bootstrap)
+    pub cu0, set_cu0: 28; // Is COP0 active?
+    pub cu1, set_cu1: 29; // Is COP1 active?
+    pub cu2, set_cu2: 30; // Is COP2 active?
+    pub cu3, set_cu3: 31; // Is COP3 active?
+}
+
+bitfield! {
+    struct RegCause(u32);
+    impl Debug;
+    pub exc, set_exc: 6,2; // Current exception code
+    pub ip, set_ip: 15,8;  // Interrupt pending (8 lines)
+    pub wp, set_wp: 22;    // Watch exception
+    pub iv, set_iv: 23;    // General/Special exception vector
+    pub ce, set_ce: 29,28; // COP enabled exception
+    pub bd, set_bd: 31;    // Exception taken from delay slot
 }
 
 pub struct Cp0 {
     reg_status: RegStatus,
-    reg_cause: u64,
+    reg_cause: RegCause,
     reg_errorepc: u64,
     reg_epc: u64,
+    reg_index: u32,
+    reg_pagemask: u32,
+    reg_entryhi: u64,
+    reg_entrylo0: u64,
+    reg_entrylo1: u64,
 
     logger: slog::Logger,
 }
@@ -62,27 +85,96 @@ impl Cp0 {
     pub fn new(logger: slog::Logger) -> Box<Cp0> {
         Box::new(Cp0 {
             reg_status: RegStatus(0),
-            reg_cause: 0,
+            reg_cause: RegCause(0),
             reg_epc: 0,
             reg_errorepc: 0,
+            reg_index: 0,
+            reg_pagemask: 0,
+            reg_entrylo0: 0,
+            reg_entrylo1: 0,
+            reg_entryhi: 0,
             logger: logger,
         })
     }
 }
 
 impl Cop0 for Cp0 {
-    fn pending_int(&self) -> bool {
-        false
+    fn set_hwint_line(&mut self, line: usize, status: bool) {
+        let mut ip = self.reg_cause.ip();
+        let mask = 1 << (line + 2);
+        let val = (status as u32) << (line + 2);
+
+        ip = (ip & !mask) | (val & mask);
+        self.reg_cause.set_ip(ip);
     }
 
-    fn exception(&mut self, _ctx: &mut CpuContext, _exc: Exception) {}
+    fn pending_int(&self) -> bool {
+        self.reg_status.ie()
+            && !self.reg_status.erl()
+            && !self.reg_status.exl()
+            && self.reg_cause.ip() & self.reg_status.im() != 0
+    }
+
+    fn exception(&mut self, cpu: &mut CpuContext, exc: Exception) {
+        use self::Exception::*;
+
+        info!(self.logger, "exception"; "exc" => ?exc);
+
+        match exc {
+            Reset => {
+                error!(self.logger, "unimplemented exception type"; "exc" => ?exc);
+            }
+            Nmi => {
+                error!(self.logger, "unimplemented exception type"; "exc" => ?exc);
+            }
+            SoftReset => {
+                error!(self.logger, "unimplemented exception type"; "exc" => ?exc);
+            }
+            _ => {
+                // Standard exception
+                let vector = if !self.reg_status.exl() {
+                    if !cpu.delay_slot {
+                        self.reg_epc = cpu.pc;
+                        self.reg_cause.set_bd(false);
+                    } else {
+                        self.reg_epc = cpu.pc - 4;
+                        self.reg_cause.set_bd(true);
+                    }
+
+                    match exc {
+                        TlbRefill => 0x0,
+                        XTlbRefill => 0x80,
+                        Interrupt if self.reg_cause.iv() => 0x200,
+                        _ => 0x180,
+                    }
+                } else {
+                    0x180
+                };
+
+                // Coprocessor unit number
+                self.reg_cause.set_ce(0);
+                self.reg_cause.set_exc(exc.exc_code().unwrap_or(0));
+                self.reg_status.set_exl(true);
+                if self.reg_status.bev() {
+                    cpu.set_pc(0xFFFF_FFFF_BFC0_0200 + vector);
+                } else {
+                    cpu.set_pc(0xFFFF_FFFF_8000_0000 + vector);
+                }
+            }
+        };
+    }
 }
 
 impl Cop for Cp0 {
     fn reg(&self, idx: usize) -> u128 {
         match idx {
+            0 => self.reg_index as u128,
+            2 => self.reg_entrylo0 as u128,
+            3 => self.reg_entrylo1 as u128,
+            5 => self.reg_pagemask as u128,
+            10 => self.reg_entryhi as u128,
             12 => self.reg_status.0 as u128,
-            13 => self.reg_cause as u128,
+            13 => self.reg_cause.0 as u128,
             14 => self.reg_epc as u128,
             30 => self.reg_errorepc as u128,
             _ => 0,
@@ -91,8 +183,13 @@ impl Cop for Cp0 {
 
     fn set_reg(&mut self, idx: usize, val: u128) {
         match idx {
-            12 => self.reg_status.0 = val as u64,
-            13 => self.reg_cause = val as u64,
+            0 => self.reg_index = val as u32 & 0x1F,
+            2 => self.reg_entrylo0 = val as u64,
+            3 => self.reg_entrylo1 = val as u64,
+            5 => self.reg_pagemask = val as u32,
+            10 => self.reg_entryhi = val as u64,
+            12 => self.reg_status.0 = val as u32,
+            13 => self.reg_cause.0 = val as u32,
             14 => self.reg_epc = val as u64,
             30 => self.reg_errorepc = val as u64,
             _ => {}
@@ -111,11 +208,14 @@ impl Cop for Cp0 {
                 let _sel = opcode & 7;
                 cpu.regs[rt] = self.reg(rd) as u64;
                 match rd {
-                    12 | 13 | 14 | 30 => {}
+                    0 | 2 | 3 | 5 | 10 => {} // TLB regs
+                    12 | 13 => {}            // Status / Cause
+                    14 | 30 => {}            // EPC / ErrorEPC
                     _ => warn!(
                         self.logger,
                         "unimplemented COP0 read32";
-                        "reg" => COP0_REG_NAMES[rd]
+                        "reg" => COP0_REG_NAMES[rd],
+                        "val" => cpu.regs[rt].hex(),
                     ),
                 }
             }
@@ -124,9 +224,9 @@ impl Cop for Cp0 {
                 let _sel = opcode & 7;
                 self.set_reg(rd, cpu.regs[rt] as u128);
                 match rd {
-                    // Status/Cause: exception status might change
-                    12 | 13 => cpu.tight_exit = true,
-                    14 | 30 => {}
+                    0 | 2 | 3 | 5 | 10 => {}          // TLB regs
+                    12 | 13 => cpu.tight_exit = true, // Status / Cause
+                    14 | 30 => {}                     // EPC / ErrorEPC
                     _ => warn!(
                         self.logger,
                         "unimplemented COP0 write32";
@@ -135,6 +235,49 @@ impl Cop for Cp0 {
                 }
             }
             0x10..=0x1F => match func {
+                0x01 => {
+                    // TLBR
+                    let entry = cpu.mmu.read(self.reg_index as usize);
+                    self.reg_entryhi = entry.hi();
+                    self.reg_entrylo0 = entry.lo0;
+                    self.reg_entrylo1 = entry.lo1;
+                    self.reg_pagemask = entry.page_mask;
+                    info!(self.logger, "read TLB entry";
+                        "idx" => self.reg_index,
+                        "tlb" => ?entry);
+                }
+                0x02 => {
+                    // TLBWI
+                    cpu.mmu.write(
+                        self.reg_index as usize,
+                        self.reg_pagemask,
+                        self.reg_entryhi,
+                        self.reg_entrylo0,
+                        self.reg_entrylo1,
+                    );
+
+                    info!(self.logger, "wrote TLB entry";
+                        "idx" => self.reg_index,
+                        "tlb" => ?cpu.mmu.read(self.reg_index as usize));
+                }
+                0x08 => {
+                    // TLBP
+                    match cpu.mmu.probe(self.reg_entryhi, self.reg_entryhi as u8) {
+                        Some(idx) => {
+                            info!(self.logger, "probe TLB entry: found";
+                                "entry_hi" => self.reg_entryhi.hex(),
+                                "found_idx" => idx,
+                                "found_tlb" => ?cpu.mmu.read(self.reg_index as usize));
+                            self.reg_index = idx as u32;
+                        }
+                        None => {
+                            info!(self.logger, "probe TLB entry: not found";
+                                "entry_hi" => self.reg_entryhi.hex());
+                            self.reg_index = 0x8000_0000;
+                        }
+                    };
+                    return t.break_here("TPB probe");
+                }
                 0x18 => {
                     // ERET
                     // FIXME: verify that it's a NOP when ERL/EXL are 0

@@ -31,6 +31,7 @@ mod rdp;
 pub mod ai;
 pub mod cartridge;
 pub mod dp;
+pub mod mi;
 pub mod pi;
 pub mod ri;
 pub mod si;

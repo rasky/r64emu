@@ -166,7 +166,7 @@ impl Fpu {
         &mut self,
         cpu: &mut CpuContext,
         opcode: u32,
-        t: &Tracer,
+        _t: &Tracer,
     ) -> Result<()> {
         let mut op = Fop::<M> {
             opcode,

@@ -1,5 +1,6 @@
 #![feature(nll)]
 #![feature(arbitrary_self_types)]
+#![feature(test)]
 
 extern crate emu;
 extern crate num;
@@ -12,6 +13,7 @@ mod cpu;
 mod fpu;
 
 pub(crate) mod decode;
+pub(crate) mod mmu;
 
 pub use self::cp0::Cp0;
 pub use self::cpu::{Cop, Cop0, Cpu, CpuContext, Exception};

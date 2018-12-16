@@ -13,6 +13,7 @@ use super::ai::Ai;
 use super::cartridge::{Cartridge, CicModel};
 use super::dp::Dp;
 use super::errors::*;
+use super::mi::Mi;
 use super::mips64;
 use super::pi::Pi;
 use super::ri::Ri;
@@ -27,6 +28,7 @@ pub struct N64 {
     cpu: Rc<RefCell<Box<mips64::Cpu>>>,
     cart: DevPtr<Cartridge>,
 
+    _mi: DevPtr<Mi>,
     _pi: DevPtr<Pi>,
     _si: DevPtr<Si>,
     sp: DevPtr<Sp>,
@@ -69,6 +71,15 @@ impl N64 {
             sync::Sync::new_logger(&sync),
             bus.clone(),
         ))));
+        {
+            // Install CPU coprocessors
+            //   COP0 -> standard MIPS64 CP0
+            //   COP1 -> standard MIPS64 FPU
+            let mut cpu = cpu.borrow_mut();
+            cpu.set_cop0(mips64::Cp0::new(sync::Sync::new_logger(&sync)));
+            cpu.set_cop1(mips64::Fpu::new(sync::Sync::new_logger(&sync)));
+        }
+
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
         let pi = DevPtr::new(
             Pi::new(
@@ -79,20 +90,16 @@ impl N64 {
             .chain_err(|| "cannot open BIOS file")?,
         );
         let sp = Sp::new(sync::Sync::new_logger(&sync), bus.clone())?;
+        let mi = DevPtr::new(Mi::new(sync::Sync::new_logger(&sync), cpu.clone()));
         let si = DevPtr::new(Si::new(sync::Sync::new_logger(&sync)));
         let dp = DevPtr::new(Dp::new(sync::Sync::new_logger(&sync), bus.clone()));
-        let vi = DevPtr::new(Vi::new(sync::Sync::new_logger(&sync), bus.clone()));
+        let vi = DevPtr::new(Vi::new(
+            sync::Sync::new_logger(&sync),
+            bus.clone(),
+            mi.clone(),
+        ));
         let ai = DevPtr::new(Ai::new(sync::Sync::new_logger(&sync)));
         let ri = DevPtr::new(Ri::new(sync::Sync::new_logger(&sync)));
-
-        {
-            // Install CPU coprocessors
-            //   COP0 -> standard MIPS64 CP0
-            //   COP1 -> standard MIPS64 FPU
-            let mut cpu = cpu.borrow_mut();
-            cpu.set_cop0(mips64::Cp0::new(sync::Sync::new_logger(&sync)));
-            cpu.set_cop1(mips64::Fpu::new(sync::Sync::new_logger(&sync)));
-        }
 
         {
             // Configure main bus
@@ -103,6 +110,7 @@ impl N64 {
             bus.map_device(0x0404_0000, &sp, 1)?;
             bus.map_device(0x0408_0000, &sp, 2)?;
             bus.map_device(0x0410_0000, &dp, 0)?;
+            bus.map_device(0x0430_0000, &mi, 0)?;
             bus.map_device(0x0440_0000, &vi, 0)?;
             bus.map_device(0x0450_0000, &ai, 0)?;
             bus.map_device(0x0460_0000, &pi, 0)?;
@@ -133,6 +141,7 @@ impl N64 {
             vi: vi,
             _ai: ai,
             _ri: ri,
+            _mi: mi,
         });
     }
 
@@ -198,7 +207,7 @@ impl DebuggerModel for N64 {
                 // Do not keep sp borrowed by cloning the CPU. This allows
                 // RSP to recurse back into the SP (eg: write a SP register) without
                 // double-borrows.
-                let mut rsp = self.sp.borrow_mut().core_cpu.clone();
+                let rsp = self.sp.borrow_mut().core_cpu.clone();
                 return rsp.borrow_mut().step(tracer);
             }
             _ => unreachable!(),

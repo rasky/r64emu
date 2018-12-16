@@ -1,9 +1,10 @@
-extern crate byteorder;
-extern crate emu;
-extern crate slog;
-use emu::bus::be::{Bus, Reg32};
+use emu::bus::be::{Bus, DevPtr, Reg32};
 use emu::gfx::*;
 use emu::int::Numerics;
+
+use super::mi::{IrqMask, Mi};
+
+use slog;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -40,7 +41,7 @@ pub struct Vi {
     width: Reg32,
 
     // [9:0] interrupt when current half-line = V_INTR
-    #[reg(offset = 0x0C, rwmask = 0x3FF)]
+    #[reg(offset = 0x0C, rwmask = 0x3FF, wcb)]
     vertical_interrupt: Reg32,
 
     // [9:0] current half line, sampled once per line (the lsb of
@@ -100,10 +101,11 @@ pub struct Vi {
     logger: slog::Logger,
     bus: Rc<RefCell<Box<Bus>>>,
     framecount: usize,
+    mi: DevPtr<Mi>,
 }
 
 impl Vi {
-    pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>) -> Vi {
+    pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>, mi: DevPtr<Mi>) -> Vi {
         Vi {
             status: Reg32::default(),
             origin: Reg32::default(),
@@ -121,18 +123,29 @@ impl Vi {
             y_scale: Reg32::default(),
             logger,
             bus,
+            mi,
             framecount: 0,
         }
     }
 
-    pub fn set_line(&self, y: usize) {
+    pub fn set_line(&mut self, y: usize) {
         // FIXME: handle interleaved mode (LSB is fixed within the same field)
         // FIXME: NTSC has 525 lines, what happens to this 9-bit register when line > 512?
         self.current_line.set(y as u32);
+
+        if y as u32 == self.vertical_interrupt.get() {
+            self.mi.borrow_mut().set_irq_line(IrqMask::VI, true);
+        }
     }
 
-    fn cb_write_current_line(&self, _old: u32, new: u32) {
-        error!(self.logger, "write VI current line"; o!("val" => new.hex()));
+    fn cb_write_current_line(&mut self, _old: u32, _new: u32) {
+        info!(self.logger, "ack VI interrupt");
+        // Writing the current line register acknowledge the interrupt
+        self.mi.borrow_mut().set_irq_line(IrqMask::VI, false);
+    }
+
+    fn cb_write_vertical_interrupt(&self, _old: u32, new: u32) {
+        info!(self.logger, "change VI interrupt"; "line" => new);
     }
 
     pub fn draw_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>) {
