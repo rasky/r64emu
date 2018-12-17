@@ -64,7 +64,7 @@ pub(crate) struct SpCop2 {
     div_in: Option<u32>,
     div_out: u32,
     sp: DevPtr<Sp>,
-    _logger: slog::Logger,
+    logger: slog::Logger,
 }
 
 impl SpCop2 {
@@ -87,7 +87,7 @@ impl SpCop2 {
             div_in: None,
             div_out: 0,
             sp: sp.clone(),
-            _logger: logger,
+            logger: logger,
         }))
     }
 
@@ -237,6 +237,9 @@ impl<'a> Vectorop<'a> {
 
     fn setvd_lane(&mut self, idx: usize, val: u16) {
         self.spv.vregs[self.rd()].setlane(idx, val);
+    }
+    fn setvs_lane(&mut self, idx: usize, val: u16) {
+        self.spv.vregs[self.rs()].setlane(idx, val);
     }
 }
 
@@ -707,18 +710,33 @@ impl SpCop2 {
         } else {
             match op.e() {
                 0x2 => match op.rs() {
+                    // CFC2
                     0 => cpu.regs[op.rt()] = op.spv.vco().sx64(),
                     1 => cpu.regs[op.rt()] = op.spv.vcc().sx64(),
                     2 => cpu.regs[op.rt()] = op.spv.vce() as u64,
                     _ => panic!("unimplement COP2 CFC2 reg:{}", op.rs()),
                 },
+                0x4 => {
+                    if op.rd() >> 1 >= 8 {
+                        return t.break_here("invalid COP2 MTC2");
+                    }
+                    op.setvs_lane(op.rd() >> 1, cpu.regs[op.rt()] as u16); // MTC2
+                }
                 0x6 => match op.rs() {
+                    // CTC2
                     0 => op.spv.set_vco(cpu.regs[op.rt()] as u16),
                     1 => op.spv.set_vcc(cpu.regs[op.rt()] as u16),
                     2 => op.spv.set_vce(cpu.regs[op.rt()] as u8),
                     _ => panic!("unimplement COP2 CTC2 reg:{}", op.rd()),
                 },
-                _ => panic!("unimplemented COP2 non-VU opcode={:x}", op.e()),
+                _ => {
+                    error!(
+                        op.spv.logger,
+                        "unimplemented COP2 non-VU opcode={:x}",
+                        op.e()
+                    );
+                    return t.break_here("unimplemented COP2 non-VU opcode");
+                }
             }
         }
         Ok(())

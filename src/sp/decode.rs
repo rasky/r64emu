@@ -21,6 +21,7 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
     let func = opcode & 0x3F;
     let e = ((opcode >> 21) & 0xF) as u8;
     let rsx = (opcode >> 11) & 0x1f;
+    let rdx = (opcode >> 6) & 0x1f;
     // let grs = REG_NAMES[((opcode >> 11) & 0x1f) as usize].into();
     let grt = REG_NAMES[((opcode >> 16) & 0x1f) as usize].into();
     // let grd = REG_NAMES[((opcode >> 6) & 0x1f) as usize].into();
@@ -88,6 +89,8 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                         2 => DecodedInsn::new2("cfc2", OReg(grt), IReg("vce")),
                         _ => DecodedInsn::new2("cfc2?", OReg(grt), Imm8(rsx as u8)),
                     },
+                    0x4 => DecodedInsn::new3("mtc2", IReg(grt), OReg(vrs), Imm8(rdx as u8 >> 1))
+                        .with_fmt(VREG2_FMT),
                     0x6 => match rsx {
                         0 => DecodedInsn::new2("ctc2", OReg(grt), IReg("vco")),
                         1 => DecodedInsn::new2("ctc2", OReg(grt), IReg("vcc")),
