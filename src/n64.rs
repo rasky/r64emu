@@ -87,17 +87,18 @@ impl N64 {
             cpu.set_cop1(mips64::Fpu::new("R4300-FPU", sync::Sync::new_logger(&sync)));
         }
 
+        let mi = DevPtr::new(Mi::new(sync::Sync::new_logger(&sync), cpu.clone()));
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
         let pi = DevPtr::new(
             Pi::new(
                 sync::Sync::new_logger(&sync),
                 bus.clone(),
+                mi.clone(),
                 "bios/pifdata.bin",
             )
             .chain_err(|| "cannot open BIOS file")?,
         );
         let sp = Sp::new(sync::Sync::new_logger(&sync), bus.clone())?;
-        let mi = DevPtr::new(Mi::new(sync::Sync::new_logger(&sync), cpu.clone()));
         let si = DevPtr::new(Si::new(sync::Sync::new_logger(&sync)));
         let dp = DevPtr::new(Dp::new(sync::Sync::new_logger(&sync), bus.clone()));
         let vi = DevPtr::new(Vi::new(

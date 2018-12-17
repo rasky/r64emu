@@ -1,7 +1,8 @@
 extern crate emu;
 extern crate slog;
+use super::mi::{IrqMask, Mi};
 use crate::errors::*;
-use emu::bus::be::{Bus, Mem, MemFlags, Reg32};
+use emu::bus::be::{Bus, DevPtr, Mem, MemFlags, Reg32};
 use emu::int::Numerics;
 use std::cell::RefCell;
 use std::fs::File;
@@ -37,7 +38,7 @@ pub struct Pi {
 
     // (R) [0] DMA busy             (W): [0] reset controller
     //     [1] IO busy                       (and abort current op)
-    //     [2] error [1] clear intr
+    //     [2] error                     [1] clear intr
     #[reg(bank = 0, offset = 0x10, rwmask = 0, wcb)]
     dma_status: Reg32,
 
@@ -75,16 +76,23 @@ pub struct Pi {
 
     logger: slog::Logger,
     bus: Rc<RefCell<Box<Bus>>>,
+    mi: DevPtr<Mi>,
 }
 
 impl Pi {
-    pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>, pifrom: &str) -> Result<Pi> {
+    pub fn new(
+        logger: slog::Logger,
+        bus: Rc<RefCell<Box<Bus>>>,
+        mi: DevPtr<Mi>,
+        pifrom: &str,
+    ) -> Result<Pi> {
         let mut contents = vec![];
         File::open(pifrom)?.read_to_end(&mut contents)?;
 
         Ok(Pi {
             logger,
             bus,
+            mi,
             rom: Mem::from_buffer(contents, MemFlags::READACCESS),
             ram: Mem::default(),
             magic: Reg32::default(),
@@ -118,6 +126,7 @@ impl Pi {
 
     fn cb_write_dma_status(&mut self, _old: u32, new: u32) {
         info!(self.logger, "write dma status"; o!("val" => format!("{:x}", new)));
+        self.mi.borrow_mut().set_irq_line(IrqMask::PI, false);
     }
 
     fn cb_write_dma_wr_len(&mut self, _old: u32, val: u32) {
@@ -138,6 +147,7 @@ impl Pi {
         }
         self.dma_rom_addr.set(raddr);
         self.dma_ram_addr.set(waddr);
+        self.mi.borrow_mut().set_irq_line(IrqMask::PI, true);
     }
 
     fn cb_write_dma_rd_len(&mut self, _old: u32, val: u32) {
@@ -158,7 +168,8 @@ impl Pi {
             waddr = waddr + 4;
             i += 4;
         }
+        self.mi.borrow_mut().set_irq_line(IrqMask::PI, true);
 
-        unimplemented!()
+        unimplemented!();
     }
 }
