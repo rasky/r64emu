@@ -80,14 +80,8 @@ impl fmt::Debug for TlbEntry {
 }
 
 // Memory mapping unit of a MIPS processor
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Mmu([TlbEntry; 32]);
-
-impl Default for Mmu {
-    fn default() -> Self {
-        Mmu([TlbEntry::default(); 32])
-    }
-}
 
 impl Mmu {
     /// Probes for a matching entry and returns the index if a match is found.
