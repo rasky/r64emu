@@ -210,9 +210,10 @@ impl Cop for Cp0 {
                 let _sel = opcode & 7;
                 cpu.regs[rt] = self.reg(rd) as u64;
                 match rd {
-                    0 | 2 | 3 | 5 | 10 => {} // TLB regs
-                    12 | 13 => {}            // Status / Cause
-                    14 | 30 => {}            // EPC / ErrorEPC
+                    0 | 2 | 3 | 5 | 10 => {}                                   // TLB regs
+                    9 => cpu.regs[rt] = (cpu.clock as u64 >> 1) & 0xFFFF_FFFF, // Count
+                    12 | 13 => {}                                              // Status / Cause
+                    14 | 30 => {}                                              // EPC / ErrorEPC
                     _ => warn!(
                         self.logger,
                         "unimplemented COP0 read32";
@@ -278,7 +279,7 @@ impl Cop for Cp0 {
                             self.reg_index = 0x8000_0000;
                         }
                     };
-                    return t.break_here("TPB probe");
+                    return t.break_here("TLB probe");
                 }
                 0x18 => {
                     // ERET
