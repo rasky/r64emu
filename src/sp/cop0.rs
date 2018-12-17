@@ -1,3 +1,4 @@
+use super::super::dp::Dp;
 use super::{Sp, StatusFlags};
 use crate::errors::*;
 use emu::bus::be::{Bus, DevPtr, Device};
@@ -48,11 +49,13 @@ pub struct SpCop0 {
 }
 
 impl SpCop0 {
-    pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Result<Box<SpCop0>> {
+    pub fn new(sp: &DevPtr<Sp>, dp: &DevPtr<Dp>, logger: slog::Logger) -> Result<Box<SpCop0>> {
         // Bank #1 in sp are the SP HW registers. Map them into a local
         // bus that we can use to access them in MTC/MFC.
+        // Same for DP registers.
         let mut reg_bus = Bus::new(logger.new(o!()));
         sp.borrow().dev_map(&mut reg_bus, 1, 0x0000_0000)?;
+        dp.borrow().dev_map(&mut reg_bus, 0, 0x0000_0020)?;
 
         Ok(Box::new(SpCop0 {
             _logger: logger,
@@ -109,10 +112,13 @@ impl mips64::Cop0 for SpCop0 {
 
             // Breakpoint exception is used by RSP to halt itself
             mips64::Exception::Breakpoint => {
-                let sp = self.sp.borrow_mut();
+                let mut sp = self.sp.borrow_mut();
                 let mut status = sp.get_status();
                 status.insert(StatusFlags::HALT | StatusFlags::BROKE);
-                sp.set_status(status, ctx);
+                match sp.set_status(status) {
+                    Some(halt) => ctx.set_halt_line(halt),
+                    None => {}
+                }
             }
             _ => unimplemented!(),
         }
@@ -141,8 +147,22 @@ impl mips64::Cop for SpCop0 {
             }
             0x04 => {
                 // MTC0: write to SP HW register
-                let rd = op.rd() as u32;
-                op.cop0.reg_bus.write::<u32>(rd * 4, op.rt32());
+                let reg = op.rd() as u32 * 4;
+                let val = op.rt32();
+
+                // HACK: writing the status register can trigger the HALT flag.
+                // Rust blocks these kind of circular references. Workaround
+                // by peeling some layer
+                if reg == 0x10 {
+                    let mut sp = op.cop0.sp.borrow_mut();
+                    match sp.write_status(val) {
+                        Some(halt) => op.cpu.set_halt_line(halt),
+                        None => {}
+                    }
+                    return Ok(());
+                }
+
+                op.cop0.reg_bus.write::<u32>(reg, val);
             }
             _ => panic!("unimplemented RSP COP0 opcode: func={:x?}", op.func()),
         }

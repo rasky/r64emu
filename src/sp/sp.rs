@@ -1,6 +1,8 @@
 extern crate emu;
 extern crate slog;
 
+use super::super::dp::Dp;
+use super::super::mi::{IrqMask, Mi};
 use super::cop0::SpCop0;
 use super::cop2::SpCop2;
 use crate::errors::*;
@@ -12,21 +14,21 @@ use std::rc::Rc;
 
 bitflags! {
     pub(crate) struct StatusFlags: u32 {
-        const HALT =            0b00000001;
-        const BROKE =           0b00000010;
-        const DMABUSY =         0b00000100;
-        const DMAFULL =         0b00001000;
-        const IOFULL =         0b000010000;
-        const SINGLESTEP =    0b0000100000;
-        const INTBREAK =     0b00001000000;
-        const SIG0 =        0b000010000000;
-        const SIG1 =       0b0000100000000;
-        const SIG2 =      0b00001000000000;
-        const SIG3 =     0b000010000000000;
-        const SIG4 =    0b0000100000000000;
-        const SIG5 =   0b00001000000000000;
-        const SIG6 =  0b000010000000000000;
-        const SIG7 = 0b0000100000000000000;
+        const HALT =             0b_0000_0001;
+        const BROKE =            0b_0000_0010;
+        const DMABUSY =          0b_0000_0100;
+        const DMAFULL =          0b_0000_1000;
+        const IOFULL =          0b0_0001_0000;
+        const SINGLESTEP =     0b00_0010_0000;
+        const INTBREAK =      0b000_0100_0000;
+        const SIG0 =        0b_0000_1000_0000;
+        const SIG1 =       0b0_0001_0000_0000;
+        const SIG2 =      0b00_0010_0000_0000;
+        const SIG3 =     0b000_0100_0000_0000;
+        const SIG4 =    0b0000_1000_0000_0000;
+        const SIG5 =   0b00001_0000_0000_0000;
+        const SIG6 =  0b000010_0000_0000_0000;
+        const SIG7 = 0b0000100_0000_0000_0000;
     }
 }
 
@@ -71,10 +73,16 @@ pub struct Sp {
     logger: slog::Logger,
 
     main_bus: Rc<RefCell<Box<Bus>>>,
+    pub(crate) mi: DevPtr<Mi>,
 }
 
 impl Sp {
-    pub fn new(logger: slog::Logger, main_bus: Rc<RefCell<Box<Bus>>>) -> Result<DevPtr<Sp>> {
+    pub fn new(
+        logger: slog::Logger,
+        main_bus: Rc<RefCell<Box<Bus>>>,
+        dp: &DevPtr<Dp>,
+        mi: DevPtr<Mi>,
+    ) -> Result<DevPtr<Sp>> {
         // Create the RSP internal MIPS CPU and its associated bus
         let bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
         let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
@@ -86,6 +94,7 @@ impl Sp {
         let sp = DevPtr::new(Sp {
             logger,
             main_bus,
+            mi,
             dmem: Mem::default(),
             imem: Mem::default(),
             reg_status: Reg32::default(),
@@ -108,7 +117,7 @@ impl Sp {
             //   COP2: vector unit
             let spb = sp.borrow();
             let mut cpu = spb.core_cpu.borrow_mut();
-            cpu.set_cop0(SpCop0::new(&sp, spb.logger.new(o!()))?);
+            cpu.set_cop0(SpCop0::new(&sp, dp, spb.logger.new(o!()))?);
             cpu.set_cop2(SpCop2::new(&sp, spb.logger.new(o!()))?);
             cpu.bus_write_mask = 0xFFF;
             cpu.bus_read_mask = 0xFFF;
@@ -136,8 +145,21 @@ impl Sp {
 
     fn cb_write_reg_status(&mut self, old: u32, new: u32) {
         self.reg_status.set(old); // restore previous value, as write bits are completely different
+        let change_halt = self.write_status(new);
 
+        let mut cpu = self.core_cpu.borrow_mut();
+        match change_halt {
+            Some(halt) => cpu.ctx_mut().set_halt_line(halt),
+            None => {}
+        }
+    }
+
+    // Emulate a write the RSP status register. The return value is the same
+    // of set_status().
+    #[must_use]
+    pub(crate) fn write_status(&mut self, writebits: u32) -> Option<bool> {
         let mut status = self.get_status();
+        let new = writebits;
         if new & (1 << 0) != 0 {
             status.remove(StatusFlags::HALT);
         }
@@ -148,10 +170,12 @@ impl Sp {
             status.remove(StatusFlags::BROKE);
         }
         if new & (1 << 3) != 0 {
-            error!(self.logger, "clear RSP Interrupt not implemented");
+            info!(self.logger, "clear RSP Interrupt");
+            self.mi.borrow_mut().set_irq_line(IrqMask::SP, false);
         }
         if new & (1 << 4) != 0 {
-            error!(self.logger, "set RSP Interrupt not implemented");
+            info!(self.logger, "force-set RSP Interrupt");
+            self.mi.borrow_mut().set_irq_line(IrqMask::SP, true);
         }
         if new & (1 << 5) != 0 {
             status.remove(StatusFlags::SINGLESTEP);
@@ -215,29 +239,33 @@ impl Sp {
         }
 
         info!(self.logger, "write status reg"; "val" => new.hex(), "status" => ?status);
-        let mut cpu = self.core_cpu.borrow_mut();
-        self.set_status(status, cpu.ctx_mut());
+
+        self.set_status(status)
     }
 
-    pub(crate) fn set_status(&self, status: StatusFlags, ctx: &mut mips64::CpuContext) {
+    // Change the RSP status. Return an Option that says whether the the halt
+    // line of the RSP must be changed, and how.
+    #[must_use]
+    pub(crate) fn set_status(&mut self, status: StatusFlags) -> Option<bool> {
         let changed = self.get_status() ^ status;
         self.reg_status.set(status.bits());
 
         // HALT status changed, propagate effects to CPU
         if changed.contains(StatusFlags::HALT) {
             if status.contains(StatusFlags::HALT) {
-                ctx.set_halt_line(true);
                 if status.contains(StatusFlags::INTBREAK) {
-                    // FIXME: generate interrupt on break
+                    self.mi.borrow_mut().set_irq_line(IrqMask::SP, true);
                 }
+                return Some(true);
             } else {
                 // Restore execution. RESET is *NOT* performed:
                 // execution continues from the point where it was halted
                 // before (verified on real hardware).
-                ctx.set_halt_line(false);
                 info!(self.logger, "RSP started");
+                return Some(false);
             }
         }
+        None
     }
 
     fn cb_read_reg_dma_full(&self, _old: u32) -> u32 {

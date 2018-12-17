@@ -98,9 +98,9 @@ impl N64 {
             )
             .chain_err(|| "cannot open BIOS file")?,
         );
-        let sp = Sp::new(sync::Sync::new_logger(&sync), bus.clone())?;
-        let si = DevPtr::new(Si::new(sync::Sync::new_logger(&sync)));
         let dp = DevPtr::new(Dp::new(sync::Sync::new_logger(&sync), bus.clone()));
+        let sp = Sp::new(sync::Sync::new_logger(&sync), bus.clone(), &dp, mi.clone())?;
+        let si = DevPtr::new(Si::new(sync::Sync::new_logger(&sync)));
         let vi = DevPtr::new(Vi::new(
             sync::Sync::new_logger(&sync),
             bus.clone(),
