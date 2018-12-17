@@ -394,6 +394,7 @@ impl Cpu {
         unimplemented!();
     }
 
+    #[inline(always)]
     fn op(&mut self, opcode: u32, t: &Tracer) -> Result<()> {
         self.ctx.clock += 1;
         let mut op = Mipsop { opcode, cpu: self };
