@@ -149,6 +149,22 @@ impl DebuggerUI {
                         self.dbg.disable_breakpoint_oneshot();
                         return false;
                     }
+                    TraceEvent::WatchpointRead(cpu_name, _) => {
+                        self.paused = true;
+                        self.dbg.disable_breakpoint_oneshot();
+                        self.uictx
+                            .get_mut()
+                            .add_flash_msg(&format!("Watchpoint (read) hit on {}", cpu_name));
+                        return false;
+                    }
+                    TraceEvent::WatchpointWrite(cpu_name, _) => {
+                        self.paused = true;
+                        self.dbg.disable_breakpoint_oneshot();
+                        self.uictx
+                            .get_mut()
+                            .add_flash_msg(&format!("Watchpoint (write) hit on {}", cpu_name));
+                        return false;
+                    }
                     TraceEvent::BreakpointOneShot(_, _) => {
                         self.paused = true;
                         self.dbg.disable_breakpoint_oneshot();

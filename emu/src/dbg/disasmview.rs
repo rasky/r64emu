@@ -66,6 +66,23 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                 // Start blinking effect
                 ctx.disasm.get_mut(&cpu_name).unwrap().blink_pc = Some((bp_pc, Instant::now()));
             }
+            TraceEvent::WatchpointRead(ref bp_cpu_name, _)
+            | TraceEvent::WatchpointWrite(ref bp_cpu_name, _)
+                if *bp_cpu_name == cpu_name =>
+            {
+                // Center breakpoint PC
+                force_pc = Some(cur_pc);
+
+                // Focus this window
+                unsafe {
+                    imgui_sys::igSetNextWindowFocus();
+                }
+
+                ctx.disasm.get_mut(&cpu_name).unwrap().cursor_pc = None;
+
+                // Start blinking effect
+                ctx.disasm.get_mut(&cpu_name).unwrap().blink_pc = Some((cur_pc, Instant::now()));
+            }
             TraceEvent::BreakpointOneShot(ref bp_cpu_name, bp_pc) if *bp_cpu_name == cpu_name => {
                 // Center breakpoint PC
                 force_pc = Some(bp_pc);

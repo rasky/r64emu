@@ -406,7 +406,7 @@ impl Debugger {
             Some(idx) => {
                 let wp = &cpu.watchpoints[*idx];
                 if wp.wtype == WatchpointType::Write && wp.condition.check(val) {
-                    Err(box TraceEvent::WatchpointRead(cpu_name.to_owned(), *idx))
+                    Err(box TraceEvent::WatchpointWrite(cpu_name.to_owned(), *idx))
                 } else {
                     Ok(())
                 }
