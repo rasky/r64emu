@@ -136,15 +136,10 @@ impl Sp {
         ))));
 
         {
+            // Set the CPU into SP.
+            // FIXME: remove this once we remove the reference check and thus the Option
             let mut spb = sp.borrow_mut();
             spb.core_cpu = Some(cpu);
-
-            // Halt CPU at boot, and reset program counter
-            // FIXME: remove once we trigger a RESET exception at boot
-            let mut cpu = spb.core_cpu.as_ref().unwrap().borrow_mut();
-            let ctx = cpu.ctx_mut();
-            ctx.set_halt_line(true);
-            ctx.set_pc(0);
         }
 
         {

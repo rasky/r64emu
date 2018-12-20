@@ -106,7 +106,7 @@ impl mips64::Cop0 for SpCop0 {
 
     fn exception(&mut self, ctx: &mut mips64::CpuContext, exc: mips64::Exception) {
         match exc {
-            mips64::Exception::Reset => {
+            mips64::Exception::ColdReset => {
                 ctx.set_halt_line(true);
                 ctx.set_pc(0);
             }

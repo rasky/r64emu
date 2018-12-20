@@ -49,7 +49,10 @@ bitfield! {
     pub erl, set_erl: 2;  // Is within special exception (reset/nmi)
     pub im, set_im: 15,8; // Interrupt mask (8 lines)
     pub nmi, set_nmi: 19; // Are we under NMI?
+    pub sr, set_sr: 20;   // Is this a soft reset?
+    pub ts, set_ts: 21;   // Multiple TLB match
     pub bev, set_bev: 22; // Exception vector location (normal/bootstrap)
+    pub rp, set_rp: 21;   // Reduced power
     pub cu0, set_cu0: 28; // Is COP0 active?
     pub cu1, set_cu1: 29; // Is COP1 active?
     pub cu2, set_cu2: 30; // Is COP2 active?
@@ -123,13 +126,36 @@ impl Cop0 for Cp0 {
         info!(self.logger, "exception"; "exc" => ?exc);
 
         match exc {
-            Reset => {
-                error!(self.logger, "unimplemented exception type"; "exc" => ?exc);
-            }
-            Nmi => {
-                error!(self.logger, "unimplemented exception type"; "exc" => ?exc);
+            ColdReset => {
+                // self.reg_random = 31;
+                // self.reg_wired = 0;
+                // self.reg_config.set_k0(2);
+                // self.reg_config[0..3] should be configured as specified in MipsConfig
+                self.reg_status.set_rp(false);
+                self.reg_status.set_bev(true);
+                self.reg_status.set_ts(false);
+                self.reg_status.set_sr(false);
+                self.reg_status.set_nmi(false);
+                self.reg_status.set_erl(true);
+                // self.watch_lo[..] = 0;
+                // self.reg_perfcnt[..].set_ie(0);
+                self.reg_epc = cpu.pc;
+                cpu.set_pc(0xFFFF_FFFF_BFC0_0000);
             }
             SoftReset => {
+                // self.ref_config.set_k0(2);
+                self.reg_status.set_rp(false);
+                self.reg_status.set_bev(true);
+                self.reg_status.set_ts(false);
+                self.reg_status.set_sr(true);
+                self.reg_status.set_nmi(false);
+                self.reg_status.set_erl(true);
+                // self.watch_lo[..] = 0;
+                // self.reg_perfcnt[..].set_ie(0);
+                self.reg_epc = cpu.pc;
+                cpu.set_pc(0xFFFF_FFFF_BFC0_0000);
+            }
+            Nmi => {
                 error!(self.logger, "unimplemented exception type"; "exc" => ?exc);
             }
             _ => {

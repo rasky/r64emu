@@ -18,9 +18,9 @@ use std::rc::Rc;
 pub enum Exception {
     Interrupt,  // Interrupt
     Breakpoint, // Breakpoint
-    Reset,
-    Nmi,
+    ColdReset,
     SoftReset,
+    Nmi,
     TlbRefill,
     XTlbRefill,
 }
@@ -40,10 +40,12 @@ impl Exception {
     }
 }
 
+#[derive(Default)]
 struct Lines {
     halt: bool,
 }
 
+#[derive(Default)]
 pub struct CpuContext {
     pub regs: [u64; 32],
     pub hi: u64,
@@ -253,20 +255,8 @@ impl<C: Config> Cpu<C> {
         bus: Rc<RefCell<Box<Bus>>>,
         cops: (C::Cop0, C::Cop1, C::Cop2, C::Cop3),
     ) -> Self {
-        let reset_vector = 0xFFFF_FFFF_BFC0_0000; // FIXME
-        return Cpu {
-            ctx: CpuContext {
-                regs: [0u64; 32],
-                hi: 0,
-                lo: 0,
-                pc: reset_vector,
-                next_pc: reset_vector + 4,
-                clock: 0,
-                tight_exit: false,
-                delay_slot: false,
-                lines: Lines { halt: false },
-                mmu: Mmu::default(),
-            },
+        let mut cpu = Cpu {
+            ctx: CpuContext::default(),
             bus: bus,
             name: name.into(),
             cop0: Rc::new(RefCell::new(Box::new(cops.0))),
@@ -278,6 +268,8 @@ impl<C: Config> Cpu<C> {
             last_fetch_addr: 0xFFFF_FFFF,
             last_fetch_mem: MemIoR::default(),
         };
+        cpu.exception(Exception::ColdReset); // Trigger a reset exception at startup
+        cpu
     }
 
     pub fn ctx(&self) -> &CpuContext {
@@ -319,7 +311,7 @@ impl<C: Config> Cpu<C> {
     }
 
     pub fn reset(&mut self) {
-        self.exception(Exception::Reset);
+        self.exception(Exception::SoftReset);
     }
 
     fn exception(&mut self, exc: Exception) {
