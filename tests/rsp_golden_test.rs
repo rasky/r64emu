@@ -132,14 +132,6 @@ fn test_golden(testname: &str) {
 
     // Open golden
     let goldenname = tomlname.with_extension("golden");
-    assert!(
-        goldenname.metadata().unwrap().modified().unwrap()
-            >= tomlname.metadata().unwrap().modified().unwrap(),
-        "{} is newer than {}",
-        tomlname.display(),
-        goldenname.display()
-    );
-
     let output_size = test.output_size();
     let goldenbin = fs::read(goldenname).expect("golden file not found");
     let mut golden = goldenbin.chunks_exact(output_size);
