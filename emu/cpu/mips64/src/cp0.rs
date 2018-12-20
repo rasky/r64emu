@@ -1,7 +1,7 @@
 use bitfield::bitfield;
 
-use super::cpu::{Cop, Cop0, CpuContext, Exception};
 use super::decode::{DecodedInsn, REG_NAMES};
+use super::{Cop, Cop0, CpuContext, Exception};
 use emu::dbg::{DebuggerRenderer, Operand, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
 use slog;
@@ -83,8 +83,8 @@ pub struct Cp0 {
 }
 
 impl Cp0 {
-    pub fn new(name: &'static str, logger: slog::Logger) -> Box<Cp0> {
-        Box::new(Cp0 {
+    pub fn new(name: &'static str, logger: slog::Logger) -> Cp0 {
+        Cp0 {
             reg_status: RegStatus(0),
             reg_cause: RegCause(0),
             reg_epc: 0,
@@ -96,7 +96,7 @@ impl Cp0 {
             reg_entryhi: 0,
             logger: logger,
             name,
-        })
+        }
     }
 }
 

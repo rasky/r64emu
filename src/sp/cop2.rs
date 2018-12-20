@@ -53,7 +53,7 @@ impl VectorReg {
     }
 }
 
-pub(crate) struct SpCop2 {
+pub struct SpCop2 {
     vregs: [VectorReg; 32],
     accum: [VectorReg; 3],
     vco_carry: VectorReg,
@@ -75,8 +75,8 @@ impl SpCop2 {
     pub const REG_ACCUM_MD: usize = 36;
     pub const REG_ACCUM_HI: usize = 37;
 
-    pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Result<Box<SpCop2>> {
-        Ok(Box::new(SpCop2 {
+    pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Result<SpCop2> {
+        Ok(SpCop2 {
             vregs: [VectorReg([0u8; 16]); 32],
             accum: [VectorReg([0u8; 16]); 3],
             vco_carry: VectorReg([0u8; 16]),
@@ -88,7 +88,7 @@ impl SpCop2 {
             div_out: 0,
             sp: sp.clone(),
             logger: logger,
-        }))
+        })
     }
 
     fn oploadstore(op: u32, ctx: &CpuContext) -> (u32, usize, u32, u32, u32) {

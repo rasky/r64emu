@@ -1,7 +1,11 @@
+use super::n64::R4300;
+use emu::bus::be::Reg32;
+use mips64::Cop0;
+
 use bit_field::BitField;
 use bitflags::bitflags;
-use emu::bus::be::Reg32;
 use slog;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -25,16 +29,16 @@ pub struct Mi {
     irq_mask: Reg32,
 
     logger: slog::Logger,
-    cop0: Rc<RefCell<Box<dyn mips64::Cop0>>>,
+    cop0: Rc<RefCell<Box<mips64::Cp0>>>,
 }
 
 impl Mi {
-    pub fn new(logger: slog::Logger, cpu: Rc<RefCell<Box<mips64::Cpu>>>) -> Mi {
+    pub fn new(logger: slog::Logger, cpu: Rc<RefCell<Box<R4300>>>) -> Mi {
         Mi {
             irq_ack: Reg32::default(),
             irq_mask: Reg32::default(),
             logger,
-            cop0: cpu.borrow().cop0_clone().unwrap(),
+            cop0: cpu.borrow().cop0_clone(),
         }
     }
 

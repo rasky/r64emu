@@ -1,8 +1,8 @@
 extern crate num;
 
 use self::num::Float;
-use super::cpu::{Cop, CpuContext};
 use super::decode::{DecodedInsn, MEMOP_FMT, REG_NAMES};
+use super::{Cop, CpuContext};
 use emu::dbg::{Operand, Result, Tracer};
 use emu::int::Numerics;
 use slog;
@@ -171,8 +171,8 @@ macro_rules! fp_suffix {
 }
 
 impl Fpu {
-    pub fn new(name: &'static str, logger: slog::Logger) -> Box<Fpu> {
-        Box::new(Fpu {
+    pub fn new(name: &'static str, logger: slog::Logger) -> Fpu {
+        Fpu {
             regs: [0u64; 32],
             _fir: 0,
             fccr: 0,
@@ -181,7 +181,7 @@ impl Fpu {
             fcsr: 0,
             logger,
             name,
-        })
+        }
     }
 
     fn set_cc(&mut self, cc: usize, val: bool) {

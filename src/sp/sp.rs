@@ -32,9 +32,27 @@ bitflags! {
     }
 }
 
+pub struct RSPCPUConfig;
+
+impl mips64::Config for RSPCPUConfig {
+    type Arch = mips64::ArchI; // 32-bit MIPS I architecture
+    type Cop0 = SpCop0;
+    type Cop1 = mips64::CopNull;
+    type Cop2 = SpCop2;
+    type Cop3 = mips64::CopNull;
+    fn pc_mask(pc: u32) -> u32 {
+        (pc & 0xFFF) | 0x1000
+    }
+    fn addr_mask(addr: u32) -> u32 {
+        addr & 0xFFF
+    }
+}
+
+pub type RSPCPU = mips64::Cpu<RSPCPUConfig>;
+
 #[derive(DeviceBE)]
 pub struct Sp {
-    pub core_cpu: Rc<RefCell<Box<mips64::Cpu>>>,
+    pub core_cpu: Option<Rc<RefCell<Box<RSPCPU>>>>, // FIXME: remove after DevPtr refactoring
     pub core_bus: Rc<RefCell<Box<Bus>>>,
 
     #[mem(bank = 0, offset = 0x0000, size = 4096)]
@@ -85,14 +103,8 @@ impl Sp {
     ) -> Result<DevPtr<Sp>> {
         // Create the RSP internal MIPS CPU and its associated bus
         let bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
-        let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
-            "RSP",
-            logger.new(o!()),
-            bus.clone(),
-        ))));
-
-        let sp = DevPtr::new(Sp {
-            logger,
+        let mut sp = DevPtr::new(Sp {
+            logger: logger.new(o!()),
             main_bus,
             mi,
             dmem: Mem::default(),
@@ -107,23 +119,29 @@ impl Sp {
             reg_dma_full: Reg32::default(),
             reg_semaphore: Reg32::default(),
 
-            core_bus: bus,
-            core_cpu: cpu,
+            core_bus: bus.clone(),
+            core_cpu: None,
         });
 
-        {
-            // Configure CPU:
-            //   COP0: special unit to access RSP registers (no exception support)
-            //   COP2: vector unit
-            let spb = sp.borrow();
-            let mut cpu = spb.core_cpu.borrow_mut();
-            cpu.set_cop0(SpCop0::new(&sp, dp, spb.logger.new(o!()))?);
-            cpu.set_cop2(SpCop2::new(&sp, spb.logger.new(o!()))?);
-            cpu.bus_write_mask = 0xFFF;
-            cpu.bus_read_mask = 0xFFF;
-            cpu.bus_fetch_mask = 0xFFF;
-            cpu.bus_fetch_fixed = 0x1000;
+        let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
+            "RSP",
+            logger.new(o!()),
+            bus.clone(),
+            (
+                SpCop0::new(&sp, dp, logger.new(o!()))?,
+                mips64::CopNull {},
+                SpCop2::new(&sp, logger.new(o!()))?,
+                mips64::CopNull {},
+            ),
+        ))));
 
+        {
+            let mut spb = sp.borrow_mut();
+            spb.core_cpu = Some(cpu);
+
+            // Halt CPU at boot, and reset program counter
+            // FIXME: remove once we trigger a RESET exception at boot
+            let mut cpu = spb.core_cpu.as_ref().unwrap().borrow_mut();
             let ctx = cpu.ctx_mut();
             ctx.set_halt_line(true);
             ctx.set_pc(0);
@@ -131,8 +149,7 @@ impl Sp {
 
         {
             // Configure RSP internal core bus
-            let spb = sp.borrow();
-            let mut bus = spb.core_bus.borrow_mut();
+            let mut bus = bus.borrow_mut();
             bus.map_device(0x0000_0000, &sp, 0)?;
         }
 
@@ -147,7 +164,7 @@ impl Sp {
         self.reg_status.set(old); // restore previous value, as write bits are completely different
         let change_halt = self.write_status(new);
 
-        let mut cpu = self.core_cpu.borrow_mut();
+        let mut cpu = self.core_cpu.as_ref().unwrap().borrow_mut();
         match change_halt {
             Some(halt) => cpu.ctx_mut().set_halt_line(halt),
             None => {}
@@ -278,7 +295,7 @@ impl Sp {
     fn cb_read_reg_semaphore(&self, old: u32) -> u32 {
         if old == 0 {
             // Semaphore is acquired when read as 0.
-            self.reg_semaphore.set(1);
+            // self.reg_semaphore.set(1);
         }
         old
     }
@@ -350,10 +367,15 @@ impl Sp {
 
     fn cb_write_reg_rsp_pc(&self, _old: u32, val: u32) {
         info!(self.logger, "RSP set PC"; o!("pc" => val.hex()));
-        self.core_cpu.borrow_mut().ctx_mut().set_pc(val as u64);
+        self.core_cpu
+            .as_ref()
+            .unwrap()
+            .borrow_mut()
+            .ctx_mut()
+            .set_pc(val as u64);
     }
 
     fn cb_read_reg_rsp_pc(&self, _old: u32) -> u32 {
-        self.core_cpu.borrow().ctx().get_pc() as u32 & 0xFFF
+        self.core_cpu.as_ref().unwrap().borrow().ctx().get_pc() as u32 & 0xFFF
     }
 }

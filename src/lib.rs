@@ -39,4 +39,4 @@ pub mod sp;
 pub mod vi;
 
 mod n64;
-pub use crate::n64::N64;
+pub use self::n64::{r4300_new, N64, R4300};

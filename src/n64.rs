@@ -25,11 +25,37 @@ use super::vi::Vi;
 const MAINCPU_NAME: &'static str = "R4300";
 const RSPCPU_NAME: &'static str = "RSP";
 
+pub struct R4300Config;
+
+impl mips64::Config for R4300Config {
+    type Arch = mips64::ArchIII; // 64-bit MIPS III architecture
+    type Cop0 = mips64::Cp0;
+    type Cop1 = mips64::Fpu;
+    type Cop2 = mips64::CopNull;
+    type Cop3 = mips64::CopNull;
+}
+
+pub type R4300 = mips64::Cpu<R4300Config>;
+
+pub fn r4300_new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>) -> R4300 {
+    mips64::Cpu::new(
+        MAINCPU_NAME,
+        logger.new(o!()),
+        bus,
+        (
+            mips64::Cp0::new("R4300-COP0", logger.new(o!())),
+            mips64::Fpu::new("R4300-FPU", logger.new(o!())),
+            mips64::CopNull {},
+            mips64::CopNull {},
+        ),
+    )
+}
+
 pub struct N64 {
     logger: slog::Logger,
     sync: Box<sync::Sync>,
     bus: Rc<RefCell<Box<Bus>>>,
-    cpu: Rc<RefCell<Box<mips64::Cpu>>>,
+    cpu: Rc<RefCell<Box<R4300>>>,
     cart: DevPtr<Cartridge>,
 
     _mi: DevPtr<Mi>,
@@ -70,22 +96,10 @@ impl N64 {
         );
 
         let bus = Rc::new(RefCell::new(Bus::new(sync::Sync::new_logger(&sync))));
-        let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
-            MAINCPU_NAME,
+        let cpu = Rc::new(RefCell::new(Box::new(r4300_new(
             sync::Sync::new_logger(&sync),
             bus.clone(),
         ))));
-        {
-            // Install CPU coprocessors
-            //   COP0 -> standard MIPS64 CP0
-            //   COP1 -> standard MIPS64 FPU
-            let mut cpu = cpu.borrow_mut();
-            cpu.set_cop0(mips64::Cp0::new(
-                "R4300-COP0",
-                sync::Sync::new_logger(&sync),
-            ));
-            cpu.set_cop1(mips64::Fpu::new("R4300-FPU", sync::Sync::new_logger(&sync)));
-        }
 
         let mi = DevPtr::new(Mi::new(sync::Sync::new_logger(&sync), cpu.clone()));
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
@@ -132,7 +146,11 @@ impl N64 {
         // Register subsystems into sync
         {
             sync.register("cpu", cpu.clone(), MAIN_CLOCK + MAIN_CLOCK / 2); // FIXME: uses DIVMOD
-            sync.register("sp", sp.borrow().core_cpu.clone(), MAIN_CLOCK);
+            sync.register(
+                "sp",
+                sp.borrow().core_cpu.as_ref().unwrap().clone(),
+                MAIN_CLOCK,
+            );
             sync.register("dp", dp.clone().unwrap(), MAIN_CLOCK);
         }
 
@@ -215,7 +233,7 @@ impl DebuggerModel for N64 {
                 // Do not keep sp borrowed by cloning the CPU. This allows
                 // RSP to recurse back into the SP (eg: write a SP register) without
                 // double-borrows.
-                let rsp = self.sp.borrow_mut().core_cpu.clone();
+                let rsp = self.sp.borrow_mut().core_cpu.as_ref().unwrap().clone();
                 return rsp.borrow_mut().step(tracer);
             }
             _ => unreachable!(),
@@ -224,7 +242,13 @@ impl DebuggerModel for N64 {
 
     fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>) {
         self.cpu.borrow_mut().render_debug(dr);
-        self.sp.borrow_mut().core_cpu.borrow_mut().render_debug(dr);
+        self.sp
+            .borrow_mut()
+            .core_cpu
+            .as_ref()
+            .unwrap()
+            .borrow_mut()
+            .render_debug(dr);
     }
 
     fn all_cpus(&self) -> Vec<String> {

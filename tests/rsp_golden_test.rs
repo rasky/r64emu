@@ -11,6 +11,9 @@ extern crate toml;
 use byteorder::{BigEndian, ByteOrder};
 use emu::bus::be::{Bus, DevPtr};
 use emu::dbg::Tracer;
+use r64emu::dp::Dp;
+use r64emu::mi::Mi;
+use r64emu::r4300_new;
 use r64emu::sp::Sp;
 use slog::Discard;
 use std::borrow;
@@ -24,7 +27,13 @@ use std::rc::Rc;
 fn make_sp() -> (DevPtr<Sp>, Rc<RefCell<Box<Bus>>>) {
     let logger = slog::Logger::root(Discard, o!());
     let main_bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
-    let sp = Sp::new(logger.new(o!()), main_bus.clone()).unwrap();
+    let main_cpu = Rc::new(RefCell::new(Box::new(r4300_new(
+        logger.new(o!()),
+        main_bus.clone(),
+    ))));
+    let mi = DevPtr::new(Mi::new(logger.new(o!()), main_cpu.clone()));
+    let dp = DevPtr::new(Dp::new(logger.new(o!()), main_bus.clone()));
+    let sp = Sp::new(logger.new(o!()), main_bus.clone(), &dp, mi.clone()).unwrap();
     {
         let mut bus = main_bus.borrow_mut();
         bus.map_device(0x0400_0000, &sp, 0).unwrap();
@@ -159,7 +168,7 @@ fn test_golden(testname: &str) {
         {
             main_bus.borrow().write::<u32>(0x0408_0000, 0); // REG_PC = 0
             main_bus.borrow().write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
-            let cpu = sp.borrow().core_cpu.clone();
+            let cpu = sp.borrow().core_cpu.as_ref().unwrap().clone();
             let clock = cpu.borrow().ctx().clock;
             cpu.borrow_mut().run(clock + 1000, &Tracer::null()).unwrap();
         }

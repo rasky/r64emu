@@ -49,7 +49,7 @@ pub struct SpCop0 {
 }
 
 impl SpCop0 {
-    pub fn new(sp: &DevPtr<Sp>, dp: &DevPtr<Dp>, logger: slog::Logger) -> Result<Box<SpCop0>> {
+    pub fn new(sp: &DevPtr<Sp>, dp: &DevPtr<Dp>, logger: slog::Logger) -> Result<SpCop0> {
         // Bank #1 in sp are the SP HW registers. Map them into a local
         // bus that we can use to access them in MTC/MFC.
         // Same for DP registers.
@@ -57,11 +57,11 @@ impl SpCop0 {
         sp.borrow().dev_map(&mut reg_bus, 1, 0x0000_0000)?;
         dp.borrow().dev_map(&mut reg_bus, 0, 0x0000_0020)?;
 
-        Ok(Box::new(SpCop0 {
+        Ok(SpCop0 {
             _logger: logger,
             sp: sp.clone(),
             reg_bus: reg_bus,
-        }))
+        })
     }
 }
 
@@ -107,6 +107,7 @@ impl mips64::Cop0 for SpCop0 {
     fn exception(&mut self, ctx: &mut mips64::CpuContext, exc: mips64::Exception) {
         match exc {
             mips64::Exception::Reset => {
+                ctx.set_halt_line(true);
                 ctx.set_pc(0);
             }
 

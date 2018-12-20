@@ -1,5 +1,5 @@
 extern crate emu;
-use super::cpu::Cpu;
+use super::{Config, Cop, Cpu};
 use emu::dbg::Operand;
 
 // Decoding format for arguments of load/store ops
@@ -21,14 +21,14 @@ pub type DecodedInsn = emu::dbg::DecodedInsn<&'static str, &'static str>;
 
 macro_rules! decode_cop {
     ($cpu:ident, $opcode:ident, $pc:ident, $copn:ident, $default:expr) => {{
-        match $cpu.$copn() {
-            None => DecodedInsn::new0($default),
-            Some(ref cop) => cop.decode($opcode, $pc),
+        match $cpu.$copn().is_null_obj() {
+            false => DecodedInsn::new0($default),
+            true => $cpu.$copn().decode($opcode, $pc),
         }
     }};
 }
 
-fn decode1(cpu: &Cpu, opcode: u32, pc: u64) -> DecodedInsn {
+fn decode1<C: Config>(cpu: &Cpu<C>, opcode: u32, pc: u64) -> DecodedInsn {
     use self::Operand::*;
 
     let op = opcode >> 26;
@@ -187,6 +187,6 @@ fn humanize(insn: DecodedInsn) -> DecodedInsn {
     }
 }
 
-pub(crate) fn decode(cpu: &Cpu, opcode: u32, pc: u64) -> DecodedInsn {
+pub(crate) fn decode<C: Config>(cpu: &Cpu<C>, opcode: u32, pc: u64) -> DecodedInsn {
     humanize(decode1(cpu, opcode, pc))
 }
