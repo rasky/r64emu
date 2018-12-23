@@ -224,7 +224,7 @@ impl<U: MemInt + 'static> RegDeref for U {
 }
 
 /// A scoped reference to a Reg.
-pub struct RegRef<O: ByteOrderCombiner, U: RegDeref> {
+pub struct RegRef<O: 'static + ByteOrderCombiner, U: RegDeref> {
     raw: EndianField<U::Type, O>,
     val: U,
     old: U,
@@ -243,7 +243,7 @@ impl<O: ByteOrderCombiner + 'static, U: RegDeref> RegRef<O, U> {
     }
 }
 
-impl<O: ByteOrderCombiner, U: RegDeref> Drop for RegRef<O, U> {
+impl<O: 'static + ByteOrderCombiner, U: RegDeref> Drop for RegRef<O, U> {
     fn drop(&mut self) {
         let val = self.val.to();
         let old = self.old.to();

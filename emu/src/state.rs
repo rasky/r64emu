@@ -38,7 +38,8 @@ use crate::bus::{ByteOrderCombiner, MemInt};
 
 use futures::*;
 use lz4;
-use serde::Serialize;
+use rmp_serde;
+use serde::{Deserialize, Serialize};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -46,6 +47,7 @@ use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 use std::thread;
 
 /// A `Field` is an object that is part of the emulator state. It is a lightweight
@@ -57,7 +59,7 @@ use std::thread;
 ///
 /// Cloning a Field creates another field pointing to the same content.
 #[derive(Clone)]
-pub struct Field<F: Copy + Serialize> {
+pub struct Field<F: Copy + Serialize + Deserialize<'static>> {
     offset: usize,
     phantom: PhantomData<F>,
 }
@@ -66,7 +68,7 @@ pub struct Field<F: Copy + Serialize> {
 // Send it across threads.
 impl<F> !Send for Field<F> {}
 
-impl<F: Copy + Serialize> Field<F> {
+impl<F: 'static + Copy + Serialize + Deserialize<'static>> Field<F> {
     /// Create a new Field with the specified name and initial value.
     ///
     /// # Panics
@@ -77,7 +79,7 @@ impl<F: Copy + Serialize> Field<F> {
     }
 }
 
-impl<F: Copy + Serialize> Default for Field<F> {
+impl<F: Copy + Serialize + Deserialize<'static>> Default for Field<F> {
     // Default returns an invalid Field, that will cause a panic when used.
     // It can be used as placeholder in structs until proper initialization
     // is performed.
@@ -89,7 +91,7 @@ impl<F: Copy + Serialize> Default for Field<F> {
     }
 }
 
-impl<F: Copy + Serialize> Deref for Field<F> {
+impl<F: Copy + Serialize + Deserialize<'static>> Deref for Field<F> {
     type Target = F;
 
     fn deref(&self) -> &F {
@@ -99,7 +101,7 @@ impl<F: Copy + Serialize> Deref for Field<F> {
     }
 }
 
-impl<F: Copy + Serialize> DerefMut for Field<F> {
+impl<F: Copy + Serialize + Deserialize<'static>> DerefMut for Field<F> {
     fn deref_mut(&mut self) -> &mut F {
         let state = CurrentState();
         let data = &mut state.data[self.offset];
@@ -109,14 +111,18 @@ impl<F: Copy + Serialize> DerefMut for Field<F> {
 
 /// A Field which is an integer, stored with the specified endianess.
 #[derive(Clone)]
-pub struct EndianField<F: Copy + Serialize + MemInt, O: ByteOrderCombiner> {
+pub struct EndianField<F: Copy + Serialize + Deserialize<'static> + MemInt, O: ByteOrderCombiner> {
     offset: usize,
     phantom: PhantomData<(F, O)>,
 }
 
 impl<F, O> !Send for EndianField<F, O> {}
 
-impl<F: Copy + Serialize + MemInt, O: ByteOrderCombiner> EndianField<F, O> {
+impl<F, O> EndianField<F, O>
+where
+    F: 'static + Copy + Serialize + Deserialize<'static> + MemInt,
+    O: 'static + ByteOrderCombiner,
+{
     pub fn new(name: &'static str, f: F) -> Self {
         CurrentState().new_endian_field(name, f)
     }
@@ -161,13 +167,13 @@ impl<F: Copy + Serialize + MemInt, O: ByteOrderCombiner> Default for EndianField
 }
 
 #[derive(Clone)]
-pub struct ArrayField<F: Copy + Serialize> {
+pub struct ArrayField<F: Copy + Serialize + Deserialize<'static>> {
     offset: usize,
     len: usize,
     phantom: PhantomData<F>,
 }
 
-impl<F: Copy + Serialize> ArrayField<F> {
+impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
     /// Create an `ArrayField` with the specified name, initial value, and length.
     pub fn new(name: &'static str, f: F, len: usize) -> Self {
         CurrentState().new_array_field(name, f, len)
@@ -201,7 +207,7 @@ impl<F: Copy + Serialize> ArrayField<F> {
 // Send it across threads.
 impl<F> !Send for ArrayField<F> {}
 
-impl<F: Copy + Serialize> Default for ArrayField<F> {
+impl<F: Copy + Serialize + Deserialize<'static>> Default for ArrayField<F> {
     /// Default returns an invalid ArrayField, that will cause a panic when used.
     /// It can be used as placeholder in structs until proper initialization
     /// is performed.
@@ -214,7 +220,7 @@ impl<F: Copy + Serialize> Default for ArrayField<F> {
     }
 }
 
-impl<F: Copy + Serialize> Deref for ArrayField<F> {
+impl<F: 'static + Copy + Serialize + Deserialize<'static>> Deref for ArrayField<F> {
     type Target = [F];
 
     fn deref(&self) -> &[F] {
@@ -222,7 +228,7 @@ impl<F: Copy + Serialize> Deref for ArrayField<F> {
     }
 }
 
-impl<F: Copy + Serialize> DerefMut for ArrayField<F> {
+impl<F: 'static + Copy + Serialize + Deserialize<'static>> DerefMut for ArrayField<F> {
     fn deref_mut(&mut self) -> &mut [F] {
         self.as_slice_mut()
     }
@@ -238,6 +244,68 @@ pub fn CurrentState() -> &'static mut State {
     unsafe { &mut *s }
 }
 
+type Ser<'de> = rmp_serde::Serializer<&'de mut Vec<u8>, rmp_serde::encode::StructMapWriter>;
+type Deser<'de> = rmp_serde::Deserializer<rmp_serde::decode::ReadReader<&'de [u8]>>;
+
+struct FieldInfo {
+    name: &'static str,
+    serialize: Box<for<'a, 'de> Fn(&'a mut Ser<'de>) -> Result<(), rmp_serde::encode::Error>>,
+    deserialize:
+        Box<for<'a, 'de> FnMut(&'a mut Deser<'de>) -> Result<(), rmp_serde::decode::Error>>,
+}
+
+impl FieldInfo {
+    fn new<F>(name: &'static str, field: &Field<F>) -> Self
+    where
+        F: 'static + Copy + Serialize + Deserialize<'static>,
+    {
+        let field1 = field.clone();
+        let mut field2 = field.clone();
+        Self {
+            name,
+            serialize: Box::new(move |ser| (*field1).serialize(ser)),
+            deserialize: Box::new(move |deser| {
+                *field2 = serde::Deserialize::deserialize(deser)?;
+                Ok(())
+            }),
+        }
+    }
+
+    fn new_endian<F, O>(name: &'static str, field: &EndianField<F, O>) -> Self
+    where
+        F: 'static + Copy + Serialize + Deserialize<'static> + MemInt,
+        O: 'static + ByteOrderCombiner,
+    {
+        let field1 = field.clone();
+        let mut field2 = field.clone();
+        Self {
+            name,
+            serialize: Box::new(move |ser| field1.get().serialize(ser)),
+            deserialize: Box::new(move |deser| {
+                field2.set(serde::Deserialize::deserialize(deser)?);
+                Ok(())
+            }),
+        }
+    }
+
+    fn new_array<F>(name: &'static str, field: &ArrayField<F>) -> Self
+    where
+        F: 'static + Copy + Serialize + Deserialize<'static>,
+    {
+        let field1 = field.clone();
+        let mut field2 = field.clone();
+        Self {
+            name,
+            serialize: Box::new(move |ser| (*field1).serialize(ser)),
+            deserialize: Box::new(move |deser| {
+                let buf: Vec<F> = serde::Deserialize::deserialize(deser)?;
+                field2.copy_from_slice(&buf[..]);
+                Ok(())
+            }),
+        }
+    }
+}
+
 /// State holds a serializable state for the emulator, composed from multiple
 /// fields.
 ///
@@ -250,7 +318,7 @@ pub fn CurrentState() -> &'static mut State {
 #[derive(Clone)]
 pub struct State {
     data: Vec<u8>,
-    info: HashMap<&'static str, (usize, usize)>,
+    info: Rc<RefCell<HashMap<String, FieldInfo>>>,
 }
 
 #[inline]
@@ -262,7 +330,7 @@ impl State {
     fn new() -> Self {
         Self {
             data: Vec::with_capacity(1024),
-            info: HashMap::default(),
+            info: Rc::new(RefCell::new(HashMap::default())),
         }
     }
 
@@ -272,72 +340,76 @@ impl State {
         offset
     }
 
-    fn new_field<F: Copy + Serialize>(&mut self, name: &'static str, value: F) -> Field<F> {
+    fn new_field<F>(&mut self, name: &'static str, value: F) -> Field<F>
+    where
+        F: 'static + Copy + Serialize + Deserialize<'static>,
+    {
         if name == "" {
             panic!("empty name for state field");
         }
-        if self.info.contains_key(name) {
+        if self.info.borrow().contains_key(name) {
             panic!("duplicated field in state: {}", name);
         }
 
-        let size = mem::size_of::<F>();
-        let offset = self.alloc_raw(size, mem::align_of::<F>());
-        self.info.insert(name, (offset, size));
-
         let mut f = Field {
-            offset: offset,
+            offset: self.alloc_raw(mem::size_of::<F>(), mem::align_of::<F>()),
             phantom: PhantomData,
         };
+        self.info
+            .borrow_mut()
+            .insert(name.to_owned(), FieldInfo::new(name, &f));
         *f = value;
         f
     }
 
-    fn new_endian_field<F: Copy + Serialize + MemInt, O: ByteOrderCombiner>(
-        &mut self,
-        name: &'static str,
-        value: F,
-    ) -> EndianField<F, O> {
+    fn new_endian_field<F, O>(&mut self, name: &'static str, value: F) -> EndianField<F, O>
+    where
+        F: 'static + Copy + Serialize + Deserialize<'static> + MemInt,
+        O: 'static + ByteOrderCombiner,
+    {
         if name == "" {
             panic!("empty name for state field");
         }
-        if self.info.contains_key(name) {
+        if self.info.borrow().contains_key(name) {
             panic!("duplicated field in state: {}", name);
         }
 
         let size = mem::size_of::<F>();
         let offset = self.alloc_raw(size, mem::align_of::<F>());
-        self.info.insert(name, (offset, size));
 
         let mut f = EndianField {
             offset: offset,
             phantom: PhantomData,
         };
+        self.info
+            .borrow_mut()
+            .insert(name.to_owned(), FieldInfo::new_endian(name, &f));
         f.set(value);
         f
     }
 
-    fn new_array_field<F: Copy + Serialize>(
-        &mut self,
-        name: &'static str,
-        value: F,
-        len: usize,
-    ) -> ArrayField<F> {
+    fn new_array_field<F>(&mut self, name: &'static str, value: F, len: usize) -> ArrayField<F>
+    where
+        F: 'static + Copy + Serialize + Deserialize<'static>,
+    {
         if name == "" {
             panic!("empty name for state field");
         }
-        if self.info.contains_key(name) {
+        if self.info.borrow().contains_key(name) {
             panic!("duplicated field in state: {}", name);
         }
 
         let size = len * mem::size_of::<F>();
         let offset = self.alloc_raw(size, mem::align_of::<F>());
-        self.info.insert(name, (offset, size));
 
         let mut f = ArrayField {
             offset: offset,
             len: len,
             phantom: PhantomData,
         };
+        self.info
+            .borrow_mut()
+            .insert(name.to_owned(), FieldInfo::new_array(name, &f));
         for v in (*f).iter_mut() {
             *v = value;
         }
@@ -365,6 +437,67 @@ impl State {
     pub fn into_compressed(self) -> CompressedState {
         CompressedState::new(self)
     }
+
+    /// Serialize the state into a persistence format that can be written
+    /// to disk and reloaded in different process. It relies on Serde-based
+    /// serialization.
+    pub fn serialize(
+        &self,
+        emu_name: &'static str,
+        version: u32,
+    ) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+        use serde::Serializer;
+
+        let mut output = Vec::new();
+        let mut ser = rmp_serde::Serializer::new_named(&mut output);
+
+        // Serialize the whole state like a struct. Each `Field` is a field
+        // of this struct, using its name as name of the struct field.
+        ser.serialize_str(emu_name)?;
+        ser.serialize_u32(version)?;
+        ser.serialize_u32(self.info.borrow().len() as u32)?;
+        for fi in self.info.borrow().values() {
+            ser.serialize_str(fi.name)?;
+            (*fi.serialize)(&mut ser)?;
+        }
+        Ok(output)
+    }
+
+    /// Deserialize into the current state.
+    /// Notice that any field not present in the serialized state
+    /// maintain their current value, and no error is returned. It is thus
+    /// suggested to deserialize over a default initial state.
+    pub fn deserialize(
+        &mut self,
+        wanted_emu_name: &'static str,
+        wanted_version: u32,
+        snapshot: &[u8],
+    ) -> Result<(), rmp_serde::decode::Error> {
+        use rmp_serde::decode::Error;
+
+        let mut de = rmp_serde::Deserializer::new(snapshot);
+
+        let emu_name: String = Deserialize::deserialize(&mut de)?;
+        if emu_name != wanted_emu_name {
+            return Err(Error::Syntax(format!("invalid emu name: {}", emu_name)));
+        }
+
+        let version: u32 = Deserialize::deserialize(&mut de)?;
+        if version != wanted_version {
+            return Err(Error::Syntax(format!("unsupported version: {}", version)));
+        }
+
+        let num_fields: u32 = Deserialize::deserialize(&mut de)?;
+        for _ in 0..num_fields {
+            let fname: String = Deserialize::deserialize(&mut de)?;
+            match self.info.borrow_mut().get_mut(&fname) {
+                Some(fi) => (*fi.deserialize)(&mut de)?,
+                None => {}
+            };
+        }
+
+        Ok(())
+    }
 }
 
 /// A compressed snapshot of a `State`, useful for in-process snapshotting.
@@ -375,7 +508,7 @@ impl State {
 pub struct CompressedState {
     data: RefCell<Vec<u8>>,
     future_data: RefCell<Option<Oneshot<Vec<u8>>>>,
-    info: HashMap<&'static str, (usize, usize)>,
+    info: Rc<RefCell<HashMap<String, FieldInfo>>>,
 }
 
 impl CompressedState {
@@ -401,7 +534,7 @@ impl CompressedState {
         CompressedState {
             data: RefCell::new(Vec::new()),
             future_data: RefCell::new(Some(p)),
-            info: state.info,
+            info: state.info.clone(),
         }
     }
 
@@ -427,7 +560,7 @@ impl CompressedState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_derive::Serialize;
+    use serde_derive::{Deserialize, Serialize};
 
     #[test]
     fn normal_field() {
@@ -458,7 +591,7 @@ mod tests {
 
     #[test]
     fn normal_field_struct() {
-        #[derive(Copy, Clone, Serialize)]
+        #[derive(Copy, Clone, Serialize, Deserialize)]
         struct Foo {
             bar: u8,
             baz: u32,
@@ -524,5 +657,37 @@ mod tests {
         s2.decompress().make_current();
         assert_eq!(*a, 5);
         assert_eq!(*b, 15.0);
+    }
+
+    #[test]
+    fn serialize() {
+        use byteorder::BigEndian;
+
+        let mut a = Field::new("a", 4u64);
+        let mut b = Field::new("b", 12.0f64);
+        let mut c = EndianField::<u32, BigEndian>::new("c", 99u32);
+        let mut d = ArrayField::new("x", 7u8, 4);
+
+        let s1 = CurrentState().serialize("test", 1).unwrap();
+        assert!(CurrentState().deserialize("xest", 1, &s1).is_err());
+        assert!(CurrentState().deserialize("test", 2, &s1).is_err());
+
+        *a = 5;
+        *b = 13.0;
+        c.set(1234);
+        d[0] = 0;
+        d[1] = 1;
+        d[2] = 2;
+        d[3] = 3;
+
+        let res = CurrentState().deserialize("test", 1, &s1);
+        assert!(res.is_ok());
+        assert_eq!(*a, 4);
+        assert_eq!(*b, 12.0);
+        assert_eq!(c.get(), 99);
+        assert_eq!(d[0], 7);
+        assert_eq!(d[1], 7);
+        assert_eq!(d[2], 7);
+        assert_eq!(d[3], 7);
     }
 }

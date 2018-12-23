@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use enum_map::Enum;
 use num::PrimInt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Enum, Copy, Clone)]
 pub enum AccessSize {
@@ -11,7 +11,7 @@ pub enum AccessSize {
     Size64,
 }
 
-pub trait MemInt: PrimInt + Into<u64> + Default + Serialize {
+pub trait MemInt: PrimInt + Into<u64> + Default + Serialize + Deserialize<'static> {
     type Half: MemInt + Into<Self>;
     const SIZE: usize = ::std::mem::size_of::<Self>();
     const SIZE_LOG: usize;
