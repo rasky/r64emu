@@ -49,9 +49,11 @@ impl Mem {
     }
 
     pub fn new(name: &'static str, psize: usize, flags: MemFlags) -> Self {
+        // Avoid serializing ROMs into save state
+        let serialized = flags.contains(MemFlags::WRITEACCESS);
         Self {
             name,
-            buf: ArrayField::new(name, 0, psize),
+            buf: ArrayField::new(name, 0, psize, serialized),
             flags: flags,
             mask: psize.next_power_of_two() - 1,
         }

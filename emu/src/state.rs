@@ -5,8 +5,9 @@
 //! This module implements the concept of a global thread-local `State`, from
 //! which specific variables called `Field` can be allocated. You can think
 //! of a `State` like an arena allocator, and a `Field` is a pointer to an object
-//! allocated within it. When `State` is replaced with a different instance,
-//! all `Fields` objects are transparently updated with the new value.
+//! allocated within it. When the current global `State` is replaced with a
+//! different instance, all `Fields` objects are transparently updated with the
+//! new value.
 //!
 //! Each `Field` must also have a unique name, that is used as a key while
 //! serializing the state. Failure to use unique names will result in runtime
@@ -32,6 +33,50 @@
 //! and will panic if accessed. It should be used only as a placeholder in structs
 //! in case delayed initialization is required.
 //!
+//! ## Saving and restoring the state
+//!
+//! There are two ways of saving a state: cloning it (aka "snapshot") and
+//! serializing it.
+//!
+//! ### Snapshots
+//!
+//! Snapshotting is extremely fast (it is just a memcpy), but it
+//! is not meant for long-term storage, since the memory buffer in the State
+//! does not contain metadata (it's just a linear buffer) and the layout of the
+//! fields within it depends on the order of construction (which is very
+//! fragile). Nonetheless, it is a good choice for in-process snapshotting (eg:
+//! for a debugger). A snapshot can also be compressed for reducing memory
+//! occupation.
+//!
+//! A snapshot is just a `State` instance. To snapshot the current state,
+//! simply call `CurrentState().clone()`, using the standard `Clone` trait. To
+//! reload a snapshot, call `State::make_current()`, that moves the state into the
+//! global thread-local State instance; the previously-current State is returned.
+//!
+//! To compress a snapshot, use `into_compress()` to create a `CompressedState`
+//! instance, and `CompressedState::decompress()` to reverse the process.
+//! Compression is currently implemented with [LZ4](www.lz4.org), but this is
+//! considered an implementation detail, as snapshots are not meant to be
+//! inspected or serialized.
+//!
+//! ### Serialization
+//!
+//! Serialization is relatively-slower operation that creates a binary
+//! representation of the state meant for longer-term storage, and more resilient
+//! to changes caused by further developments to the code base. The serialized
+//! format includes metadata (the field names), that allow to attempt reloading
+//! over a `State` that has slightly changed: in fact, while reloading, fields
+//! that do not exist anymore will be ignored, and fields that are not present
+//! in the serialization will keep their current value.
+//!
+//! Serialization includes also a program name (to be used as a magic string
+//! to discern between save states of different emulators based on this crate),
+//! and a version number. Attempting to deserialize with different magic string
+//! or version number will result in an error.
+//!
+//! Serialization is currently performed using the
+//! [MessagePack](https://msgpack.org) format, and then compressed using
+//! [LZ4](www.lz4.org), but this is considered an implementation detail.
 //!
 
 use crate::bus::{ByteOrderCombiner, MemInt};
@@ -42,7 +87,7 @@ use rmp_serde;
 use serde::{Deserialize, Serialize};
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io;
 use std::marker::PhantomData;
 use std::mem;
@@ -175,8 +220,8 @@ pub struct ArrayField<F: Copy + Serialize + Deserialize<'static>> {
 
 impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
     /// Create an `ArrayField` with the specified name, initial value, and length.
-    pub fn new(name: &'static str, f: F, len: usize) -> Self {
-        CurrentState().new_array_field(name, f, len)
+    pub fn new(name: &'static str, f: F, len: usize, serialize: bool) -> Self {
+        CurrentState().new_array_field(name, f, len, serialize)
     }
 
     /// Return the number of elements in the array
@@ -244,14 +289,18 @@ pub fn CurrentState() -> &'static mut State {
     unsafe { &mut *s }
 }
 
-type Ser<'de> = rmp_serde::Serializer<&'de mut Vec<u8>, rmp_serde::encode::StructMapWriter>;
-type Deser<'de> = rmp_serde::Deserializer<rmp_serde::decode::ReadReader<&'de [u8]>>;
+type Ser<'de, 'c> = rmp_serde::Serializer<
+    &'de mut lz4::Encoder<&'c mut Vec<u8>>,
+    rmp_serde::encode::StructMapWriter,
+>;
+type Deser<'de> = rmp_serde::Deserializer<rmp_serde::decode::ReadReader<lz4::Decoder<&'de [u8]>>>;
 
+// FieldInfo contains the type-erased serialization and deserialization functions
+// for each field.
 struct FieldInfo {
     name: &'static str,
-    serialize: Box<for<'a, 'de> Fn(&'a mut Ser<'de>) -> Result<(), rmp_serde::encode::Error>>,
-    deserialize:
-        Box<for<'a, 'de> FnMut(&'a mut Deser<'de>) -> Result<(), rmp_serde::decode::Error>>,
+    serialize: Box<for<'de, 'c> Fn(&mut Ser<'de, 'c>) -> Result<(), rmp_serde::encode::Error>>,
+    deserialize: Box<for<'de> FnMut(&mut Deser<'de>) -> Result<(), rmp_serde::decode::Error>>,
 }
 
 impl FieldInfo {
@@ -318,7 +367,7 @@ impl FieldInfo {
 #[derive(Clone)]
 pub struct State {
     data: Vec<u8>,
-    info: Rc<RefCell<HashMap<String, FieldInfo>>>,
+    info: Rc<RefCell<BTreeMap<String, FieldInfo>>>,
 }
 
 #[inline]
@@ -330,7 +379,7 @@ impl State {
     fn new() -> Self {
         Self {
             data: Vec::with_capacity(1024),
-            info: Rc::new(RefCell::new(HashMap::default())),
+            info: Rc::new(RefCell::new(BTreeMap::default())),
         }
     }
 
@@ -388,7 +437,13 @@ impl State {
         f
     }
 
-    fn new_array_field<F>(&mut self, name: &'static str, value: F, len: usize) -> ArrayField<F>
+    fn new_array_field<F>(
+        &mut self,
+        name: &'static str,
+        value: F,
+        len: usize,
+        serialize: bool,
+    ) -> ArrayField<F>
     where
         F: 'static + Copy + Serialize + Deserialize<'static>,
     {
@@ -407,9 +462,11 @@ impl State {
             len: len,
             phantom: PhantomData,
         };
-        self.info
-            .borrow_mut()
-            .insert(name.to_owned(), FieldInfo::new_array(name, &f));
+        if serialize {
+            self.info
+                .borrow_mut()
+                .insert(name.to_owned(), FieldInfo::new_array(name, &f));
+        }
         for v in (*f).iter_mut() {
             *v = value;
         }
@@ -443,23 +500,35 @@ impl State {
     /// serialization.
     pub fn serialize(
         &self,
-        emu_name: &'static str,
+        magic: &str,
         version: u32,
     ) -> Result<Vec<u8>, rmp_serde::encode::Error> {
         use serde::Serializer;
+        use std::io::Write;
 
+        // Write the header
+        let header = "EMUSTATE\x00";
         let mut output = Vec::new();
-        let mut ser = rmp_serde::Serializer::new_named(&mut output);
+        (&mut output).write(header.as_bytes()).unwrap();
+
+        let mut compress = lz4::EncoderBuilder::new()
+            .level(9)
+            .build(&mut output)
+            .unwrap();
+        let mut ser = rmp_serde::Serializer::new_named(&mut compress);
 
         // Serialize the whole state like a struct. Each `Field` is a field
         // of this struct, using its name as name of the struct field.
-        ser.serialize_str(emu_name)?;
+        ser.serialize_str(magic)?;
         ser.serialize_u32(version)?;
         ser.serialize_u32(self.info.borrow().len() as u32)?;
         for fi in self.info.borrow().values() {
             ser.serialize_str(fi.name)?;
             (*fi.serialize)(&mut ser)?;
         }
+
+        let (_, res) = compress.finish();
+        res.unwrap();
         Ok(output)
     }
 
@@ -469,17 +538,30 @@ impl State {
     /// suggested to deserialize over a default initial state.
     pub fn deserialize(
         &mut self,
-        wanted_emu_name: &'static str,
+        wanted_magic: &'static str,
         wanted_version: u32,
-        snapshot: &[u8],
+        data: &[u8],
     ) -> Result<(), rmp_serde::decode::Error> {
         use rmp_serde::decode::Error;
+        use std::io::Read;
 
-        let mut de = rmp_serde::Deserializer::new(snapshot);
+        let mut reader = &data[..];
+        let mut header = vec![0u8; 9];
+        reader
+            .read_exact(&mut header)
+            .or_else(|_| Err(Error::Syntax(format!("invalid save state format"))))?;
+        if header != "EMUSTATE\x00".as_bytes() {
+            return Err(Error::Syntax(format!("invalid save state format")));
+        }
 
-        let emu_name: String = Deserialize::deserialize(&mut de)?;
-        if emu_name != wanted_emu_name {
-            return Err(Error::Syntax(format!("invalid emu name: {}", emu_name)));
+        let dec = lz4::Decoder::new(reader)
+            .or_else(|_| Err(Error::Syntax("invalid save state format".into())))?;
+
+        let mut de = rmp_serde::Deserializer::new(dec);
+
+        let magic: String = Deserialize::deserialize(&mut de)?;
+        if magic != wanted_magic {
+            return Err(Error::Syntax(format!("invalid magic: {}", magic)));
         }
 
         let version: u32 = Deserialize::deserialize(&mut de)?;
@@ -508,7 +590,7 @@ impl State {
 pub struct CompressedState {
     data: RefCell<Vec<u8>>,
     future_data: RefCell<Option<Oneshot<Vec<u8>>>>,
-    info: Rc<RefCell<HashMap<String, FieldInfo>>>,
+    info: Rc<RefCell<BTreeMap<String, FieldInfo>>>,
 }
 
 impl CompressedState {
@@ -666,9 +748,11 @@ mod tests {
         let mut a = Field::new("a", 4u64);
         let mut b = Field::new("b", 12.0f64);
         let mut c = EndianField::<u32, BigEndian>::new("c", 99u32);
-        let mut d = ArrayField::new("x", 7u8, 4);
+        let mut d = ArrayField::new("x", 7u8, 4, true);
+        let mut e = ArrayField::new("y", 7u8, 4, false);
 
         let s1 = CurrentState().serialize("test", 1).unwrap();
+
         assert!(CurrentState().deserialize("xest", 1, &s1).is_err());
         assert!(CurrentState().deserialize("test", 2, &s1).is_err());
 
@@ -679,6 +763,10 @@ mod tests {
         d[1] = 1;
         d[2] = 2;
         d[3] = 3;
+        e[0] = 0;
+        e[1] = 1;
+        e[2] = 2;
+        e[3] = 3;
 
         let res = CurrentState().deserialize("test", 1, &s1);
         assert!(res.is_ok());
@@ -689,5 +777,9 @@ mod tests {
         assert_eq!(d[1], 7);
         assert_eq!(d[2], 7);
         assert_eq!(d[3], 7);
+        assert_eq!(e[0], 0);
+        assert_eq!(e[1], 1);
+        assert_eq!(e[2], 2);
+        assert_eq!(e[3], 3);
     }
 }
