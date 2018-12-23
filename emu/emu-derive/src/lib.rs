@@ -214,6 +214,7 @@ fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemA
 
 fn expand_reg_devinit(
     fi: &synstructure::BindingInfo,
+    structname: &str,
     varname: &str,
     ra: &RegAttributes,
 ) -> proc_macro2::TokenStream {
@@ -259,7 +260,7 @@ fn expand_reg_devinit(
     quote! {
         #initbody
         *#fi = Reg::new(
-            #varname,
+            concat!(#structname, "::", #varname),
             #init,
             #rwmask,
             RegFlags::new(#read, #write),
@@ -271,7 +272,8 @@ fn expand_reg_devinit(
 
 fn expand_mem_devinit(
     fi: &synstructure::BindingInfo,
-    _varname: &str,
+    structname: &str,
+    varname: &str,
     ma: &MemAttributes,
 ) -> proc_macro2::TokenStream {
     let size = ma.size;
@@ -294,7 +296,7 @@ fn expand_mem_devinit(
             if #fi .len() != 0 {
                 panic!("don't specify size for already inited mem");
             }
-            *#fi = Mem::new(#size, MemFlags::new(#read, #write));
+            *#fi = Mem::new(concat!(#structname, "::", #varname), #size, MemFlags::new(#read, #write));
         }
     }
 }
@@ -336,6 +338,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
 
     let mut dev_map = quote! {};
     let dev_init = s.each(|fi| {
+        let structname = s.ast().ident.to_string();
         let varname = fi.ast().ident.as_ref().unwrap().to_string();
 
         let attrs = &fi.ast().attrs;
@@ -361,7 +364,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
                     #dev_map
                     #dm;
                 };
-                expand_reg_devinit(fi, &varname, &ra)
+                expand_reg_devinit(fi, &structname, &varname, &ra)
             }
 
             "mem" => {
@@ -372,7 +375,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
                     #dev_map
                     #dm;
                 };
-                expand_mem_devinit(fi, &varname, &ma)
+                expand_mem_devinit(fi, &structname, &varname, &ma)
             }
             _ => unreachable!(),
         }

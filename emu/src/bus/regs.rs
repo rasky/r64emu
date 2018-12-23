@@ -1,5 +1,6 @@
 use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW, MemIoR, MemIoW};
 use super::memint::{ByteOrderCombiner, MemInt};
+use crate::state::EndianField;
 
 use bitflags::bitflags;
 
@@ -38,62 +39,70 @@ impl Default for RegFlags {
 type Wcb<U> = Option<Rc<Box<Fn(U, U)>>>;
 type Rcb<U> = Option<Rc<Box<Fn(U) -> U>>>;
 
+#[derive(Default)]
 pub struct Reg<O, U>
 where
     O: ByteOrderCombiner,
     U: MemInt,
 {
-    name: String,
-    raw: Rc<RefCell<Box<[u8]>>>,
-    romask: U,
-    flags: RegFlags,
-    wcb: Wcb<U>,
-    rcb: Rcb<U>,
+    name: &'static str,     // Name
+    raw: EndianField<U, O>, // State field (in the specified endianess). See set/get
+    romask: U,              // Mask of read-only bits
+    flags: RegFlags,        // Flags
+    wcb: Wcb<U>,            // Optional callback invoked when register is written
+    rcb: Rcb<U>,            // Optional callback invoked when register is read
     phantom: PhantomData<O>,
-}
-
-impl<O, U> Default for Reg<O, U>
-where
-    O: ByteOrderCombiner,
-    U: MemInt,
-{
-    fn default() -> Self {
-        Reg {
-            name: String::new(),
-            raw: Rc::new(RefCell::new(box [0u8; 8])),
-            romask: U::zero(),
-            flags: RegFlags::default(),
-            wcb: None,
-            rcb: None,
-            phantom: PhantomData,
-        }
-    }
 }
 
 impl<O, U> Reg<O, U>
 where
-    O: ByteOrderCombiner,
+    O: ByteOrderCombiner + 'static,
     U: MemInt + 'static,
 {
-    fn refcell_get(raw: &Rc<RefCell<Box<[u8]>>>) -> U {
-        U::endian_read_from::<O>(&raw.borrow()[..])
-    }
-
-    fn refcell_set(raw: &Rc<RefCell<Box<[u8]>>>, val: U) {
-        U::endian_write_to::<O>(&mut raw.borrow_mut()[..], val)
-    }
-
-    pub fn new(name: &str, init: U, rwmask: U, flags: RegFlags, wcb: Wcb<U>, rcb: Rcb<U>) -> Self {
-        let reg = Reg {
-            name: name.into(),
+    pub fn new(
+        name: &'static str,
+        init: U,
+        rwmask: U,
+        flags: RegFlags,
+        wcb: Wcb<U>,
+        rcb: Rcb<U>,
+    ) -> Self {
+        Self {
+            name: name,
+            raw: EndianField::new(name, init),
             romask: !rwmask,
             flags,
             wcb,
             rcb,
             ..Default::default()
-        };
-        reg.set(init);
-        return reg;
+        }
+    }
+
+    pub fn new_basic(name: &'static str) -> Self {
+        Reg::new(
+            name,
+            U::zero(),
+            U::max_value(),
+            RegFlags::default(),
+            None,
+            None,
+        )
+    }
+    pub fn with_rwmask(mut self, rwmask: U) -> Self {
+        self.romask = !rwmask;
+        self
+    }
+    pub fn with_flags(mut self, flags: RegFlags) -> Self {
+        self.flags = flags;
+        self
+    }
+    pub fn with_wcb(mut self, wcb: Wcb<U>) -> Self {
+        self.wcb = wcb;
+        self
+    }
+    pub fn with_rcb(mut self, rcb: Rcb<U>) -> Self {
+        self.rcb = rcb;
+        self
     }
 
     pub fn as_ref<R: RegDeref<Type = U>>(&self) -> RegRef<O, R> {
@@ -101,14 +110,15 @@ where
     }
 
     /// Get the current value of the register in memory, bypassing any callback.
+    /// Note that the value stored into the State Field is in the order
+    /// specified by O. This is counter-intuitive (as)
     pub fn get(&self) -> U {
-        let val: U = Self::refcell_get(&self.raw);
-        val
+        self.raw.get()
     }
 
     /// Set the current value of the register, bypassing any read/write mask or callback.
-    pub fn set(&self, val: U) {
-        Self::refcell_set(&self.raw, val)
+    pub fn set(&mut self, val: U) {
+        self.raw.set(val);
     }
 
     pub(crate) fn hwio_r<S>(&self) -> HwIoR
@@ -122,19 +132,17 @@ where
         match self.rcb {
             Some(ref rcb) => {
                 let rcb = Rc::downgrade(&rcb);
-                let raw = Rc::downgrade(&self.raw);
+                let raw = self.raw.clone();
                 HwIoR::Func(Rc::new(move |addr: u32| {
                     let rcb = rcb.upgrade().unwrap();
-                    let raw = raw.upgrade().unwrap();
 
                     let off = (addr as usize) & (U::SIZE - 1);
                     let (_, shift) = O::subint_mask::<U, S>(off);
-                    let real = Self::refcell_get(&raw);
-                    let val: u64 = rcb(real).into();
+                    let val: u64 = rcb(raw.get()).into();
                     S::truncate_from(val >> shift).into()
                 }))
             }
-            None => HwIoR::Mem(self.raw.clone(), (U::SIZE - 1) as u32),
+            None => HwIoR::Mem(self.raw.clone().into_array_field(), (U::SIZE - 1) as u32),
         }
     }
 
@@ -147,25 +155,24 @@ where
         }
 
         if self.romask == U::zero() && self.wcb.is_none() {
-            HwIoW::Mem(self.raw.clone(), (U::SIZE - 1) as u32)
+            HwIoW::Mem(self.raw.clone().into_array_field(), (U::SIZE - 1) as u32)
         } else {
-            let raw = Rc::downgrade(&self.raw);
+            let mut raw = self.raw.clone();
             let wcb = self.wcb.clone().map(|f| Rc::downgrade(&f));
             let romask = self.romask;
-            HwIoW::Func(Rc::new(move |addr: u32, val64: u64| {
-                let raw = raw.upgrade().unwrap();
+            HwIoW::Func(Rc::new(RefCell::new(move |addr: u32, val64: u64| {
                 let off = (addr as usize) & (U::SIZE - 1);
                 let (mut mask, shift) = O::subint_mask::<U, S>(off);
                 let mut val = U::truncate_from(val64) << shift;
-                let old = Self::refcell_get(&raw);
+                let old = raw.get();
                 mask = !mask | romask;
                 val = (val & !mask) | (old & mask);
-                Self::refcell_set(&raw, val);
+                raw.set(val);
                 if let Some(ref f) = wcb {
                     let f = f.upgrade().unwrap();
                     f(old, val);
                 }
-            }))
+            })))
         }
     }
 
@@ -178,7 +185,7 @@ where
     }
 }
 
-impl<O: ByteOrderCombiner, U: MemInt + 'static> fmt::Debug for Reg<O, U> {
+impl<O: ByteOrderCombiner + 'static, U: MemInt + 'static> fmt::Debug for Reg<O, U> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let name = if self.name.is_empty() {
             "Reg"
@@ -218,13 +225,13 @@ impl<U: MemInt + 'static> RegDeref for U {
 
 /// A scoped reference to a Reg.
 pub struct RegRef<O: ByteOrderCombiner, U: RegDeref> {
-    raw: Rc<RefCell<Box<[u8]>>>,
+    raw: EndianField<U::Type, O>,
     val: U,
     old: U,
     phantom: PhantomData<(O, U)>,
 }
 
-impl<O: ByteOrderCombiner, U: RegDeref> RegRef<O, U> {
+impl<O: ByteOrderCombiner + 'static, U: RegDeref> RegRef<O, U> {
     fn new(r: &Reg<O, U::Type>) -> Self {
         let val = r.get();
         Self {
@@ -241,7 +248,7 @@ impl<O: ByteOrderCombiner, U: RegDeref> Drop for RegRef<O, U> {
         let val = self.val.to();
         let old = self.old.to();
         if val != old {
-            Reg::<O, U::Type>::refcell_set(&self.raw, val);
+            self.raw.set(val);
         }
     }
 }
@@ -272,7 +279,7 @@ mod tests {
         phantom: PhantomData<(O, U)>,
     }
 
-    impl<O: ByteOrderCombiner, U: MemInt + 'static> FakeBus<O, U> {
+    impl<O: ByteOrderCombiner + 'static, U: MemInt + 'static> FakeBus<O, U> {
         fn read<S: MemInt + Into<U>>(&self, reg: &Reg<O, U>, addr: u32) -> S {
             reg.hwio_r::<S>().at::<O, S>(addr).read()
         }
@@ -285,7 +292,7 @@ mod tests {
     #[test]
     fn reg32le_bare() {
         let bus = FakeBus::default();
-        let r = le::Reg32::default();
+        let mut r = le::Reg32::new_basic("r1");
         r.set(0xaaaaaaaa);
 
         bus.write::<u32>(&r, 0, 0x12345678);
@@ -299,7 +306,7 @@ mod tests {
     #[test]
     fn reg32be_bare() {
         let bus = FakeBus::default();
-        let r = be::Reg32::default();
+        let mut r = be::Reg32::new_basic("r2");
         r.set(0xaaaaaaaa);
         bus.write::<u32>(&r, 0, 0x12345678);
         assert_eq!(bus.read::<u8>(&r, 0), 0x12);
@@ -312,10 +319,7 @@ mod tests {
     #[test]
     fn reg32le_mask() {
         let bus = FakeBus::default();
-        let r = le::Reg32 {
-            romask: 0xff00ff00,
-            ..Default::default()
-        };
+        let mut r = le::Reg32::new_basic("reg32").with_rwmask(0x00ff00ff);
         r.set(0xddccbbaa);
         bus.write::<u32>(&r, 0, 0x12345678);
         assert_eq!(r.get(), 0xdd34bb78);
@@ -329,10 +333,7 @@ mod tests {
     #[test]
     fn reg32be_mask() {
         let bus = FakeBus::default();
-        let r = be::Reg32 {
-            romask: 0xff00ff00,
-            ..Default::default()
-        };
+        let mut r = be::Reg32::new_basic("reg32").with_rwmask(0x00ff00ff);
         r.set(0xddccbbaa);
         bus.write::<u32>(&r, 0, 0x12345678);
         assert_eq!(r.get(), 0xdd34bb78);
@@ -346,11 +347,7 @@ mod tests {
     #[test]
     fn reg32le_cb() {
         let bus = FakeBus::default();
-        let r = le::Reg32 {
-            rcb: Some(Rc::new(box move |val| val | 0x1)),
-            ..Default::default()
-        };
-
+        let mut r = le::Reg32::new_basic("reg32").with_rcb(Some(Rc::new(box move |val| val | 0x1)));
         r.set(0x12345678);
         assert_eq!(bus.read::<u32>(&r, 0), 0x12345679);
         bus.write::<u16>(&r, 0, 0x6788);
@@ -361,19 +358,13 @@ mod tests {
     #[test]
     fn reg32le_rowo() {
         let bus = FakeBus::default();
-        let r = le::Reg32 {
-            flags: RegFlags::READACCESS,
-            ..Default::default()
-        };
+        let mut r = le::Reg32::new_basic("reg32ra").with_flags(RegFlags::READACCESS);
         r.set(0x12345678);
         assert_eq!(bus.read::<u32>(&r, 0), 0x12345678);
         bus.write::<u32>(&r, 0, 0xaabbccdd);
         assert_eq!(bus.read::<u32>(&r, 0), 0x12345678);
 
-        let r = le::Reg32 {
-            flags: RegFlags::WRITEACCESS,
-            ..Default::default()
-        };
+        let mut r = le::Reg32::new_basic("reg32wa").with_flags(RegFlags::WRITEACCESS);
         r.set(0x12345678);
         assert_eq!(bus.read::<u32>(&r, 0), 0xffffffff);
         bus.write::<u32>(&r, 0, 0xaabbccdd);

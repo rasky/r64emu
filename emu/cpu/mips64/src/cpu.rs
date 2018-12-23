@@ -1,4 +1,4 @@
-use super::decode::{decode, DecodedInsn};
+use super::decode::decode;
 use super::mmu::Mmu;
 use super::{Arch, Config, Cop, Cop0};
 
@@ -27,15 +27,14 @@ pub enum Exception {
 
 impl Exception {
     pub(crate) fn exc_code(&self) -> Option<u32> {
-        use self::Exception::*;
         match self {
-            Interrupt => Some(0x00),
-            Breakpoint => Some(0x09),
-            Reset => None,
-            Nmi => None,
-            SoftReset => None,
-            TlbRefill => None,
-            XTlbRefill => None,
+            Exception::Interrupt => Some(0x00),
+            Exception::Breakpoint => Some(0x09),
+            Exception::ColdReset => None,
+            Exception::Nmi => None,
+            Exception::SoftReset => None,
+            Exception::TlbRefill => None,
+            Exception::XTlbRefill => None,
         }
     }
 }
@@ -487,10 +486,10 @@ impl<C: Config> Cpu<C> {
             0x35 => if_cop!(op, cop1, cop1.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC1
             0x36 => if_cop!(op, cop2, cop2.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC2
             0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea(), t)?,                    // LD
-            0x39 => if_cop!(op, cop1, cop1.swc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SWC1
-            0x3A => if_cop!(op, cop2, cop2.swc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SWC2
-            0x3D => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SDC1
-            0x3E => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // SDC2
+            0x39 => if_cop!(op, cop1, cop1.swc(op.opcode, &op.cpu.ctx, &mut op.cpu.bus)), // SWC1
+            0x3A => if_cop!(op, cop2, cop2.swc(op.opcode, &op.cpu.ctx, &mut op.cpu.bus)), // SWC2
+            0x3D => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.cpu.ctx, &mut op.cpu.bus)), // SDC1
+            0x3E => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.cpu.ctx, &mut op.cpu.bus)), // SDC2
             0x3F => op.cpu.write::<u64>(op.ea(), op.rt64(), t)?,                      // SD
 
             _ => {
@@ -532,14 +531,14 @@ impl<C: Config> Cpu<C> {
         Ok((mem & mask) | ((reg << shift) & !mask))
     }
 
-    fn fetch(&mut self, addr: u64) -> &MemIoR<u32> {
+    fn fetch(&mut self, addr: u64) -> MemIoR<u32> {
         // Save last fetched memio, to speed up hot loops
         let addr = C::pc_mask(addr as u32);
         if self.last_fetch_addr != addr {
             self.last_fetch_addr = addr;
             self.last_fetch_mem = self.bus.borrow().fetch_read::<u32>(addr as u32);
         }
-        &self.last_fetch_mem
+        self.last_fetch_mem.clone()
     }
 
     fn read<U: MemInt>(&self, addr: u32, t: &Tracer) -> Result<U> {
@@ -551,9 +550,9 @@ impl<C: Config> Cpu<C> {
         Ok(val)
     }
 
-    fn write<U: MemInt>(&self, addr: u32, val: U, t: &Tracer) -> Result<()> {
+    fn write<U: MemInt>(&mut self, addr: u32, val: U, t: &Tracer) -> Result<()> {
         self.bus
-            .borrow()
+            .borrow_mut()
             .write::<U>(C::addr_mask(addr) & !(U::SIZE as u32 - 1), val);
         t.trace_mem_write(&self.name, addr.into(), U::ACCESS_SIZE, val.into())
     }
@@ -574,8 +573,8 @@ impl<C: Config> Cpu<C> {
                 }
             }
 
-            let mut iter = self
-                .fetch(self.ctx.pc)
+            let mem = self.fetch(self.ctx.pc);
+            let mut iter = mem
                 .iter()
                 .unwrap_or_else(|| panic!("jumped to non-linear memory: {}", self.ctx.pc.hex()));
 

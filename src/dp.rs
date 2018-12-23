@@ -120,7 +120,7 @@ impl Dp {
             *self.cmd_current_ref() = start;
             self.fetched_start_addr = start;
             self.fetched_mem = self.main_bus.borrow().fetch_read::<u64>(start);
-            if self.fetched_mem.mem().is_none() {
+            if self.fetched_mem.iter().is_none() {
                 error!(self.logger, "cmd buffer pointing to non-linear memory"; o!("ptr" => start.hex()));
             }
             status.remove(StatusFlags::START_VALID);

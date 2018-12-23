@@ -42,12 +42,12 @@ pub struct Ri {
     // [1:0] operating mode
     // [2] stop T active
     // [3] stop R active
-    #[reg(bank = 2, offset = 0x00, rwmask = 0xF)]
+    #[reg(bank = 2, offset = 0x00, init = 0xE, rwmask = 0xF)]
     reg_ri_mode: Reg32,
 
     // [5:0] current control input
     // [6] current control enable
-    #[reg(bank = 2, offset = 0x04, rwmask = 0x3F)]
+    #[reg(bank = 2, offset = 0x04, init = 0x40, rwmask = 0x3F)]
     reg_ri_config: Reg32,
 
     // (W): [] any write updates current control register
@@ -56,7 +56,7 @@ pub struct Ri {
 
     // [2:0] receive select
     // [2:0] transmit select
-    #[reg(bank = 2, offset = 0x0C, rwmask = 0xF)]
+    #[reg(bank = 2, offset = 0x0C, init = 0x14, rwmask = 0xF)]
     reg_ri_select: Reg32,
 
     // [7:0] clean refresh delay
@@ -64,7 +64,7 @@ pub struct Ri {
     // [16] refresh bank
     // [17] refresh enable
     // [18] refresh optimize
-    #[reg(bank = 2, offset = 0x10, rwmask = 0x7FFFF)]
+    #[reg(bank = 2, offset = 0x10, init = 0x63634, rwmask = 0x7FFFF)]
     reg_ri_refresh: Reg32,
 
     // [3:0] DMA latency/overlap
@@ -85,7 +85,7 @@ pub struct Ri {
 
 impl Ri {
     pub fn new(logger: slog::Logger) -> Ri {
-        let ri = Ri {
+        Ri {
             rdram: Mem::default(),
 
             reg_rdram_config: Reg32::default(),
@@ -109,14 +109,6 @@ impl Ri {
             reg_ri_error_write: Reg32::default(),
 
             logger,
-        };
-
-        // defaults from cen64
-        ri.reg_ri_mode.set(0xE);
-        ri.reg_ri_config.set(0x40);
-        ri.reg_ri_select.set(0x14);
-        ri.reg_ri_refresh.set(0x63634);
-
-        ri
+        }
     }
 }

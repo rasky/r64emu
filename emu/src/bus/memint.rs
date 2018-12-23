@@ -1,6 +1,7 @@
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use enum_map::Enum;
 use num::PrimInt;
+use serde::Serialize;
 
 #[derive(Debug, Enum, Copy, Clone)]
 pub enum AccessSize {
@@ -10,7 +11,7 @@ pub enum AccessSize {
     Size64,
 }
 
-pub trait MemInt: PrimInt + Into<u64> + Default {
+pub trait MemInt: PrimInt + Into<u64> + Default + Serialize {
     type Half: MemInt + Into<Self>;
     const SIZE: usize = ::std::mem::size_of::<Self>();
     const SIZE_LOG: usize;
@@ -110,6 +111,7 @@ impl MemInt for u64 {
 }
 
 pub trait ByteOrderCombiner: ByteOrder {
+    fn to_native<U: MemInt>(val: U) -> U;
     fn combine64(before: u32, after: u32) -> u64;
     fn combine32(before: u16, after: u16) -> u32;
     fn combine16(before: u8, after: u8) -> u16;
@@ -145,6 +147,10 @@ impl ByteOrderCombiner for LittleEndian {
     fn combine16(before: u8, after: u8) -> u16 {
         (before as u16) | ((after as u16) << 8)
     }
+    #[inline(always)]
+    fn to_native<U: MemInt>(val: U) -> U {
+        U::from_le(val)
+    }
 }
 
 impl ByteOrderCombiner for BigEndian {
@@ -172,6 +178,10 @@ impl ByteOrderCombiner for BigEndian {
     #[inline(always)]
     fn combine16(before: u8, after: u8) -> u16 {
         ((before as u16) << 8) | (after as u16)
+    }
+    #[inline(always)]
+    fn to_native<U: MemInt>(val: U) -> U {
+        U::from_be(val)
     }
 }
 

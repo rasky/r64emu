@@ -3,6 +3,7 @@ use super::mem::Mem;
 use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use super::radix::RadixTree;
 use super::regs::Reg;
+use crate::state::ArrayField;
 
 use byteorder::ByteOrder;
 use enum_map::{enum_map, EnumMap};
@@ -18,15 +19,15 @@ use std::rc::Rc;
 use std::slice;
 
 #[derive(Clone)]
-pub enum HwIoR {
-    Mem(Rc<RefCell<Box<[u8]>>>, u32),
+pub(crate) enum HwIoR {
+    Mem(ArrayField<u8>, u32),
     Func(Rc<Fn(u32) -> u64>),
 }
 
 #[derive(Clone)]
-pub enum HwIoW {
-    Mem(Rc<RefCell<Box<[u8]>>>, u32),
-    Func(Rc<Fn(u32, u64)>),
+pub(crate) enum HwIoW {
+    Mem(ArrayField<u8>, u32),
+    Func(Rc<RefCell<FnMut(u32, u64)>>),
 }
 
 impl HwIoR {
@@ -41,9 +42,7 @@ impl HwIoR {
     #[inline(always)]
     fn read<O: ByteOrder, U: MemInt>(&self, addr: u32) -> U {
         match self {
-            HwIoR::Mem(buf, mask) => {
-                U::endian_read_from::<O>(&buf.borrow()[(addr & mask) as usize..])
-            }
+            HwIoR::Mem(buf, mask) => U::endian_read_from::<O>(&buf[(addr & mask) as usize..]),
             HwIoR::Func(f) => U::truncate_from(f(addr)),
         }
     }
@@ -59,16 +58,20 @@ impl HwIoW {
     }
 
     #[inline(always)]
-    fn write<O: ByteOrder, U: MemInt>(&self, addr: u32, val: U) {
+    fn write<O: ByteOrder, U: MemInt>(&mut self, addr: u32, val: U) {
         match self {
-            HwIoW::Mem(buf, mask) => {
-                U::endian_write_to::<O>(&mut buf.borrow_mut()[(addr & mask) as usize..], val)
+            HwIoW::Mem(ref mut buf, mask) => {
+                U::endian_write_to::<O>(&mut buf[(addr & *mask) as usize..], val)
             }
-            HwIoW::Func(f) => f(addr, val.into()),
+            HwIoW::Func(ref mut f) => {
+                let mut func = f.borrow_mut();
+                (&mut *func)(addr, val.into());
+            }
         }
     }
 }
 
+#[derive(Clone)]
 pub struct MemIoR<O: ByteOrder, U: MemInt> {
     hwio: HwIoR,
     addr: u32,
@@ -91,47 +94,32 @@ impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
         self.hwio.read::<O, U>(self.addr)
     }
 
-    pub fn mem<'s, 'r: 's>(&'s self) -> Option<&'r [u8]> {
-        match self.hwio {
-            HwIoR::Mem(ref buf, mask) => {
-                // Use unsafe here for performance: we don't want
-                // to borrow the memory area for each access.
-                let slice = {
-                    let raw: *const u8 = &buf.borrow()[0];
-                    let len = buf.borrow().len();
-                    unsafe { slice::from_raw_parts(raw, len) }
-                };
-                Some(&slice[(self.addr & mask) as usize..])
-            }
-            HwIoR::Func(_) => None,
-        }
-    }
-
     // If MemIoR points to a memory area, returns an iterator over it
     // that yields consecutive elements of type U.
     // Otherwise, returns None.
-    pub fn iter<'s, 'r: 's>(&'s self) -> Option<impl Iterator<Item = U>> {
-        match self.hwio {
-            HwIoR::Mem(ref buf, mask) => {
-                // Use unsafe here for performance: we don't want
-                // to borrow the memory area for each access.
-                let slice = {
-                    let buf = buf.borrow();
-                    let raw: *const u8 = &buf[0];
-                    let len = buf.len();
-                    unsafe { slice::from_raw_parts(raw, len) }
-                };
-                Some(
-                    slice[(self.addr & mask) as usize..]
-                        .chunks_exact(U::SIZE)
-                        .map(U::endian_read_from::<O>),
-                )
-            }
+    pub fn iter(&self) -> Option<MemIoRIterator<U>> {
+        //impl Iterator<Item = U>> {
+        match &self.hwio {
+            HwIoR::Mem(buf, mask) => Some(
+                buf[(self.addr & *mask) as usize..]
+                    .chunks_exact(U::SIZE)
+                    .map(U::endian_read_from::<O>),
+            ),
             HwIoR::Func(_) => None,
         }
     }
 }
 
+impl<O: ByteOrder> MemIoR<O, u8> {
+    pub fn mem<'s, 'r: 's>(&'s self) -> Option<&'r [u8]> {
+        match &self.hwio {
+            HwIoR::Mem(buf, mask) => Some(&buf.as_slice()[(self.addr & mask) as usize..]),
+            HwIoR::Func(_) => None,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct MemIoW<O: ByteOrder, U: MemInt> {
     hwio: HwIoW,
     addr: u32,
@@ -139,22 +127,16 @@ pub struct MemIoW<O: ByteOrder, U: MemInt> {
 }
 
 impl<O: ByteOrder, U: MemInt> MemIoW<O, U> {
-    pub fn write(&self, val: U) {
+    pub fn write(&mut self, val: U) {
         self.hwio.write::<O, U>(self.addr, val);
     }
+}
 
-    pub fn mem<'s, 'r: 's>(&'s self) -> Option<&'r mut [u8]> {
+impl<O: ByteOrder> MemIoW<O, u8> {
+    pub fn mem<'s, 'r: 's>(&'s mut self) -> Option<&'r mut [u8]> {
         match self.hwio {
-            HwIoW::Mem(ref buf, mask) => {
-                // Use unsafe here for performance: we don't want
-                // to borrow the memory area for each access.
-                let slice = {
-                    let mut buf = buf.borrow_mut();
-                    let raw: *mut u8 = &mut buf[0];
-                    let len = buf.len();
-                    unsafe { slice::from_raw_parts_mut(raw, len) }
-                };
-                Some(&mut slice[(self.addr & mask) as usize..])
+            HwIoW::Mem(ref mut buf, mask) => {
+                Some(&mut buf.as_slice_mut()[(self.addr & mask) as usize..])
             }
             HwIoW::Func(_) => None,
         }
@@ -164,12 +146,14 @@ impl<O: ByteOrder, U: MemInt> MemIoW<O, U> {
 impl<O: ByteOrder, U: MemInt> io::Read for MemIoR<O, U> {
     fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
         match self.hwio.clone() {
-            HwIoR::Mem(ref buf, mask) => (&buf.borrow_mut()[(self.addr & mask) as usize..])
-                .read(out)
-                .and_then(|sz| {
-                    self.addr += sz as u32;
-                    Ok(sz)
-                }),
+            HwIoR::Mem(buf, mask) => {
+                (&buf[(self.addr & mask) as usize..])
+                    .read(out)
+                    .and_then(|sz| {
+                        self.addr += sz as u32;
+                        Ok(sz)
+                    })
+            }
             HwIoR::Func(_) => Err(io::Error::new(
                 io::ErrorKind::Other,
                 "memory area is not a linearly mapped",
@@ -178,21 +162,18 @@ impl<O: ByteOrder, U: MemInt> io::Read for MemIoR<O, U> {
     }
 }
 
-pub fn unmapped_area_r() -> HwIoR {
+pub(crate) fn unmapped_area_r() -> HwIoR {
     thread_local!(
         static FN: Rc<Fn(u32)->u64> = Rc::new(|_| {
-            // FIXME: log
-            return 0xffffffffffffffff;
+            return 0xffff_ffff_ffff_ffff;
         })
     );
     HwIoR::Func(FN.with(|c| c.clone()))
 }
 
-pub fn unmapped_area_w() -> HwIoW {
+pub(crate) fn unmapped_area_w() -> HwIoW {
     thread_local!(
-        static FN: Rc<Fn(u32,u64)> = Rc::new(|_,_| {
-            // FIXME: log
-        })
+        static FN: Rc<RefCell<FnMut(u32,u64)>> = Rc::new(RefCell::new(|_,_| {}))
     );
     HwIoW::Func(FN.with(|c| c.clone()))
 }
@@ -242,7 +223,7 @@ where
             .read::<Order, U>(addr)
     }
 
-    pub fn write<U: MemInt + 'a>(&self, addr: u32, val: U) {
+    pub fn write<U: MemInt + 'a>(&mut self, addr: u32, val: U) {
         self.internal_fetch_write::<U>(addr, true)
             .write::<Order, U>(addr, val);
     }
@@ -253,7 +234,7 @@ where
     }
 
     #[inline(never)]
-    pub fn fetch_write<U: MemInt + 'a>(&self, addr: u32) -> MemIoW<Order, U> {
+    pub fn fetch_write<U: MemInt + 'a>(&mut self, addr: u32) -> MemIoW<Order, U> {
         self.internal_fetch_write::<U>(addr, true).at(addr)
     }
 
@@ -263,7 +244,7 @@ where
     }
 
     #[inline(never)]
-    pub fn fetch_write_nolog<U: MemInt + 'a>(&self, addr: u32) -> MemIoW<Order, U> {
+    pub fn fetch_write_nolog<U: MemInt + 'a>(&mut self, addr: u32) -> MemIoW<Order, U> {
         self.internal_fetch_write::<U>(addr, false).at(addr)
     }
 
@@ -281,16 +262,18 @@ where
     }
 
     #[inline(always)]
-    fn internal_fetch_write<U: MemInt + 'a>(&'b self, addr: u32, unmapped_log: bool) -> &'b HwIoW {
-        self.writes[U::ACCESS_SIZE]
-            .lookup(addr)
-            .or_else(|| {
-                if unmapped_log {
-                    error!(self.logger, "unmapped bus write"; o!("addr" => format!("0x{:x}", addr), "size" => U::SIZE));
-                }
-                Some(&self.unmap_w)
-            })
-            .unwrap()
+    fn internal_fetch_write<U: MemInt + 'a>(
+        &'b mut self,
+        addr: u32,
+        unmapped_log: bool,
+    ) -> &'b mut HwIoW {
+        if let Some(hwio) = self.writes[U::ACCESS_SIZE].lookup_mut(addr) {
+            return hwio;
+        }
+        if unmapped_log {
+            error!(self.logger, "unmapped bus write"; o!("addr" => format!("0x{:x}", addr), "size" => U::SIZE));
+        }
+        &mut self.unmap_w
     }
 
     fn mapreg_partial<U: 'static, S>(
@@ -376,20 +359,20 @@ where
         )?;
 
         let off: u32 = (mem::size_of::<U>() as u32) / 2;
-        let before = self.fetch_write_nolog::<U::Half>(addr);
-        let after = self.fetch_write_nolog::<U::Half>(addr + off);
+        let mut before = self.fetch_write_nolog::<U::Half>(addr);
+        let mut after = self.fetch_write_nolog::<U::Half>(addr + off);
 
         self.writes[U::ACCESS_SIZE].insert_range(
             addr,
             addr + U::SIZE as u32 - 1,
-            HwIoW::Func(Rc::new(move |_, val64| {
+            HwIoW::Func(Rc::new(RefCell::new(move |_, val64| {
                 let (mask1, shift1) = Order::subint_mask::<U, U::Half>(0);
                 let (mask2, shift2) = Order::subint_mask::<U, U::Half>(off as usize);
                 let val_before = (val64 & mask1.into()) >> shift1;
                 let val_after = (val64 & mask2.into()) >> shift2;
                 before.write(U::Half::truncate_from(val_before));
                 after.write(U::Half::truncate_from(val_after));
-            })),
+            }))),
             true, // a combiner might overwrite if already existing
         )?;
 
@@ -466,7 +449,7 @@ mod tests {
 
     #[test]
     fn basic_mem() {
-        let ram1 = Mem::new(1024, MemFlags::default());
+        let ram1 = Mem::new("mem", 1024, MemFlags::default());
         let mut bus = Bus::<LittleEndian>::new(logger());
 
         assert_eq!(bus.map_mem(0x04000000, 0x06000000, &ram1).is_ok(), true);
@@ -478,11 +461,11 @@ mod tests {
 
     #[test]
     fn basic_reg() {
-        let reg1 = Reg32::default();
+        let mut reg1 = Reg32::new_basic("reg1");
         reg1.set(0x12345678);
 
         let reg2 = Reg32::new(
-            "",
+            "reg2",
             0x12345678,
             0xffff0000,
             RegFlags::default(),
@@ -512,10 +495,10 @@ mod tests {
 
     #[test]
     fn combiner_le() {
-        let reg1 = Reg32::default();
-        let reg2 = Reg16::default();
-        let reg3 = Reg8::default();
-        let reg4 = Reg8::default();
+        let reg1 = Reg32::new_basic("reg1");
+        let reg2 = Reg16::new_basic("reg2");
+        let reg3 = Reg8::new_basic("reg3");
+        let reg4 = Reg8::new_basic("reg4");
 
         let mut bus = Bus::<LittleEndian>::new(logger());
         assert_eq!(bus.map_reg(0xFF000000, &reg1).is_ok(), true);
@@ -552,10 +535,10 @@ mod tests {
     #[test]
     fn combiner_be() {
         use crate::bus::be::{Reg16, Reg32, Reg8};
-        let reg1 = Reg32::default();
-        let reg2 = Reg16::default();
-        let reg3 = Reg8::default();
-        let reg4 = Reg8::default();
+        let reg1 = Reg32::new_basic("reg1");
+        let reg2 = Reg16::new_basic("reg2");
+        let reg3 = Reg8::new_basic("reg3");
+        let reg4 = Reg8::new_basic("reg4");
 
         let mut bus = Bus::<BigEndian>::new(logger());
 

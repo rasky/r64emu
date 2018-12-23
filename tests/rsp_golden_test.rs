@@ -121,13 +121,13 @@ fn test_golden(testname: &str) {
     let tomlsrc = fs::read_to_string(tomlname).expect("TOML file not found");
     let test: Testsuite = toml::from_str(&tomlsrc).unwrap();
 
-    let (sp, main_bus) = make_sp();
+    let (mut sp, main_bus) = make_sp();
 
     {
         // Load RSP microcode into IMEM
-        let spb = sp.borrow();
+        let mut spb = sp.borrow_mut();
         let rspbin = fs::read(tomlname.with_extension("rsp")).expect("rsp binary not found");
-        spb.imem.buf()[..rspbin.len()].clone_from_slice(&rspbin);
+        spb.imem[..rspbin.len()].clone_from_slice(&rspbin);
     }
 
     // Open golden
@@ -140,13 +140,13 @@ fn test_golden(testname: &str) {
         println!("running test: {}", &t.name);
 
         {
-            let spb = sp.borrow();
+            let mut spb = sp.borrow_mut();
 
             println!("    inputs:");
             test.display_input(t.input.iter());
 
             // Load test input into DMEM
-            for (dst, src) in spb.dmem.buf().chunks_exact_mut(4).zip(t.input.iter()) {
+            for (dst, src) in spb.dmem.chunks_exact_mut(4).zip(t.input.iter()) {
                 BigEndian::write_u32(dst, *src);
             }
         }
@@ -158,8 +158,8 @@ fn test_golden(testname: &str) {
 
         // Emulate the microcode
         {
-            main_bus.borrow().write::<u32>(0x0408_0000, 0); // REG_PC = 0
-            main_bus.borrow().write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
+            main_bus.borrow_mut().write::<u32>(0x0408_0000, 0); // REG_PC = 0
+            main_bus.borrow_mut().write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
             let cpu = sp.borrow().core_cpu.as_ref().unwrap().clone();
             let clock = cpu.borrow().ctx().clock;
             cpu.borrow_mut().run(clock + 1000, &Tracer::null()).unwrap();
@@ -168,7 +168,7 @@ fn test_golden(testname: &str) {
         // Read the results
         {
             let spb = sp.borrow();
-            let outbuf = &spb.dmem.buf()[0x800..0x800 + output_size];
+            let outbuf = &spb.dmem[0x800..0x800 + output_size];
 
             println!("   outputs:");
             test.display_output(outbuf.chunks_exact(4).map(BigEndian::read_u32));

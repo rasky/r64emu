@@ -57,14 +57,13 @@ impl Cartridge {
         Ok(Cartridge {
             drive64_status: Reg32::default(),
             drive64_cmd: Reg32::default(),
-            rom: Mem::from_buffer(romswap(contents), MemFlags::READACCESS),
+            rom: Mem::from_buffer("rom", romswap(contents), MemFlags::READACCESS),
         })
     }
 
     // Detect the CIC model by checksumming the header of the ROM.
     pub fn detect_cic_model(&self) -> Result<CicModel> {
-        let rom = self.rom.buf();
-        match crc32::checksum_ieee(&rom[0x40..0x1000]) {
+        match crc32::checksum_ieee(&self.rom[0x40..0x1000]) {
             0x6170A4A1 => Ok(CicModel::Cic6101),
             0x90BB6CB5 => Ok(CicModel::Cic6102),
             0x0B050EE0 => Ok(CicModel::Cic6103),

@@ -22,6 +22,9 @@ gl = "0.10.0"
 runtime-fmt = "0.3.0"
 rustc-hash = "1.0.1"
 serde = "1.0.82"
+serde_derive = "*"
+futures = "0.1"
+lz4 = "1.23.1"
 
 [dependencies.sdl2]
 version = "^0"

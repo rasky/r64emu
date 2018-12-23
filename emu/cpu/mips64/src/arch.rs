@@ -5,7 +5,7 @@ pub struct ArchII {}
 pub struct ArchI {}
 
 impl Arch for ArchIII {
-    fn has_op(op: &'static str) -> bool {
+    fn has_op(_op: &'static str) -> bool {
         true
     }
 }

@@ -182,7 +182,7 @@ impl N64 {
             CicModel::Cic6105 => 0x91, // zelda
             CicModel::Cic6106 => 0x85, // f-zero x
         };
-        self.bus.borrow().write::<u32>(0x1FC0_07E4, seed << 8);
+        self.bus.borrow_mut().write::<u32>(0x1FC0_07E4, seed << 8);
         Ok(())
     }
 }

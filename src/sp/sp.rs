@@ -304,10 +304,10 @@ impl Sp {
         skip_src: usize,
         skip_dst: usize,
     ) {
-        let bus = self.main_bus.borrow();
+        let mut bus = self.main_bus.borrow_mut();
         for _ in 0..count {
             let src_hwio = bus.fetch_read::<u8>(src);
-            let dst_hwio = bus.fetch_write::<u8>(dst);
+            let mut dst_hwio = bus.fetch_write::<u8>(dst);
             let src_mem = src_hwio.mem().unwrap();
             let dst_mem = dst_hwio.mem().unwrap();
             dst_mem[0..width].copy_from_slice(&src_mem[0..width]);

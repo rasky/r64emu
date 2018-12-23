@@ -167,6 +167,25 @@ impl<T: Clone> RadixTree<T> {
         }
         None
     }
+
+    pub fn lookup_mut(&mut self, mut key: u32) -> Option<&mut T> {
+        let mut nodes = &mut self.nodes;
+        let mut shift = RADIX_FIRST_SHIFT;
+        for i in 0..RADIX_DEPTH {
+            let idx: usize = ((key >> shift) & RADIX_MASK) as usize;
+            match nodes[idx] {
+                Node::Internal(ref mut n) => nodes = &mut n.nodes,
+                Node::Leaf(ref mut t) => return t.as_mut(),
+            }
+            key &= ((1 << shift) - 1) as u32;
+            if i == RADIX_DEPTH - 2 {
+                shift = 0;
+            } else {
+                shift -= RADIX_BITS;
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]

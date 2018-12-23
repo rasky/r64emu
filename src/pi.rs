@@ -93,7 +93,7 @@ impl Pi {
             logger,
             bus,
             mi,
-            rom: Mem::from_buffer(contents, MemFlags::READACCESS),
+            rom: Mem::from_buffer("pif_rom", contents, MemFlags::READACCESS),
             ram: Mem::default(),
             magic: Reg32::default(),
             dma_ram_addr: Reg32::default(),
@@ -129,18 +129,19 @@ impl Pi {
         self.mi.borrow_mut().set_irq_line(IrqMask::PI, false);
     }
 
-    fn cb_write_dma_wr_len(&mut self, _old: u32, val: u32) {
+    fn cb_write_dma_wr_len(&mut self, _old: u32, len: u32) {
         let mut raddr = self.dma_rom_addr.get();
         let mut waddr = self.dma_ram_addr.get();
         info!(self.logger, "DMA xfer"; o!(
             "src(rom)" => raddr.hex(),
             "dst(ram)" => waddr.hex(),
-            "len" => val+1));
+            "len" => len+1));
 
-        let bus = self.bus.borrow();
+        let mut bus = self.bus.borrow_mut();
         let mut i = 0;
-        while i < val + 1 {
-            bus.write::<u32>(waddr, bus.read::<u32>(raddr));
+        while i < len + 1 {
+            let data = bus.read::<u32>(raddr);
+            bus.write::<u32>(waddr, data);
             raddr = raddr + 4;
             waddr = waddr + 4;
             i += 4;

@@ -1,6 +1,5 @@
-use super::{Cp0, CpuContext, DecodedInsn, Exception};
+use super::{CpuContext, DecodedInsn, Exception};
 use emu::bus::be::Bus;
-use emu::bus::MemInt;
 use emu::dbg::{DebuggerRenderer, Result, Tracer};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -67,18 +66,18 @@ pub trait Cop {
         self.set_reg(rt, val as u128);
     }
 
-    fn swc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
+    fn swc(&mut self, op: u32, ctx: &CpuContext, bus: &mut Rc<RefCell<Box<Bus>>>) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
         let val = self.reg(rt) as u32;
-        bus.borrow().write::<u32>(ea & 0x1FFF_FFFC, val);
+        bus.borrow_mut().write::<u32>(ea & 0x1FFF_FFFC, val);
     }
 
-    fn sdc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
+    fn sdc(&mut self, op: u32, ctx: &CpuContext, bus: &mut Rc<RefCell<Box<Bus>>>) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
         let val = self.reg(rt) as u64;
-        bus.borrow().write::<u64>(ea & 0x1FFF_FFFC, val);
+        bus.borrow_mut().write::<u64>(ea & 0x1FFF_FFFC, val);
     }
 
     // Implement some debugger views
@@ -115,12 +114,12 @@ pub trait Cop0: Cop {
 pub struct CopNull {}
 
 impl Cop for CopNull {
-    fn reg(&self, idx: usize) -> u128 {
+    fn reg(&self, _idx: usize) -> u128 {
         0
     }
-    fn set_reg(&mut self, idx: usize, val: u128) {}
+    fn set_reg(&mut self, _idx: usize, _val: u128) {}
 
-    fn op(&mut self, cpu: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()> {
+    fn op(&mut self, _cpu: &mut CpuContext, _opcode: u32, _t: &Tracer) -> Result<()> {
         Ok(())
     }
     fn decode(&self, _opcode: u32, _pc: u64) -> DecodedInsn {
