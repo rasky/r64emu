@@ -1,14 +1,13 @@
-extern crate byteorder;
-extern crate typenum;
-
-use self::byteorder::{BigEndian, ByteOrder, LittleEndian};
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
 #[allow(unused_imports)]
-use self::typenum::{
+use typenum::{
     Unsigned, U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2, U20, U21, U22, U23,
     U24, U25, U26, U27, U28, U29, U3, U30, U31, U4, U5, U6, U7, U8, U9,
 };
-use super::super::bus::MemInt;
+
 use super::{Color, ColorConverter, ColorFormat};
+use crate::memint::MemInt;
+
 use std::marker::PhantomData;
 
 pub struct GfxBuffer<'a, CF: ColorFormat + Sized, O: ByteOrder> {

@@ -1,13 +1,11 @@
-extern crate byteorder;
-extern crate typenum;
-
 #[allow(unused_imports)]
-use self::typenum::{
+use typenum::{
     IsEqual, IsGreaterOrEqual, True, Unsigned, U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18,
     U19, U2, U20, U21, U22, U23, U24, U25, U26, U27, U28, U29, U3, U30, U31, U32, U4, U5, U6, U7,
     U8, U9,
 };
-use super::super::bus::MemInt;
+
+use crate::memint::MemInt;
 use std::fmt;
 use std::marker::PhantomData;
 

@@ -4,7 +4,7 @@ use array_macro::array;
 use bitflags::bitflags;
 use imgui::*;
 
-use crate::bus::{AccessSize, MemInt};
+use crate::memint::{AccessSize, MemInt};
 
 use std::cell::Cell;
 use std::cmp::Ordering;

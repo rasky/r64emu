@@ -1,5 +1,5 @@
 use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW, MemIoR, MemIoW};
-use super::memint::{ByteOrderCombiner, MemInt};
+use crate::memint::{ByteOrderCombiner, MemInt};
 use crate::state::EndianField;
 
 use bitflags::bitflags;

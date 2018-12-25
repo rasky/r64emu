@@ -130,7 +130,7 @@
 //! previously serialized states.
 //!
 
-use crate::bus::{ByteOrderCombiner, MemInt};
+use crate::memint::{ByteOrderCombiner, MemInt};
 
 use futures::*;
 use lz4;

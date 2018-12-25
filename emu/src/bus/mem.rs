@@ -1,5 +1,5 @@
 use super::bus::{unmapped_area_r, unmapped_area_w, HwIoR, HwIoW};
-use super::memint::MemInt;
+use crate::memint::MemInt;
 use crate::state::ArrayField;
 
 use bitflags::bitflags;

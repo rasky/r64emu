@@ -1,5 +1,5 @@
 use super::bus::Bus;
-use super::memint::ByteOrderCombiner;
+use crate::memint::ByteOrderCombiner;
 use hashbrown::HashMap;
 use std::any::Any;
 use std::cell::{Ref, RefCell, RefMut};

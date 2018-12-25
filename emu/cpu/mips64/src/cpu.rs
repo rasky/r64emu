@@ -3,9 +3,9 @@ use super::mmu::Mmu;
 use super::{Arch, Config, Cop, Cop0};
 
 use emu::bus::be::{Bus, MemIoR};
-use emu::bus::MemInt;
 use emu::dbg::{DebuggerRenderer, DisasmView, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
+use emu::memint::MemInt;
 use emu::sync;
 
 use byteorder::ByteOrder;

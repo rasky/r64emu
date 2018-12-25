@@ -1,8 +1,8 @@
 use super::device::{DevPtr, Device};
 use super::mem::Mem;
-use super::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use super::radix::RadixTree;
 use super::regs::Reg;
+use crate::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use crate::state::ArrayField;
 
 use byteorder::ByteOrder;

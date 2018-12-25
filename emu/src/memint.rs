@@ -1,8 +1,23 @@
+//! A module to simplify writing generic code parametrized on different memory
+//! access sizes (8, 16, 32, 64 bits).
+//!
+//! Many CPUs can access their bus with different access sizes (from 8 to 64 bits).
+//! While writing emulators, it is common to write code that is similar between
+//! access sizes. This module defines a [`MemInt`](trait.MemInt.html) trait
+//! that is useful to write generic code in Rust that takes memory access size
+//! as generic parameter.
+
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use enum_map::Enum;
 use num::PrimInt;
 use serde::{Deserialize, Serialize};
 
+/// An enum that defines the four supported access sizes. This is exposed
+/// through the associated constant `ACCESS_SIZE` in
+/// [`MemInt`](trait.MemInt.html). This enum is also using the `enum_map` crate,
+/// so that it can be used in a very efficient [`EnumMap`](struct.EnumMap.html)
+/// (which boils down to a 4-element array) in case there is a need for a
+/// runtime data structure indexed by access size.
 #[derive(Debug, Enum, Copy, Clone)]
 pub enum AccessSize {
     Size8,
@@ -11,14 +26,49 @@ pub enum AccessSize {
     Size64,
 }
 
+/// MemInt is a trait that exposes useful methods for writing generic code
+/// that is parametrized on access size. See module-level documentation for more
+/// information.
+///
+/// MemInt is implemented for: `u8`, `u16`, `u32`, `u64`.
 pub trait MemInt: PrimInt + Into<u64> + Default + Serialize + Deserialize<'static> {
+    /// `Half` is an associated type that holds the integer type whose size is
+    /// half of the current one. For instance, `u32::Half` is `u16`. Notice that
+    /// `u8::Half` is still `u8`, which is an approximation because there's no
+    /// way to represent a 4-bit integer.
     type Half: MemInt + Into<Self>;
+
+    /// `SIZE` is an associated constant that holds the size in bytes of the integer.
+    /// For instance, `u16::SIZE` is 2.
     const SIZE: usize = ::std::mem::size_of::<Self>();
+
+    /// `SIZE_LOG` is the log2 of SIZE.
     const SIZE_LOG: usize;
+
+    /// `ACCESS_SIZE` is an associated constant of [`enum
+    /// AccessSize`](enum.AccessSize.html) type, that can be used together with
+    /// an `EnumMap` to create a runtime data structure indexed by memory access
+    /// size.
     const ACCESS_SIZE: AccessSize;
+
+    /// Convert a `u64` into the current type, truncating the value. Notice that
+    /// you can use the `Into` trait to do the opposite operation, as `MemInt`
+    /// requires `Into<u64>`.
     fn truncate_from(v: u64) -> Self;
+
+    /// Read an integer from a memory buffer with the specified `ByteOrder`
+    /// (endianess).
     fn endian_read_from<O: ByteOrder>(buf: &[u8]) -> Self;
+
+    /// Write an integer to a memory buffer with the specified `ByteOrder`
+    /// (endianess).
     fn endian_write_to<O: ByteOrder>(buf: &mut [u8], val: Self);
+
+    /// Create an integer composing two halves (low part and high part). The
+    /// specified `ByteOrderCombiner` (endianess) commands how the combination
+    /// works: if `LittleEndian`, `before` is the low part, and `after` is the
+    /// high part; if `BigEndian`, `before` is the hi part, and `after` is the
+    /// low part.
     fn from_halves<O: ByteOrderCombiner>(before: Self::Half, after: Self::Half) -> Self;
 }
 
@@ -110,11 +160,22 @@ impl MemInt for u64 {
     }
 }
 
+/// `ByteOrderCombiner` is a trait that extends `ByteOrder`, providing additional
+/// functionalities not implemented by the `byteorder` crate. It is implemented
+/// for both `LittleEndian` and `BigEndian`.
 pub trait ByteOrderCombiner: ByteOrder {
+    /// Convert a [`MemInt`](trait.MemInt.html) integer to native byte order.
     fn to_native<U: MemInt>(val: U) -> U;
+
+    /// Combine two 32-bit halves into a 64-bit integer.
     fn combine64(before: u32, after: u32) -> u64;
+
+    /// Combine two 16-bit halves into a 32-bit integer.
     fn combine32(before: u16, after: u16) -> u32;
+
+    /// Combine two 8-bit halves into a 16-bit integer.
     fn combine16(before: u8, after: u8) -> u16;
+
     fn subint_mask<U, S>(off: usize) -> (U, usize)
     where
         U: MemInt,
