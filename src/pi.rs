@@ -1,13 +1,13 @@
 extern crate emu;
 extern crate slog;
 use super::mi::{IrqMask, Mi};
+use super::n64::R4300;
 use crate::errors::*;
-use emu::bus::be::{Bus, DevPtr, Mem, MemFlags, Reg32};
+use emu::bus::be::{DevPtr, Mem, MemFlags, Reg32};
+use emu::bus::DeviceGetter;
 use emu::int::Numerics;
-use std::cell::RefCell;
 use std::fs::File;
 use std::io::Read;
-use std::rc::Rc;
 
 #[derive(DeviceBE)]
 pub struct Pi {
@@ -75,23 +75,16 @@ pub struct Pi {
     dom2_release: Reg32,
 
     logger: slog::Logger,
-    bus: Rc<RefCell<Box<Bus>>>,
     mi: DevPtr<Mi>,
 }
 
 impl Pi {
-    pub fn new(
-        logger: slog::Logger,
-        bus: Rc<RefCell<Box<Bus>>>,
-        mi: DevPtr<Mi>,
-        pifrom: &str,
-    ) -> Result<Pi> {
+    pub fn new(logger: slog::Logger, mi: DevPtr<Mi>, pifrom: &str) -> Result<Pi> {
         let mut contents = vec![];
         File::open(pifrom)?.read_to_end(&mut contents)?;
 
         Ok(Pi {
             logger,
-            bus,
             mi,
             rom: Mem::from_buffer("pif_rom", contents, MemFlags::READACCESS),
             ram: Mem::default(),
@@ -137,7 +130,7 @@ impl Pi {
             "dst(ram)" => waddr.hex(),
             "len" => len+1));
 
-        let mut bus = self.bus.borrow_mut();
+        let bus = &mut R4300::get_mut().bus;
         let mut i = 0;
         while i < len + 1 {
             let data = bus.read::<u32>(raddr);
@@ -159,7 +152,7 @@ impl Pi {
             "dst(rom)" => waddr.hex(),
             "len" => val+1));
 
-        let bus = self.bus.borrow();
+        let bus = &mut R4300::get_mut().bus;
         let mut i = 0;
         while i < val + 1 {
             let v = bus.read::<u32>(raddr);

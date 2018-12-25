@@ -1,16 +1,17 @@
-extern crate emu;
-extern crate slog;
-
 use super::super::dp::Dp;
 use super::super::mi::{IrqMask, Mi};
+use super::super::n64::R4300;
 use super::cop0::SpCop0;
 use super::cop2::SpCop2;
 use crate::errors::*;
 use emu::bus::be::{Bus, DevPtr, Mem, Reg32};
+use emu::bus::{CurrentDeviceMap, DeviceGetter, DeviceWithTag};
 use emu::int::Numerics;
 use mips64;
-use std::cell::RefCell;
-use std::rc::Rc;
+
+use slog;
+use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
 
 bitflags! {
     pub(crate) struct StatusFlags: u32 {
@@ -48,13 +49,31 @@ impl mips64::Config for RSPCPUConfig {
     }
 }
 
-pub type RSPCPU = mips64::Cpu<RSPCPUConfig>;
+pub struct RSPCPU {
+    cpu: mips64::Cpu<RSPCPUConfig>,
+}
+
+impl Deref for RSPCPU {
+    type Target = mips64::Cpu<RSPCPUConfig>;
+    fn deref(&self) -> &Self::Target {
+        &self.cpu
+    }
+}
+
+impl DerefMut for RSPCPU {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.cpu
+    }
+}
+
+impl DeviceWithTag for RSPCPU {
+    fn tag() -> &'static str {
+        "RSP_CPU"
+    }
+}
 
 #[derive(DeviceBE)]
 pub struct Sp {
-    pub core_cpu: Option<Rc<RefCell<Box<RSPCPU>>>>, // FIXME: remove after DevPtr refactoring
-    pub core_bus: Rc<RefCell<Box<Bus>>>,
-
     #[mem(bank = 0, offset = 0x0000, size = 4096)]
     pub dmem: Mem,
 
@@ -90,22 +109,14 @@ pub struct Sp {
 
     logger: slog::Logger,
 
-    main_bus: Rc<RefCell<Box<Bus>>>,
     pub(crate) mi: DevPtr<Mi>,
 }
 
 impl Sp {
-    pub fn new(
-        logger: slog::Logger,
-        main_bus: Rc<RefCell<Box<Bus>>>,
-        dp: &DevPtr<Dp>,
-        mi: DevPtr<Mi>,
-    ) -> Result<DevPtr<Sp>> {
+    pub fn new(logger: slog::Logger, dp: &DevPtr<Dp>, mi: DevPtr<Mi>) -> Result<DevPtr<Sp>> {
         // Create the RSP internal MIPS CPU and its associated bus
-        let bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
         let mut sp = DevPtr::new(Sp {
             logger: logger.new(o!()),
-            main_bus,
             mi,
             dmem: Mem::default(),
             imem: Mem::default(),
@@ -118,35 +129,27 @@ impl Sp {
             reg_rsp_pc: Reg32::default(),
             reg_dma_full: Reg32::default(),
             reg_semaphore: Reg32::default(),
-
-            core_bus: bus.clone(),
-            core_cpu: None,
         });
 
-        let cpu = Rc::new(RefCell::new(Box::new(mips64::Cpu::new(
-            "RSP",
-            logger.new(o!()),
-            bus.clone(),
-            (
-                SpCop0::new(&sp, dp, logger.new(o!()))?,
-                mips64::CopNull {},
-                SpCop2::new(&sp, logger.new(o!()))?,
-                mips64::CopNull {},
+        let bus = Bus::new(logger.new(o!()));
+
+        let mut cpu = Pin::new(Box::new(RSPCPU {
+            cpu: mips64::Cpu::new(
+                "RSP",
+                logger.new(o!()),
+                bus,
+                (
+                    SpCop0::new(&sp, dp, logger.new(o!()))?,
+                    mips64::CopNull {},
+                    SpCop2::new(&sp, logger.new(o!()))?,
+                    mips64::CopNull {},
+                ),
             ),
-        ))));
+        }));
 
-        {
-            // Set the CPU into SP.
-            // FIXME: remove this once we remove the reference check and thus the Option
-            let mut spb = sp.borrow_mut();
-            spb.core_cpu = Some(cpu);
-        }
+        cpu.bus.map_device(0x0000_0000, &sp, 0)?;
 
-        {
-            // Configure RSP internal core bus
-            let mut bus = bus.borrow_mut();
-            bus.map_device(0x0000_0000, &sp, 0)?;
-        }
+        CurrentDeviceMap().register(cpu);
 
         Ok(sp)
     }
@@ -159,7 +162,7 @@ impl Sp {
         self.reg_status.set(old); // restore previous value, as write bits are completely different
         let change_halt = self.write_status(new);
 
-        let mut cpu = self.core_cpu.as_ref().unwrap().borrow_mut();
+        let mut cpu = RSPCPU::get_mut();
         match change_halt {
             Some(halt) => cpu.ctx_mut().set_halt_line(halt),
             None => {}
@@ -304,7 +307,7 @@ impl Sp {
         skip_src: usize,
         skip_dst: usize,
     ) {
-        let mut bus = self.main_bus.borrow_mut();
+        let mut bus = &mut R4300::get_mut().bus;
         for _ in 0..count {
             let src_hwio = bus.fetch_read::<u8>(src);
             let mut dst_hwio = bus.fetch_write::<u8>(dst);
@@ -362,15 +365,10 @@ impl Sp {
 
     fn cb_write_reg_rsp_pc(&self, _old: u32, val: u32) {
         info!(self.logger, "RSP set PC"; o!("pc" => val.hex()));
-        self.core_cpu
-            .as_ref()
-            .unwrap()
-            .borrow_mut()
-            .ctx_mut()
-            .set_pc(val as u64);
+        RSPCPU::get_mut().ctx_mut().set_pc(val as u64);
     }
 
     fn cb_read_reg_rsp_pc(&self, _old: u32) -> u32 {
-        self.core_cpu.as_ref().unwrap().borrow().ctx().get_pc() as u32 & 0xFFF
+        RSPCPU::get().ctx().get_pc() as u32 & 0xFFF
     }
 }

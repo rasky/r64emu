@@ -3,10 +3,10 @@ use emu::gfx::*;
 use emu::int::Numerics;
 
 use super::mi::{IrqMask, Mi};
+use super::n64::R4300;
+use emu::bus::DeviceGetter;
 
 use slog;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 #[derive(DeviceBE)]
 pub struct Vi {
@@ -99,13 +99,12 @@ pub struct Vi {
     y_scale: Reg32,
 
     logger: slog::Logger,
-    bus: Rc<RefCell<Box<Bus>>>,
     framecount: usize,
     mi: DevPtr<Mi>,
 }
 
 impl Vi {
-    pub fn new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>, mi: DevPtr<Mi>) -> Vi {
+    pub fn new(logger: slog::Logger, mi: DevPtr<Mi>) -> Vi {
         Vi {
             status: Reg32::default(),
             origin: Reg32::default(),
@@ -122,7 +121,6 @@ impl Vi {
             x_scale: Reg32::default(),
             y_scale: Reg32::default(),
             logger,
-            bus,
             mi,
             framecount: 0,
         }
@@ -166,7 +164,7 @@ impl Vi {
         }
 
         info!(self.logger, "draw frame"; o!("origin" => self.origin.get().hex()));
-        let memio = self.bus.borrow().fetch_read::<u8>(self.origin.get());
+        let memio = R4300::get().bus.fetch_read::<u8>(self.origin.get());
         let src = memio.mem().unwrap();
 
         match self.width.get() {

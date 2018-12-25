@@ -2,8 +2,10 @@ extern crate bit_field;
 extern crate byteorder;
 extern crate emu;
 extern crate slog;
+use super::n64::R4300;
 use super::rdp::Rdp;
 use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
+use emu::bus::DeviceGetter;
 use emu::dbg;
 use emu::int::Numerics;
 use emu::sync;
@@ -51,7 +53,6 @@ pub struct Dp {
     cmd_status: Reg32,
 
     logger: slog::Logger,
-    main_bus: Rc<RefCell<Box<Bus>>>,
 
     fetched_mem: MemIoR<u64>,
     fetched_start_addr: u32,
@@ -63,7 +64,7 @@ pub struct Dp {
 }
 
 impl Dp {
-    pub fn new(logger: slog::Logger, main_bus: Rc<RefCell<Box<Bus>>>) -> Dp {
+    pub fn new(logger: slog::Logger) -> Dp {
         let gfx_logger = logger.new(o!());
         Dp {
             cmd_start: Reg32::default(),
@@ -71,13 +72,12 @@ impl Dp {
             cmd_current: Reg32::default(),
             cmd_status: Reg32::default(),
             logger,
-            main_bus: main_bus.clone(),
             cycles: 0,
             running: false,
             fetched_mem: MemIoR::default(),
             fetched_start_addr: 0,
             fetched_end_addr: 0,
-            gfx: Box::new(Rdp::new(gfx_logger, main_bus.clone())),
+            gfx: Box::new(Rdp::new(gfx_logger)),
         }
     }
 
@@ -119,7 +119,7 @@ impl Dp {
             let start = self.cmd_start.get();
             *self.cmd_current_ref() = start;
             self.fetched_start_addr = start;
-            self.fetched_mem = self.main_bus.borrow().fetch_read::<u64>(start);
+            self.fetched_mem = R4300::get().bus.fetch_read::<u64>(start);
             if self.fetched_mem.iter().is_none() {
                 error!(self.logger, "cmd buffer pointing to non-linear memory"; o!("ptr" => start.hex()));
             }

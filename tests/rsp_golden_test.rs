@@ -1,3 +1,5 @@
+#![feature(pin)]
+
 #[macro_use]
 extern crate slog;
 #[macro_use]
@@ -10,37 +12,37 @@ extern crate toml;
 
 use byteorder::{BigEndian, ByteOrder};
 use emu::bus::be::{Bus, DevPtr};
+use emu::bus::{CurrentDeviceMap, DeviceGetter};
 use emu::dbg::Tracer;
 use r64emu::dp::Dp;
 use r64emu::mi::Mi;
-use r64emu::r4300_new;
-use r64emu::sp::Sp;
+use r64emu::sp::{Sp, RSPCPU};
+use r64emu::R4300;
 use slog::Discard;
 use std::borrow;
-use std::cell::RefCell;
 use std::env;
 use std::fs;
 use std::iter::Iterator;
 use std::path::Path;
-use std::rc::Rc;
+use std::pin::Pin;
 
-fn make_sp() -> (DevPtr<Sp>, Rc<RefCell<Box<Bus>>>) {
+fn make_sp() -> DevPtr<Sp> {
     let logger = slog::Logger::root(Discard, o!());
-    let main_bus = Rc::new(RefCell::new(Bus::new(logger.new(o!()))));
-    let main_cpu = Rc::new(RefCell::new(Box::new(r4300_new(
-        logger.new(o!()),
-        main_bus.clone(),
-    ))));
+    let main_bus = Bus::new(logger.new(o!()));
+    let main_cpu = Pin::new(Box::new(R4300::new(logger.new(o!()), main_bus)));
+    CurrentDeviceMap().register(main_cpu);
+
     let mi = DevPtr::new(Mi::new(logger.new(o!())));
-    let dp = DevPtr::new(Dp::new(logger.new(o!()), main_bus.clone()));
-    let sp = Sp::new(logger.new(o!()), main_bus.clone(), &dp, mi.clone()).unwrap();
+    let dp = DevPtr::new(Dp::new(logger.new(o!())));
+    let sp = Sp::new(logger.new(o!()), &dp, mi.clone()).unwrap();
     {
-        let mut bus = main_bus.borrow_mut();
+        let bus = &mut R4300::get_mut().bus;
         bus.map_device(0x0400_0000, &sp, 0).unwrap();
         bus.map_device(0x0404_0000, &sp, 1).unwrap();
         bus.map_device(0x0408_0000, &sp, 2).unwrap();
     }
-    (sp, main_bus)
+
+    sp
 }
 
 #[allow(dead_code)]
@@ -121,7 +123,7 @@ fn test_golden(testname: &str) {
     let tomlsrc = fs::read_to_string(tomlname).expect("TOML file not found");
     let test: Testsuite = toml::from_str(&tomlsrc).unwrap();
 
-    let (mut sp, main_bus) = make_sp();
+    let mut sp = make_sp();
 
     {
         // Load RSP microcode into IMEM
@@ -158,11 +160,13 @@ fn test_golden(testname: &str) {
 
         // Emulate the microcode
         {
-            main_bus.borrow_mut().write::<u32>(0x0408_0000, 0); // REG_PC = 0
-            main_bus.borrow_mut().write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
-            let cpu = sp.borrow().core_cpu.as_ref().unwrap().clone();
-            let clock = cpu.borrow().ctx().clock;
-            cpu.borrow_mut().run(clock + 1000, &Tracer::null()).unwrap();
+            let main_bus = &mut R4300::get_mut().bus;
+            main_bus.write::<u32>(0x0408_0000, 0); // REG_PC = 0
+            main_bus.write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
+
+            let cpu = RSPCPU::get_mut();
+            let clock = cpu.ctx().clock;
+            cpu.run(clock + 1000, &Tracer::null()).unwrap();
         }
 
         // Read the results

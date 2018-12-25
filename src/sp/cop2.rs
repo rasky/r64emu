@@ -821,7 +821,7 @@ impl Cop for SpCop2 {
         unsafe { self.uop(cpu, op, t) }
     }
 
-    fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
+    fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Bus) {
         let mut sp = self.sp.borrow_mut();
         let dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
@@ -871,7 +871,7 @@ impl Cop for SpCop2 {
             _ => panic!("unimplemented VU load opcode={}", op.hex()),
         }
     }
-    fn swc(&mut self, op: u32, ctx: &CpuContext, _bus: &mut Rc<RefCell<Box<Bus>>>) {
+    fn swc(&mut self, op: u32, ctx: &CpuContext, _bus: &mut Bus) {
         let mut sp = self.sp.borrow_mut();
         let mut dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
@@ -939,10 +939,10 @@ impl Cop for SpCop2 {
         }
     }
 
-    fn ldc(&mut self, _op: u32, _ctx: &CpuContext, _bus: &Rc<RefCell<Box<Bus>>>) {
+    fn ldc(&mut self, _op: u32, _ctx: &CpuContext, _bus: &Bus) {
         unimplemented!()
     }
-    fn sdc(&mut self, _op: u32, _ctx: &CpuContext, _bus: &mut Rc<RefCell<Box<Bus>>>) {
+    fn sdc(&mut self, _op: u32, _ctx: &CpuContext, _bus: &mut Bus) {
         unimplemented!()
     }
     fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {

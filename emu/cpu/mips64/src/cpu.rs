@@ -59,6 +59,7 @@ pub struct CpuContext {
 }
 
 pub struct Cpu<C: Config> {
+    pub bus: Box<Bus>,
     ctx: CpuContext,
 
     cop0: Rc<RefCell<Box<C::Cop0>>>,
@@ -68,7 +69,6 @@ pub struct Cpu<C: Config> {
 
     name: String,
     logger: slog::Logger,
-    bus: Rc<RefCell<Box<Bus>>>,
     until: i64,
 
     last_fetch_addr: u32,
@@ -251,7 +251,7 @@ impl<C: Config> Cpu<C> {
     pub fn new(
         name: &str,
         logger: slog::Logger,
-        bus: Rc<RefCell<Box<Bus>>>,
+        bus: Box<Bus>,
         cops: (C::Cop0, C::Cop1, C::Cop2, C::Cop3),
     ) -> Self {
         let mut cpu = Cpu {
@@ -536,7 +536,7 @@ impl<C: Config> Cpu<C> {
         let addr = C::pc_mask(addr as u32);
         if self.last_fetch_addr != addr {
             self.last_fetch_addr = addr;
-            self.last_fetch_mem = self.bus.borrow().fetch_read::<u32>(addr as u32);
+            self.last_fetch_mem = self.bus.fetch_read::<u32>(addr as u32);
         }
         self.last_fetch_mem.clone()
     }
@@ -544,7 +544,6 @@ impl<C: Config> Cpu<C> {
     fn read<U: MemInt>(&self, addr: u32, t: &Tracer) -> Result<U> {
         let val = self
             .bus
-            .borrow()
             .read::<U>(C::addr_mask(addr) & !(U::SIZE as u32 - 1));
         t.trace_mem_read(&self.name, addr.into(), U::ACCESS_SIZE, val.into())?;
         Ok(val)
@@ -552,7 +551,6 @@ impl<C: Config> Cpu<C> {
 
     fn write<U: MemInt>(&mut self, addr: u32, val: U, t: &Tracer) -> Result<()> {
         self.bus
-            .borrow_mut()
             .write::<U>(C::addr_mask(addr) & !(U::SIZE as u32 - 1), val);
         t.trace_mem_write(&self.name, addr.into(), U::ACCESS_SIZE, val.into())
     }
@@ -702,7 +700,6 @@ impl<C: Config> DisasmView for Cpu<C> {
         while pc < pc_range.1 as u32 {
             let mem = self
                 .bus
-                .borrow()
                 .fetch_read_nolog::<u32>(C::pc_mask(pc.into()) as u32);
 
             let iter = mem.iter();

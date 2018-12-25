@@ -4,7 +4,8 @@ extern crate emu;
 extern crate slog;
 use self::bit_field::BitField;
 use self::byteorder::{BigEndian, LittleEndian};
-use self::emu::bus::be::Bus;
+use self::emu::bus::DeviceGetter;
+use super::super::n64::R4300;
 use super::pipeline::PixelPipeline;
 use super::raster::{draw_rect, fill_rect, fill_rect_pp, DpRenderState};
 use super::{CycleMode, DpColorFormat};
@@ -12,9 +13,7 @@ use emu::fp::formats::*;
 use emu::fp::Q;
 use emu::gfx::*;
 use emu::int::Numerics;
-use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 #[derive(Copy, Clone, Default, Debug)]
 struct TileDescriptor {
@@ -47,7 +46,6 @@ impl ImageFormat {
 
 pub struct Rdp {
     logger: slog::Logger,
-    main_bus: Rc<RefCell<Box<Bus>>>,
     tmem: Box<[u8]>,
     clip: Rect<I30F2>,
     fb: ImageFormat,
@@ -63,12 +61,11 @@ pub struct Rdp {
 }
 
 impl Rdp {
-    pub fn new(logger: slog::Logger, main_bus: Rc<RefCell<Box<Bus>>>) -> Rdp {
+    pub fn new(logger: slog::Logger) -> Rdp {
         let mut tmem = Vec::new();
         tmem.resize(4096, 0);
         Rdp {
             logger: logger,
-            main_bus: main_bus,
             tmem: tmem.into_boxed_slice(),
             clip: Rect::default(),
             fb: ImageFormat::default(),
@@ -92,9 +89,8 @@ impl Rdp {
     }
 
     fn framebuffer<'s, 'r: 's>(&'s self) -> (&'r mut [u8], usize, usize, usize) {
-        let fb_mem = self
-            .main_bus
-            .borrow_mut()
+        let fb_mem = R4300::get_mut()
+            .bus
             .fetch_write::<u8>(self.fb.dram_addr)
             .mem()
             .unwrap();
@@ -187,10 +183,7 @@ impl Rdp {
                     tmem_pitch,
                 );
 
-                let mut fb_writer = self
-                    .main_bus
-                    .borrow_mut()
-                    .fetch_write::<u8>(self.fb.dram_addr);
+                let mut fb_writer = R4300::get_mut().bus.fetch_write::<u8>(self.fb.dram_addr);
                 let fb_mem = fb_writer.mem().unwrap();
                 let dst = (fb_mem, 320, 240, self.fb.pitch());
 
@@ -226,7 +219,7 @@ impl Rdp {
 
                 let tmem_addr = self.tiles[tile].tmem_addr as usize;
                 let tmem_pitch = self.tiles[tile].pitch;
-                let tex_reader = self.main_bus.borrow().fetch_read::<u8>(self.tex.dram_addr);
+                let tex_reader = R4300::get().bus.fetch_read::<u8>(self.tex.dram_addr);
                 let tex_mem = tex_reader.mem().unwrap();
                 let width = rect.width().floor() as usize + 1;
                 let height = rect.height().floor() as usize + 1;

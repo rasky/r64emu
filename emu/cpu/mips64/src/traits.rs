@@ -52,32 +52,32 @@ pub trait Cop {
         DecodedInsn::new0("unkcop")
     }
 
-    fn lwc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
+    fn lwc(&mut self, op: u32, ctx: &CpuContext, bus: &Bus) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
-        let val = bus.borrow().read::<u32>(ea & 0x1FFF_FFFC) as u64;
+        let val = bus.read::<u32>(ea & 0x1FFF_FFFC) as u64;
         self.set_reg(rt, val as u128);
     }
 
-    fn ldc(&mut self, op: u32, ctx: &CpuContext, bus: &Rc<RefCell<Box<Bus>>>) {
+    fn ldc(&mut self, op: u32, ctx: &CpuContext, bus: &Bus) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
-        let val = bus.borrow().read::<u64>(ea & 0x1FFF_FFFC) as u64;
+        let val = bus.read::<u64>(ea & 0x1FFF_FFFC) as u64;
         self.set_reg(rt, val as u128);
     }
 
-    fn swc(&mut self, op: u32, ctx: &CpuContext, bus: &mut Rc<RefCell<Box<Bus>>>) {
+    fn swc(&mut self, op: u32, ctx: &CpuContext, bus: &mut Bus) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
         let val = self.reg(rt) as u32;
-        bus.borrow_mut().write::<u32>(ea & 0x1FFF_FFFC, val);
+        bus.write::<u32>(ea & 0x1FFF_FFFC, val);
     }
 
-    fn sdc(&mut self, op: u32, ctx: &CpuContext, bus: &mut Rc<RefCell<Box<Bus>>>) {
+    fn sdc(&mut self, op: u32, ctx: &CpuContext, bus: &mut Bus) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
         let val = self.reg(rt) as u64;
-        bus.borrow_mut().write::<u64>(ea & 0x1FFF_FFFC, val);
+        bus.write::<u64>(ea & 0x1FFF_FFFC, val);
     }
 
     // Implement some debugger views
