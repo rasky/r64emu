@@ -11,9 +11,6 @@ use emu::sync;
 use byteorder::ByteOrder;
 use slog;
 
-use std::cell::{Ref, RefCell, RefMut};
-use std::rc::Rc;
-
 #[derive(Copy, Clone, Debug)]
 pub enum Exception {
     Interrupt,  // Interrupt
@@ -60,12 +57,12 @@ pub struct CpuContext {
 
 pub struct Cpu<C: Config> {
     pub bus: Box<Bus>,
-    ctx: CpuContext,
+    pub cop0: C::Cop0,
+    pub cop1: C::Cop1,
+    pub cop2: C::Cop2,
+    pub cop3: C::Cop3,
 
-    cop0: Rc<RefCell<Box<C::Cop0>>>,
-    cop1: C::Cop1,
-    cop2: C::Cop2,
-    cop3: C::Cop3,
+    ctx: CpuContext,
 
     name: String,
     logger: slog::Logger,
@@ -219,20 +216,6 @@ macro_rules! check_overflow_sub {
     }};
 }
 
-macro_rules! if_cop0 {
-    ($op:ident, $cop:ident, $do:expr) => {{
-        if !$op.cpu.cop0.borrow().is_null_obj() {
-            let mut $cop = $op.cpu.$cop.borrow_mut();
-            $do
-        } else {
-            let pc = $op.cpu.ctx.pc;
-            let opcode = $op.opcode;
-            warn!($op.cpu.logger, "COP opcode without COP";
-                "pc" => pc.hex(), "op" => opcode.hex());
-        }
-    }};
-}
-
 macro_rules! if_cop {
     ($op:ident, $cop:ident, $do:expr) => {{
         if !$op.cpu.$cop.is_null_obj() {
@@ -258,7 +241,7 @@ impl<C: Config> Cpu<C> {
             ctx: CpuContext::default(),
             bus: bus,
             name: name.into(),
-            cop0: Rc::new(RefCell::new(Box::new(cops.0))),
+            cop0: cops.0,
             cop1: cops.1,
             cop2: cops.2,
             cop3: cops.3,
@@ -279,42 +262,12 @@ impl<C: Config> Cpu<C> {
         &mut self.ctx
     }
 
-    pub fn cop0(&self) -> Ref<Box<C::Cop0>> {
-        self.cop0.borrow()
-    }
-    pub fn cop1(&self) -> &C::Cop1 {
-        &self.cop1
-    }
-    pub fn cop2(&self) -> &C::Cop2 {
-        &self.cop2
-    }
-    pub fn cop3(&self) -> &C::Cop3 {
-        &self.cop3
-    }
-
-    pub fn cop0_mut(&mut self) -> RefMut<Box<C::Cop0>> {
-        self.cop0.borrow_mut()
-    }
-    pub fn cop1_mut(&mut self) -> &mut C::Cop1 {
-        &mut self.cop1
-    }
-    pub fn cop2_mut(&mut self) -> &mut C::Cop2 {
-        &mut self.cop2
-    }
-    pub fn cop3_mut(&mut self) -> &mut C::Cop3 {
-        &mut self.cop3
-    }
-
-    pub fn cop0_clone(&self) -> Rc<RefCell<Box<C::Cop0>>> {
-        self.cop0.clone()
-    }
-
     pub fn reset(&mut self) {
         self.exception(Exception::SoftReset);
     }
 
     fn exception(&mut self, exc: Exception) {
-        self.cop0.borrow_mut().exception(&mut self.ctx, exc);
+        self.cop0.exception(&mut self.ctx, exc);
     }
 
     fn trap_overflow(&mut self) {
@@ -451,16 +404,16 @@ impl<C: Config> Cpu<C> {
             0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),      // XORI
             0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(), // LUI
 
-            0x10 => if_cop0!(op, cop0, { return cop0.op(&mut op.cpu.ctx, opcode, t) }), // COP0
-            0x11 => if_cop!(op, cop1, { return cop1.op(&mut op.cpu.ctx, opcode, t) }),  // COP1
-            0x12 => if_cop!(op, cop2, { return cop2.op(&mut op.cpu.ctx, opcode, t) }),  // COP2
-            0x13 => if_cop!(op, cop3, { return cop3.op(&mut op.cpu.ctx, opcode, t) }),  // COP3
-            0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)),       // BEQL
-            0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)),       // BNEL
-            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)),              // BLEZL
-            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),               // BGTZL
-            0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()),     // DADDI
-            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,                   // DADDIU
+            0x10 => if_cop!(op, cop0, { return cop0.op(&mut op.cpu.ctx, opcode, t) }), // COP0
+            0x11 => if_cop!(op, cop1, { return cop1.op(&mut op.cpu.ctx, opcode, t) }), // COP1
+            0x12 => if_cop!(op, cop2, { return cop2.op(&mut op.cpu.ctx, opcode, t) }), // COP2
+            0x13 => if_cop!(op, cop3, { return cop3.op(&mut op.cpu.ctx, opcode, t) }), // COP3
+            0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)),      // BEQL
+            0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)),      // BNEL
+            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)),             // BLEZL
+            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),              // BGTZL
+            0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()),    // DADDI
+            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,                  // DADDIU
 
             0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)?.sx64(), // LB
             0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)?.sx64(), // LH
@@ -563,12 +516,9 @@ impl<C: Config> Cpu<C> {
                 return Ok(());
             }
 
-            {
-                let mut cop0 = self.cop0.borrow_mut();
-                if cop0.pending_int() {
-                    cop0.exception(&mut self.ctx, Exception::Interrupt);
-                    continue;
-                }
+            if self.cop0.pending_int() {
+                self.cop0.exception(&mut self.ctx, Exception::Interrupt);
+                continue;
             }
 
             let mem = self.fetch(self.ctx.pc);
@@ -620,8 +570,8 @@ impl<C: Config> Cpu<C> {
         dr.render_disasmview(self);
         dr.render_regview(self);
 
-        if !self.cop0().is_null_obj() {
-            self.cop0_mut().render_debug(dr);
+        if !self.cop0.is_null_obj() {
+            self.cop0.render_debug(dr);
         }
         if !self.cop1.is_null_obj() {
             self.cop1.render_debug(dr);

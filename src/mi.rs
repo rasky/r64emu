@@ -30,7 +30,6 @@ pub struct Mi {
     irq_mask: Reg32,
 
     logger: slog::Logger,
-    cop0: Rc<RefCell<Box<mips64::Cp0>>>,
 }
 
 impl Mi {
@@ -39,7 +38,6 @@ impl Mi {
             irq_ack: Reg32::default(),
             irq_mask: Reg32::default(),
             logger,
-            cop0: R4300::get().cop0_clone(),
         }
     }
 
@@ -57,9 +55,9 @@ impl Mi {
             // FIXME: this reentrancy will eventually panic (CPU -> BUS -> Device -> CPU).
             // Find out a way to fix this.
             if new != 0 {
-                self.cop0.borrow_mut().set_hwint_line(0, true);
+                R4300::get_mut().cop0.set_hwint_line(0, true);
             } else {
-                self.cop0.borrow_mut().set_hwint_line(0, false);
+                R4300::get_mut().cop0.set_hwint_line(0, false);
             }
         }
     }
