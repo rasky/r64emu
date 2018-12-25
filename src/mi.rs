@@ -1,5 +1,6 @@
 use super::n64::R4300;
 use emu::bus::be::Reg32;
+use emu::bus::DeviceGetter;
 use mips64::Cop0;
 
 use bit_field::BitField;
@@ -33,12 +34,12 @@ pub struct Mi {
 }
 
 impl Mi {
-    pub fn new(logger: slog::Logger, cpu: Rc<RefCell<Box<R4300>>>) -> Mi {
+    pub fn new(logger: slog::Logger) -> Mi {
         Mi {
             irq_ack: Reg32::default(),
             irq_mask: Reg32::default(),
             logger,
-            cop0: cpu.borrow().cop0_clone(),
+            cop0: R4300::get().cop0_clone(),
         }
     }
 

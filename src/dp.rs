@@ -138,6 +138,10 @@ impl Dp {
 }
 
 impl sync::Subsystem for Dp {
+    fn name(&self) -> &str {
+        "RDP"
+    }
+
     fn run(&mut self, until: i64, _: &dbg::Tracer) -> dbg::Result<()> {
         loop {
             if !self.running {

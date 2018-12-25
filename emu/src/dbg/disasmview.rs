@@ -11,7 +11,7 @@ use std::time::Instant;
 /// a debugger view.
 pub trait DisasmView {
     /// Return the name of this object. The name will be composed
-    /// as "[NAME] Disassembly".
+    /// as "\[NAME\] Disassembly".
     fn name(&self) -> &str;
 
     /// Return the current program counter.

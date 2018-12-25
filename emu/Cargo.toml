@@ -26,6 +26,7 @@ serde_derive = "*"
 futures = "0.1"
 lz4 = "1.23.1"
 rmp-serde = "0.13.7"
+hashbrown = "0.1"
 
 [dependencies.sdl2]
 version = "^0"

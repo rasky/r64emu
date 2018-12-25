@@ -94,7 +94,7 @@ impl Rdp {
     fn framebuffer<'s, 'r: 's>(&'s self) -> (&'r mut [u8], usize, usize, usize) {
         let fb_mem = self
             .main_bus
-            .borrow()
+            .borrow_mut()
             .fetch_write::<u8>(self.fb.dram_addr)
             .mem()
             .unwrap();
@@ -102,6 +102,7 @@ impl Rdp {
     }
 
     pub fn op(&mut self, cmd: u64) {
+        info!(self.logger, "DP command"; "cmd" => cmd.hex());
         self.cmdbuf[self.cmdlen] = cmd;
         self.cmdlen += 1;
 
@@ -186,7 +187,10 @@ impl Rdp {
                     tmem_pitch,
                 );
 
-                let fb_writer = self.main_bus.borrow().fetch_write::<u8>(self.fb.dram_addr);
+                let mut fb_writer = self
+                    .main_bus
+                    .borrow_mut()
+                    .fetch_write::<u8>(self.fb.dram_addr);
                 let fb_mem = fb_writer.mem().unwrap();
                 let dst = (fb_mem, 320, 240, self.fb.pitch());
 

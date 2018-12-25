@@ -1,12 +1,17 @@
 use emu::bus::be::{Bus, DevPtr};
+use emu::bus::{CurrentDeviceMap, DeviceGetter, DeviceWithTag};
 use emu::dbg;
 use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
 use emu::sync;
 use emu::sync::Subsystem;
+
+use enum_map::Enum;
 use slog;
 use std::cell::RefCell;
+use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
 use std::rc::Rc;
 
 use super::ai::Ai;
@@ -35,27 +40,49 @@ impl mips64::Config for R4300Config {
     type Cop3 = mips64::CopNull;
 }
 
-pub type R4300 = mips64::Cpu<R4300Config>;
+pub struct R4300 {
+    cpu: mips64::Cpu<R4300Config>,
+}
+
+impl Deref for R4300 {
+    type Target = mips64::Cpu<R4300Config>;
+    fn deref(&self) -> &Self::Target {
+        &self.cpu
+    }
+}
+
+impl DerefMut for R4300 {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.cpu
+    }
+}
+
+impl DeviceWithTag for R4300 {
+    fn tag() -> &'static str {
+        "R4300"
+    }
+}
 
 pub fn r4300_new(logger: slog::Logger, bus: Rc<RefCell<Box<Bus>>>) -> R4300 {
-    mips64::Cpu::new(
-        MAINCPU_NAME,
-        logger.new(o!()),
-        bus,
-        (
-            mips64::Cp0::new("R4300-COP0", logger.new(o!())),
-            mips64::Fpu::new("R4300-FPU", logger.new(o!())),
-            mips64::CopNull {},
-            mips64::CopNull {},
+    R4300 {
+        cpu: mips64::Cpu::new(
+            MAINCPU_NAME,
+            logger.new(o!()),
+            bus,
+            (
+                mips64::Cp0::new("R4300-COP0", logger.new(o!())),
+                mips64::Fpu::new("R4300-FPU", logger.new(o!())),
+                mips64::CopNull {},
+                mips64::CopNull {},
+            ),
         ),
-    )
+    }
 }
 
 pub struct N64 {
     logger: slog::Logger,
-    sync: Box<sync::Sync>,
+    sync: Box<sync::Sync<SyncEmu>>,
     bus: Rc<RefCell<Box<Bus>>>,
-    cpu: Rc<RefCell<Box<R4300>>>,
     cart: DevPtr<Cartridge>,
 
     _mi: DevPtr<Mi>,
@@ -68,40 +95,51 @@ pub struct N64 {
     _ri: DevPtr<Ri>,
 }
 
+// Oscillators
+const X1: i64 = 14_705_000;
+const X2: i64 = 14_318_000;
+
+const RDRAM_CLOCK: i64 = X1 * 17;
+const MAIN_CLOCK: i64 = RDRAM_CLOCK / 4;
+const _PIF_CLOCK: i64 = MAIN_CLOCK / 4;
+const _CARTRIDGE_CLOCK: i64 = _PIF_CLOCK / 8; // 1.953 MHZ
+const VCLK: i64 = X2 * 17 / 5; // 48.6812 MHZ
+
+struct SyncEmu;
+impl sync::SyncEmu for SyncEmu {
+    fn config(&self) -> sync::Config {
+        sync::Config {
+            main_clock: VCLK,
+            dot_clock_divider: 4,
+            hdots: 773, // 773.5...
+            vdots: 525,
+            hsyncs: vec![0, 773 / 2], // sync two times per line
+            vsyncs: vec![],
+        }
+    }
+    fn subsystem(&self, idx: usize) -> Option<(&mut dyn sync::Subsystem, i64)> {
+        match idx {
+            0 => Some((R4300::get_mut().deref_mut(), MAIN_CLOCK + MAIN_CLOCK / 2)), // FIXME: uses DIVMOD),
+            _ => None,
+        }
+    }
+}
+
 impl N64 {
     pub fn new(logger: slog::Logger, romfn: &str) -> Result<N64> {
         // N64 timings
         // https://assemblergames.com/threads/mapping-n64-overclockability-achieved-3-0x-multiplier-but-not-3-0x-speed.51656/
 
-        // Oscillators
-        const X1: i64 = 14_705_000;
-        const X2: i64 = 14_318_000;
-
-        const RDRAM_CLOCK: i64 = X1 * 17;
-        const MAIN_CLOCK: i64 = RDRAM_CLOCK / 4;
-        const _PIF_CLOCK: i64 = MAIN_CLOCK / 4;
-        const _CARTRIDGE_CLOCK: i64 = _PIF_CLOCK / 8; // 1.953 MHZ
-        const VCLK: i64 = X2 * 17 / 5; // 48.6812 MHZ
-
-        let mut sync = sync::Sync::new(
-            logger.new(o!()),
-            sync::Config {
-                main_clock: VCLK,
-                dot_clock_divider: 4,
-                hdots: 773, // 773.5...
-                vdots: 525,
-                hsyncs: vec![0, 773 / 2], // sync two times per line
-                vsyncs: vec![],
-            },
-        );
+        let mut sync = sync::Sync::new(logger.new(o!()), SyncEmu);
 
         let bus = Rc::new(RefCell::new(Bus::new(sync::Sync::new_logger(&sync))));
-        let cpu = Rc::new(RefCell::new(Box::new(r4300_new(
+        let cpu = Pin::new(Box::new(r4300_new(
             sync::Sync::new_logger(&sync),
             bus.clone(),
-        ))));
+        )));
+        CurrentDeviceMap().register(cpu);
 
-        let mi = DevPtr::new(Mi::new(sync::Sync::new_logger(&sync), cpu.clone()));
+        let mi = DevPtr::new(Mi::new(sync::Sync::new_logger(&sync)));
         let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
         let pi = DevPtr::new(
             Pi::new(
@@ -144,6 +182,7 @@ impl N64 {
         }
 
         // Register subsystems into sync
+        /*
         {
             sync.register("cpu", cpu.clone(), MAIN_CLOCK + MAIN_CLOCK / 2); // FIXME: uses DIVMOD
             sync.register(
@@ -153,11 +192,11 @@ impl N64 {
             );
             sync.register("dp", dp.clone().unwrap(), MAIN_CLOCK);
         }
+        */
 
         return Ok(N64 {
             logger,
             sync,
-            cpu,
             cart,
             bus,
             _pi: pi,
@@ -201,7 +240,7 @@ impl hw::OutputProducer for N64 {
     }
 
     fn finish(&mut self) {
-        info!(self.logger, "finish"; o!("pc" => format!("{:x}", self.cpu.borrow().ctx().get_pc())));
+        info!(self.logger, "finish"; o!("pc" => format!("{:x}", R4300::get().ctx().get_pc())));
     }
 }
 
@@ -228,7 +267,7 @@ impl DebuggerModel for N64 {
 
     fn trace_step(&mut self, cpu_name: &str, tracer: &dbg::Tracer) -> dbg::Result<()> {
         match cpu_name {
-            MAINCPU_NAME => self.cpu.borrow_mut().step(tracer),
+            MAINCPU_NAME => R4300::get_mut().step(tracer),
             RSPCPU_NAME => {
                 // Do not keep sp borrowed by cloning the CPU. This allows
                 // RSP to recurse back into the SP (eg: write a SP register) without
@@ -241,7 +280,7 @@ impl DebuggerModel for N64 {
     }
 
     fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>) {
-        self.cpu.borrow_mut().render_debug(dr);
+        R4300::get_mut().render_debug(dr);
         self.sp
             .borrow_mut()
             .core_cpu

@@ -142,7 +142,7 @@ where
                     S::truncate_from(val >> shift).into()
                 }))
             }
-            None => HwIoR::Mem(self.raw.clone().into_array_field(), (U::SIZE - 1) as u32),
+            None => HwIoR::Mem(self.raw.as_array_field(), (U::SIZE - 1) as u32),
         }
     }
 
@@ -155,7 +155,7 @@ where
         }
 
         if self.romask == U::zero() && self.wcb.is_none() {
-            HwIoW::Mem(self.raw.clone().into_array_field(), (U::SIZE - 1) as u32)
+            HwIoW::Mem(self.raw.as_array_field(), (U::SIZE - 1) as u32)
         } else {
             let mut raw = self.raw.clone();
             let wcb = self.wcb.clone().map(|f| Rc::downgrade(&f));

@@ -1,5 +1,6 @@
 #![feature(nll)]
 #![feature(stdsimd)]
+#![feature(pin)]
 
 #[macro_use]
 extern crate slog;

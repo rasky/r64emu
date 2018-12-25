@@ -8,7 +8,7 @@ mod radix;
 mod regs;
 
 pub use self::bus::{Bus, MemIoR, MemIoRIterator, MemIoW};
-pub use self::device::{DevPtr, Device};
+pub use self::device::{CurrentDeviceMap, DevPtr, Device, DeviceGetter, DeviceMap, DeviceWithTag};
 pub use self::mem::{Mem, MemFlags};
 pub use self::memint::{AccessSize, ByteOrderCombiner, MemInt};
 pub use self::regs::{Reg, RegDeref, RegFlags, RegRef};

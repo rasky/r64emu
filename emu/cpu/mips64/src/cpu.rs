@@ -595,7 +595,11 @@ impl<C: Config> Cpu<C> {
     }
 }
 
-impl<C: Config> sync::Subsystem for Box<Cpu<C>> {
+impl<C: Config> sync::Subsystem for Cpu<C> {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
     fn run(&mut self, until: i64, tracer: &Tracer) -> Result<()> {
         Cpu::run(self, until, tracer)
     }
@@ -614,7 +618,7 @@ impl<C: Config> sync::Subsystem for Box<Cpu<C>> {
 }
 
 impl<C: Config> Cpu<C> {
-    pub fn render_debug<'a, 'ui>(self: &mut Box<Self>, dr: &DebuggerRenderer<'a, 'ui>) {
+    pub fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>) {
         dr.render_disasmview(self);
         dr.render_regview(self);
 
@@ -633,7 +637,7 @@ impl<C: Config> Cpu<C> {
     }
 }
 
-impl<C: Config> RegisterView for Box<Cpu<C>> {
+impl<C: Config> RegisterView for Cpu<C> {
     const WINDOW_SIZE: (f32, f32) = (380.0, 400.0);
     const COLUMNS: usize = 3;
 
@@ -672,7 +676,7 @@ impl<C: Config> RegisterView for Box<Cpu<C>> {
     }
 }
 
-impl<C: Config> DisasmView for Box<Cpu<C>> {
+impl<C: Config> DisasmView for Cpu<C> {
     fn name(&self) -> &str {
         &self.name
     }

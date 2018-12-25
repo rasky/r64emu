@@ -2,36 +2,78 @@
 //!
 //! ## Design
 //!
-//! This module implements the concept of a global thread-local `State`, from
-//! which specific variables called `Field` can be allocated. You can think
-//! of a `State` like an arena allocator, and a `Field` is a pointer to an object
-//! allocated within it. When the current global `State` is replaced with a
-//! different instance, all `Fields` objects are transparently updated with the
-//! new value.
+//! This module implements the concept of a global thread-local "state" of the
+//! emulator, which contains all the data that needs to be serialized in order
+//! to save and restore the emulation state. A state is composed of multiple
+//! "fields", which are single variables (either basic types or structs) that
+//! can be used anywhere within the emulator itself
 //!
-//! Each `Field` must also have a unique name, that is used as a key while
+//! You can think of a state like an arena allocator, and a field is a
+//! pointer to an object allocated within it. When the current global state is
+//! replaced with a different instance, all fields objects are transparently
+//! updated with the new value.
+//!
+//! The state is manipulated through the [`State`](struct.State.html) struct;
+//! the current state can be accessed with
+//! [`CurrentState()`](fn.CurrentState.html). A current state is automatically
+//! created for each new thread, so no explicit initialization is required (not
+//! even in tests). To populate a `State`, it is sufficient to create fields
+//! using one of three available wrappers: [`Field`](struct.Field.html),
+//! [`ArrayField`](struct.ArrayField.html), and
+//! [`EndianField`](struct.EndianField.html). Creating a field automatically
+//! binds it to the global state. Fields acts as smart pointers to the actual
+//! content.
+//!
+//! Example: TODO.
+//!
+//! Since a state is defined implicitly as the aggregation of all fields, fields
+//! are not meant to be instantiated and freed at runtime while the emulator
+//! is running. It is expected that all fields are instantiated during the
+//! emulator initial setup, and are then used (accessed, mutated) while the
+//! emulator is running.
+//!
+//! Each field must also have a unique name, that is used as a key while
 //! serializing the state. Failure to use unique names will result in runtime
-//! panics (hopefully at startup).
+//! panics (hopefully at startup, while fields are being created).
 //!
-//! `emu::Bus::Mem` and `emu::bus::Reg` internally use `Field` to store their
-//! contents, so all memory areas and hardware registers defined in the emulator
-//! are already part of the `State`.
+//! `emu::Bus::Mem` and `emu::bus::Reg` internally use
+//! [`ArrayField`](struct.ArrayField.html) and
+//! [`EndianField`](struct.EndianField.html) to store their contents, so all
+//! memory areas and hardware registers defined in the emulator are already part
+//! of the `State`.
+//!
 //!
 //! ## Fields
 //!
+//! Fields are allocated through one of the three smart pointers defined in this
+//! module. For instance, `Field<u64>` defines a `u64` variable which is part
+//! of the emulator state. As much as possible, smart pointers try to implement
+//! `Deref` and `DerefMut` to make it easy to manipulate the underlying data.
+//!
+//! All types used as part of a field must be `'static` (so they cannot contain
+//! non-static references), and they must implement the `Copy`,
+//! `serde::Serialize` and `serde::Deserialize<'static>` traits. The simplest
+//! way to think of these constraints is to only use aggregation of basic types
+//! in fields.
+//!
 //! There are three different kind of fields that can be used:
 //!
-//! * `Field`: can be used for objects that implement Copy and Serialize, eg:
+//! * [`Field`](struct.Field.html): this is most common and normal field, and
+//!   can be used with any type that respects the basic field constraints. eg:
 //!   `Field<u64>`, `Field<MyStruct(u32, u64)>`. It implements `Deref` and
 //!   `DerefMut`, thus behaving like a smart pointer.
-//! * `ArrayField`: a fixed-size array of Fields. It derefs as a slice.
-//! * `EndianField`: can be used for integers that must be saved in a specific
-//!   endianess, maybe because they need to be accessed at the byte level. It
-//!   exposes a `into_array_field` method to access the byte-level representation.
+//! * [`ArrayField`](struct.ArrayField.html): a fixed-size array. It derefs as a
+//!   slice.
+//! * [`EndianField`](struct.EndianField.html): can be used for integers that
+//!   must be saved in a specific endianess, maybe because they need to be
+//!   accessed at the byte level. It exposes a
+//!   [`into_array_field()`](struct.EndianField.html#method.into_array_field) method
+//!   to access the byte-level representation.
 //!
-//! Notice that all fields implement `Default` but their default state is invalid
-//! and will panic if accessed. It should be used only as a placeholder in structs
-//! in case delayed initialization is required.
+//! Notice that all fields implement `Default` but their default state is
+//! invalid and will panic if accessed. It should be used only as a placeholder
+//! in structs in case delayed initialization is required.
+//!
 //!
 //! ## Saving and restoring the state
 //!
@@ -48,16 +90,21 @@
 //! for a debugger). A snapshot can also be compressed for reducing memory
 //! occupation.
 //!
-//! A snapshot is just a `State` instance. To snapshot the current state,
-//! simply call `CurrentState().clone()`, using the standard `Clone` trait. To
-//! reload a snapshot, call `State::make_current()`, that moves the state into the
-//! global thread-local State instance; the previously-current State is returned.
+//! A snapshot is just a [`State`](struct.State.html) instance. To snapshot the
+//! current state, simply call `clone()` on the
+//! [`CurrentState()`](fn.CurrentState.html), using the standard `Clone` trait.
+//! To reload a snapshot, call
+//! [`State::make_current()`](fn.State.make_current.html), that moves the state
+//! into the global thread-local `State` instance; the previously-current
+//! `State` is returned.
 //!
-//! To compress a snapshot, use `into_compress()` to create a `CompressedState`
-//! instance, and `CompressedState::decompress()` to reverse the process.
-//! Compression is currently implemented with [LZ4](www.lz4.org), but this is
-//! considered an implementation detail, as snapshots are not meant to be
-//! inspected or serialized.
+//! To compress a snapshot, use
+//! [`State::into_compress()`](fn.State.html#method.into_compress) to create a
+//! [`CompressedState`](struct.CompressedState.html) instance, and
+//! [`CompressedState::decompress()`](fn.CompressedState.html#method.decompress)
+//! to reverse the process. Compression is currently implemented with
+//! [LZ4](https://www.lz4.org), but this is considered an implementation detail,
+//! as snapshots are not meant to be inspected or serialized.
 //!
 //! ### Serialization
 //!
@@ -76,7 +123,11 @@
 //!
 //! Serialization is currently performed using the
 //! [MessagePack](https://msgpack.org) format, and then compressed using
-//! [LZ4](www.lz4.org), but this is considered an implementation detail.
+//! [LZ4](https://www.lz4.org), but this is considered an implementation detail.
+//! The serialization stream format is internally versioned, so changes to the
+//! stream version in future version of this module (eg: changes to the
+//! compression algorithm) will be gracefully handled without breaking
+//! previously serialized states.
 //!
 
 use crate::bus::{ByteOrderCombiner, MemInt};
@@ -102,7 +153,7 @@ use std::thread;
 /// trait (because its contents will be copied around when snapshotting the state),
 /// and the Serialize trait (to allow for long term persistence).
 ///
-/// Cloning a Field creates another field pointing to the same content.
+/// Cloning a Field creates another field pointing to the same content (aliasing).
 #[derive(Clone)]
 pub struct Field<F: Copy + Serialize + Deserialize<'static>> {
     offset: usize,
@@ -112,6 +163,7 @@ pub struct Field<F: Copy + Serialize + Deserialize<'static>> {
 // A field refers implicitly to the current thread's State, thus we cannot
 // Send it across threads.
 impl<F> !Send for Field<F> {}
+impl<F> !Sync for Field<F> {}
 
 impl<F: 'static + Copy + Serialize + Deserialize<'static>> Field<F> {
     /// Create a new Field with the specified name and initial value.
@@ -154,7 +206,31 @@ impl<F: Copy + Serialize + Deserialize<'static>> DerefMut for Field<F> {
     }
 }
 
-/// A Field which is an integer, stored with the specified endianess.
+/// `EndianField` is a `Field` of integer type (see `emu::MemInt`) with an
+/// explicitly-specified memory representation endianess, with a sound byte-level
+/// access. It is seldom necessary.
+///
+/// Normal fields are meant to be used by the emulator code, so their memory
+/// representation follows normal Rust compiler rules and CPU architecture
+/// conventions; for instance a `Field<u64>` is represented in memory like a
+/// normal `u64` is. Sometimes, it might be required for an emulator to save
+/// a value in memory in a specified endianess, so that byte-level access
+/// is possible. In this case, `EndianField` can be used.
+///
+/// Compared to `Field`, `EndianField` does not implement `Deref` or `DerefMut`,
+/// because it might be necessary to adjust the endianess while getting or
+/// setting a value. Thus, all accesses must go through the
+/// [`EndianField::get()`](struct.EndianField.html#method.get) and
+/// [`EndianField::set()`](struct.EndianField.html#method.set) accessors.
+///
+/// Since the memory representation is explicitly defined, byte-level access is
+/// possible and with a well-defined behavior. To access it, use
+/// [`as_array_field()`](struct.EndianField.html#method.as_array_field) to
+/// create an [`ArrayField`](struct.ArrayField.html) instance which points (is
+/// aliased) to the same field.
+///
+/// Cloning an `EndianField` creates another field that points to the same
+/// contents (aliasing).
 #[derive(Clone)]
 pub struct EndianField<F: Copy + Serialize + Deserialize<'static> + MemInt, O: ByteOrderCombiner> {
     offset: usize,
@@ -162,6 +238,7 @@ pub struct EndianField<F: Copy + Serialize + Deserialize<'static> + MemInt, O: B
 }
 
 impl<F, O> !Send for EndianField<F, O> {}
+impl<F, O> !Sync for EndianField<F, O> {}
 
 impl<F, O> EndianField<F, O>
 where
@@ -171,7 +248,7 @@ where
     pub fn new(name: &'static str, f: F) -> Self {
         CurrentState().new_endian_field(name, f)
     }
-    pub fn into_array_field(self) -> ArrayField<u8> {
+    pub fn as_array_field(&self) -> ArrayField<u8> {
         ArrayField {
             offset: self.offset,
             len: mem::size_of::<F>(),
@@ -211,6 +288,16 @@ impl<F: Copy + Serialize + MemInt, O: ByteOrderCombiner> Default for EndianField
     }
 }
 
+/// `ArrayField` represents a fixed-size array of fields. The size can be
+/// specified at runtime while constructing it, but cannot be changed after
+/// construction. It implements the `Deref` and `DerefMut` trait that deref
+/// as a slice.
+///
+/// `ArrayField` (like all fields) implements `Default` by returning an invalid
+/// `ArrayField` that will panic as soon as it is accessed. This is used as a
+/// placeholder in structs for delayed initialization, but should eventually be
+/// replaced by a correctly-initialized instance returned by
+/// [`ArrayField::new()`](struct.ArrayField.html#method.new).
 #[derive(Clone)]
 pub struct ArrayField<F: Copy + Serialize + Deserialize<'static>> {
     offset: usize,
@@ -220,6 +307,7 @@ pub struct ArrayField<F: Copy + Serialize + Deserialize<'static>> {
 
 impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
     /// Create an `ArrayField` with the specified name, initial value, and length.
+    /// NOTE: `serialize` is deprecated, always pass `true`.
     pub fn new(name: &'static str, f: F, len: usize, serialize: bool) -> Self {
         CurrentState().new_array_field(name, f, len, serialize)
     }
@@ -229,18 +317,17 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
         self.len
     }
 
-    /// Similar to the Deref trait, but exposes the correct lifetimes so that
-    /// the returned slice does not keep the ArrayField borrowed (as it refers
-    /// to the external memory state).
+    /// `as_slice()` returns a slice to access the underlying array. It is
+    /// similar to the Deref trait, but exposes the correct lifetimes so that
+    /// the returned slice does not keep the `ArrayField` instance borrowed (as
+    /// it actually borrows the actual memory within the state).
     pub fn as_slice<'s, 'r: 's>(&'s self) -> &'r [F] {
         let state = CurrentState();
         let data = &state.data[self.offset..self.offset + self.len * mem::size_of::<F>()];
         unsafe { mem::transmute(data) }
     }
 
-    /// Similar to the DerefMut trait, but exposes the correct lifetimes so that
-    /// the returned slice does not keep the ArrayField borrowed (as it refers
-    /// to the external memory state).
+    /// `as_slice_mut()` is the mutable version of [`as_slice()`](struct.ArrayState.html#method.as_slice).
     pub fn as_slice_mut<'s, 'r: 's>(&'s mut self) -> &'r mut [F] {
         let state = CurrentState();
         let data = &mut state.data[self.offset..self.offset + self.len * mem::size_of::<F>()];
@@ -251,6 +338,7 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
 // A field refers implicitly to the current thread's State, thus we cannot
 // Send it across threads.
 impl<F> !Send for ArrayField<F> {}
+impl<F> !Sync for ArrayField<F> {}
 
 impl<F: Copy + Serialize + Deserialize<'static>> Default for ArrayField<F> {
     /// Default returns an invalid ArrayField, that will cause a panic when used.
@@ -281,7 +369,15 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> DerefMut for ArrayFie
 
 thread_local!(static STATE: RefCell<State> = RefCell::new(State::new()));
 
-/// Return the current `State` (for the current thread).
+/// Return a mutable reference to the current [`State`](struct.State.html) (for
+/// the current thread).
+///
+/// An empty `State` instance is automatically created for each new thread, so
+/// there is no need to perform an initialization before calling `CurrentState()`.
+///
+/// Currently, there is no way to move a `State` among different threads; all
+/// fields are `!Send` and `!Sync`, so the part of the emulator using fields
+/// cannot be moved across threads as well.
 #[allow(non_snake_case)]
 pub fn CurrentState() -> &'static mut State {
     let s: *const State = STATE.with(|s| &(*s.borrow()) as _);
@@ -359,11 +455,12 @@ impl FieldInfo {
 /// fields.
 ///
 /// An empty state is automatically created for each new thread, and can be
-/// accessed with `CurrentState`.
+/// accessed with [`CurrentState()`](fn.CurrentState.html).
 ///
 /// Cloning a `State` actually creates a copy of the whole state. Creating a new
 /// empty `State` is forbidden (as it would be useless without Field definitions).
 ///
+/// See module-level documentation for more details.
 #[derive(Clone)]
 pub struct State {
     data: Vec<u8>,
@@ -583,10 +680,10 @@ impl State {
 }
 
 /// A compressed snapshot of a `State`, useful for in-process snapshotting.
-/// To be made current, it must be decompressed back into a `State` using
-/// `decompress`.
+/// To be made current, it must be decompressed back into a [`State`](struct.State.html) using
+/// [`decompress()`](#method.decompress).
 ///
-/// The [LZ4 algorithm](www.lz4.org) is used for the compression.
+/// The [LZ4 algorithm](https://www.lz4.org) is used for the compression.
 pub struct CompressedState {
     data: RefCell<Vec<u8>>,
     future_data: RefCell<Option<Oneshot<Vec<u8>>>>,
@@ -703,7 +800,7 @@ mod tests {
         use byteorder::{BigEndian, ByteOrder};
 
         let mut f = EndianField::<u64, BigEndian>::new("a", 12);
-        let array = f.clone().into_array_field();
+        let array = f.as_array_field();
 
         let val = BigEndian::read_u64(&array);
         assert_eq!(f.get(), 12);

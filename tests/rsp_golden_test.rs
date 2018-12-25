@@ -31,7 +31,7 @@ fn make_sp() -> (DevPtr<Sp>, Rc<RefCell<Box<Bus>>>) {
         logger.new(o!()),
         main_bus.clone(),
     ))));
-    let mi = DevPtr::new(Mi::new(logger.new(o!()), main_cpu.clone()));
+    let mi = DevPtr::new(Mi::new(logger.new(o!())));
     let dp = DevPtr::new(Dp::new(logger.new(o!()), main_bus.clone()));
     let sp = Sp::new(logger.new(o!()), main_bus.clone(), &dp, mi.clone()).unwrap();
     {
