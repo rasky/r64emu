@@ -113,7 +113,9 @@ impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
 impl<O: ByteOrder> MemIoR<O, u8> {
     pub fn mem<'s, 'r: 's>(&'s self) -> Option<&'r [u8]> {
         match &self.hwio {
-            HwIoR::Mem(buf, mask) => Some(&buf.as_slice()[(self.addr & mask) as usize..]),
+            HwIoR::Mem(buf, mask) => {
+                Some(&unsafe { buf.as_slice() }[(self.addr & mask) as usize..])
+            }
             HwIoR::Func(_) => None,
         }
     }
@@ -136,7 +138,7 @@ impl<O: ByteOrder> MemIoW<O, u8> {
     pub fn mem<'s, 'r: 's>(&'s mut self) -> Option<&'r mut [u8]> {
         match self.hwio {
             HwIoW::Mem(ref mut buf, mask) => {
-                Some(&mut buf.as_slice_mut()[(self.addr & mask) as usize..])
+                Some(&mut unsafe { buf.as_slice_mut() }[(self.addr & mask) as usize..])
             }
             HwIoW::Func(_) => None,
         }

@@ -3,6 +3,7 @@
 #![feature(specialization)]
 #![feature(optin_builtin_traits)]
 #![feature(pin)]
+#![feature(thread_local)]
 
 pub mod bus;
 pub mod dbg;

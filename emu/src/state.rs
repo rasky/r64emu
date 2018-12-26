@@ -137,7 +137,7 @@ use lz4;
 use rmp_serde;
 use serde::{Deserialize, Serialize};
 
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::collections::BTreeMap;
 use std::io;
 use std::marker::PhantomData;
@@ -145,6 +145,40 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::thread;
+
+// Global per-threat state. Notice that we use #[thread_local] rather than
+// thread_local!() as it's much faster at accessing the state, and also allows
+// non-scoped access (that is, without `with`).
+#[thread_local]
+static mut STATE: Option<RefCell<State>> = None;
+
+/// Return a mutable reference to the current [`State`](struct.State.html) (for
+/// the current thread).
+///
+/// An empty `State` instance is automatically created for each new thread, so
+/// there is no need to perform an initialization before calling `CurrentState()`.
+///
+/// Currently, there is no way to move a `State` among different threads; all
+/// fields are `!Send` and `!Sync`, so the part of the emulator using fields
+/// cannot be moved across threads as well.
+#[allow(non_snake_case)]
+pub fn CurrentState() -> RefMut<'static, State> {
+    unsafe {
+        if STATE.is_none() {
+            STATE = Some(RefCell::new(State::new()));
+        }
+        STATE.as_ref().unwrap().borrow_mut()
+    }
+}
+
+// Like CurrentState, but does not enforce exclusive mutable access to State.
+// This is useful within fields' implementation, as each field accesses a distinct
+// subslice of the slice buffer, so there's no aliasing issue.
+#[allow(non_snake_case)]
+#[inline(always)]
+unsafe fn UnsafeCurrentState() -> &'static mut State {
+    &mut *STATE.as_ref().unwrap().as_ptr()
+}
 
 /// A `Field` is an object that is part of the emulator state. It is a lightweight
 /// pointer into the current state, and can be used to mutate the state itself.
@@ -172,7 +206,23 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> Field<F> {
     ///
     /// This function will panic if the name
     pub fn new(name: &'static str, f: F) -> Self {
-        CurrentState().new_field(name, f)
+        let mut field = CurrentState().new_field(name);
+        *field = f;
+        field
+    }
+
+    fn as_ref(&self, state: &State) -> &F {
+        unsafe {
+            let data = &state.data[self.offset];
+            mem::transmute(data)
+        }
+    }
+
+    fn as_mut(&mut self, state: &mut State) -> &mut F {
+        unsafe {
+            let data = &mut state.data[self.offset];
+            mem::transmute(data)
+        }
     }
 }
 
@@ -188,21 +238,17 @@ impl<F: Copy + Serialize + Deserialize<'static>> Default for Field<F> {
     }
 }
 
-impl<F: Copy + Serialize + Deserialize<'static>> Deref for Field<F> {
+impl<F: 'static + Copy + Serialize + Deserialize<'static>> Deref for Field<F> {
     type Target = F;
 
     fn deref(&self) -> &F {
-        let state = CurrentState();
-        let data = &state.data[self.offset];
-        unsafe { mem::transmute(data) }
+        unsafe { self.as_ref(UnsafeCurrentState()) }
     }
 }
 
-impl<F: Copy + Serialize + Deserialize<'static>> DerefMut for Field<F> {
+impl<F: 'static + Copy + Serialize + Deserialize<'static>> DerefMut for Field<F> {
     fn deref_mut(&mut self) -> &mut F {
-        let state = CurrentState();
-        let data = &mut state.data[self.offset];
-        unsafe { mem::transmute(data) }
+        unsafe { self.as_mut(UnsafeCurrentState()) }
     }
 }
 
@@ -246,7 +292,9 @@ where
     O: 'static + ByteOrderCombiner,
 {
     pub fn new(name: &'static str, f: F) -> Self {
-        CurrentState().new_endian_field(name, f)
+        let mut field = CurrentState().new_endian_field(name);
+        field.set(f);
+        field
     }
     pub fn as_array_field(&self) -> ArrayField<u8> {
         ArrayField {
@@ -256,23 +304,34 @@ where
         }
     }
 
-    fn deref(&self) -> &F {
-        let state = CurrentState();
-        let data = &state.data[self.offset];
-        unsafe { mem::transmute(data) }
+    fn as_ref(&self, state: &State) -> &F {
+        unsafe {
+            let data = &state.data[self.offset];
+            mem::transmute(data)
+        }
     }
 
-    fn deref_mut(&mut self) -> &mut F {
-        let state = CurrentState();
-        let data = &mut state.data[self.offset];
-        unsafe { mem::transmute(data) }
+    fn as_mut(&mut self, state: &mut State) -> &mut F {
+        unsafe {
+            let data = &mut state.data[self.offset];
+            mem::transmute(data)
+        }
+    }
+
+    fn get_with_state(&self, state: &State) -> F {
+        O::to_native(*self.as_ref(state))
+    }
+    fn set_with_state(&mut self, state: &mut State, val: F) {
+        *self.as_mut(state) = O::to_native(val);
     }
 
     pub fn get(&self) -> F {
-        O::to_native(*self.deref())
+        unsafe { self.get_with_state(UnsafeCurrentState()) }
     }
     pub fn set(&mut self, val: F) {
-        *self.deref_mut() = O::to_native(val);
+        unsafe {
+            self.set_with_state(UnsafeCurrentState(), val);
+        }
     }
 }
 
@@ -309,7 +368,11 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
     /// Create an `ArrayField` with the specified name, initial value, and length.
     /// NOTE: `serialize` is deprecated, always pass `true`.
     pub fn new(name: &'static str, f: F, len: usize, serialize: bool) -> Self {
-        CurrentState().new_array_field(name, f, len, serialize)
+        let mut field = CurrentState().new_array_field(name, len, serialize);
+        for v in field.iter_mut() {
+            *v = f;
+        }
+        field
     }
 
     /// Return the number of elements in the array
@@ -317,21 +380,40 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
         self.len
     }
 
-    /// `as_slice()` returns a slice to access the underlying array. It is
-    /// similar to the Deref trait, but exposes the correct lifetimes so that
-    /// the returned slice does not keep the `ArrayField` instance borrowed (as
-    /// it actually borrows the actual memory within the state).
-    pub fn as_slice<'s, 'r: 's>(&'s self) -> &'r [F] {
-        let state = CurrentState();
+    fn as_ref_with_state(&self, state: &State) -> &[F] {
         let data = &state.data[self.offset..self.offset + self.len * mem::size_of::<F>()];
         unsafe { mem::transmute(data) }
     }
 
-    /// `as_slice_mut()` is the mutable version of [`as_slice()`](struct.ArrayState.html#method.as_slice).
-    pub fn as_slice_mut<'s, 'r: 's>(&'s mut self) -> &'r mut [F] {
-        let state = CurrentState();
+    fn as_mut_with_state(&mut self, state: &mut State) -> &mut [F] {
         let data = &mut state.data[self.offset..self.offset + self.len * mem::size_of::<F>()];
         unsafe { mem::transmute(data) }
+    }
+
+    /// `as_slice()` returns a slice to access the underlying array. It is
+    /// similar to the Deref trait, but it defines lifetimes to keep the State
+    /// borrowed rather than the field instance. Since this violates aliasing
+    /// rules, it is unsafe.
+    pub(crate) unsafe fn as_slice<'s, 'r: 's>(&'s self) -> &'r [F] {
+        let state = UnsafeCurrentState();
+        // We use the unchecked slice access as we can be sure that the offset
+        // is within the state's bounds.
+        let data = state
+            .data
+            .get_unchecked(self.offset..self.offset + self.len * mem::size_of::<F>());
+        mem::transmute(data)
+    }
+
+    /// `as_slice_mut()` is the mutable version of
+    /// [`as_slice()`](struct.ArrayState.html#method.as_slice).
+    pub(crate) unsafe fn as_slice_mut<'s, 'r: 's>(&'s mut self) -> &'r mut [F] {
+        let state = UnsafeCurrentState();
+        // We use the unchecked slice access as we can be sure that the offset
+        // is within the state's bounds.
+        let data = state
+            .data
+            .get_unchecked_mut(self.offset..self.offset + self.len * mem::size_of::<F>());
+        mem::transmute(data)
     }
 }
 
@@ -357,32 +439,18 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> Deref for ArrayField<
     type Target = [F];
 
     fn deref(&self) -> &[F] {
-        self.as_slice()
+        // Since the lifetimes are correct in this function (that is, we keep
+        // the field instance borrowed, not the state), this function is safe.
+        unsafe { self.as_slice() }
     }
 }
 
 impl<F: 'static + Copy + Serialize + Deserialize<'static>> DerefMut for ArrayField<F> {
     fn deref_mut(&mut self) -> &mut [F] {
-        self.as_slice_mut()
+        // Since the lifetimes are correct in this function (that is, we keep
+        // the field instance borrowed, not the state), this function is safe.
+        unsafe { self.as_slice_mut() }
     }
-}
-
-thread_local!(static STATE: RefCell<State> = RefCell::new(State::new()));
-
-/// Return a mutable reference to the current [`State`](struct.State.html) (for
-/// the current thread).
-///
-/// An empty `State` instance is automatically created for each new thread, so
-/// there is no need to perform an initialization before calling `CurrentState()`.
-///
-/// Currently, there is no way to move a `State` among different threads; all
-/// fields are `!Send` and `!Sync`, so the part of the emulator using fields
-/// cannot be moved across threads as well.
-#[allow(non_snake_case)]
-pub fn CurrentState() -> &'static mut State {
-    let s: *const State = STATE.with(|s| &(*s.borrow()) as _);
-    let s: *mut State = s as *mut State;
-    unsafe { &mut *s }
 }
 
 type Ser<'de, 'c> = rmp_serde::Serializer<
@@ -395,8 +463,10 @@ type Deser<'de> = rmp_serde::Deserializer<rmp_serde::decode::ReadReader<lz4::Dec
 // for each field.
 struct FieldInfo {
     name: &'static str,
-    serialize: Box<for<'de, 'c> Fn(&mut Ser<'de, 'c>) -> Result<(), rmp_serde::encode::Error>>,
-    deserialize: Box<for<'de> FnMut(&mut Deser<'de>) -> Result<(), rmp_serde::decode::Error>>,
+    serialize:
+        Box<for<'de, 'c> Fn(&mut Ser<'de, 'c>, &State) -> Result<(), rmp_serde::encode::Error>>,
+    deserialize:
+        Box<for<'de> FnMut(&mut Deser<'de>, &mut State) -> Result<(), rmp_serde::decode::Error>>,
 }
 
 impl FieldInfo {
@@ -408,9 +478,9 @@ impl FieldInfo {
         let mut field2 = field.clone();
         Self {
             name,
-            serialize: Box::new(move |ser| (*field1).serialize(ser)),
-            deserialize: Box::new(move |deser| {
-                *field2 = serde::Deserialize::deserialize(deser)?;
+            serialize: Box::new(move |ser, state| field1.as_ref(state).serialize(ser)),
+            deserialize: Box::new(move |deser, state| {
+                *field2.as_mut(state) = serde::Deserialize::deserialize(deser)?;
                 Ok(())
             }),
         }
@@ -425,9 +495,9 @@ impl FieldInfo {
         let mut field2 = field.clone();
         Self {
             name,
-            serialize: Box::new(move |ser| field1.get().serialize(ser)),
-            deserialize: Box::new(move |deser| {
-                field2.set(serde::Deserialize::deserialize(deser)?);
+            serialize: Box::new(move |ser, state| field1.get_with_state(state).serialize(ser)),
+            deserialize: Box::new(move |deser, state| {
+                field2.set_with_state(state, serde::Deserialize::deserialize(deser)?);
                 Ok(())
             }),
         }
@@ -441,10 +511,10 @@ impl FieldInfo {
         let mut field2 = field.clone();
         Self {
             name,
-            serialize: Box::new(move |ser| (*field1).serialize(ser)),
-            deserialize: Box::new(move |deser| {
+            serialize: Box::new(move |ser, state| field1.as_ref_with_state(state).serialize(ser)),
+            deserialize: Box::new(move |deser, state| {
                 let buf: Vec<F> = serde::Deserialize::deserialize(deser)?;
-                field2.copy_from_slice(&buf[..]);
+                field2.as_mut_with_state(state).copy_from_slice(&buf[..]);
                 Ok(())
             }),
         }
@@ -486,7 +556,7 @@ impl State {
         offset
     }
 
-    fn new_field<F>(&mut self, name: &'static str, value: F) -> Field<F>
+    fn new_field<F>(&mut self, name: &'static str) -> Field<F>
     where
         F: 'static + Copy + Serialize + Deserialize<'static>,
     {
@@ -497,18 +567,17 @@ impl State {
             panic!("duplicated field in state: {}", name);
         }
 
-        let mut f = Field {
+        let f = Field {
             offset: self.alloc_raw(mem::size_of::<F>(), mem::align_of::<F>()),
             phantom: PhantomData,
         };
         self.info
             .borrow_mut()
             .insert(name.to_owned(), FieldInfo::new(name, &f));
-        *f = value;
         f
     }
 
-    fn new_endian_field<F, O>(&mut self, name: &'static str, value: F) -> EndianField<F, O>
+    fn new_endian_field<F, O>(&mut self, name: &'static str) -> EndianField<F, O>
     where
         F: 'static + Copy + Serialize + Deserialize<'static> + MemInt,
         O: 'static + ByteOrderCombiner,
@@ -523,21 +592,19 @@ impl State {
         let size = mem::size_of::<F>();
         let offset = self.alloc_raw(size, mem::align_of::<F>());
 
-        let mut f = EndianField {
+        let f = EndianField {
             offset: offset,
             phantom: PhantomData,
         };
         self.info
             .borrow_mut()
             .insert(name.to_owned(), FieldInfo::new_endian(name, &f));
-        f.set(value);
         f
     }
 
     fn new_array_field<F>(
         &mut self,
         name: &'static str,
-        value: F,
         len: usize,
         serialize: bool,
     ) -> ArrayField<F>
@@ -554,7 +621,7 @@ impl State {
         let size = len * mem::size_of::<F>();
         let offset = self.alloc_raw(size, mem::align_of::<F>());
 
-        let mut f = ArrayField {
+        let f = ArrayField {
             offset: offset,
             len: len,
             phantom: PhantomData,
@@ -563,9 +630,6 @@ impl State {
             self.info
                 .borrow_mut()
                 .insert(name.to_owned(), FieldInfo::new_array(name, &f));
-        }
-        for v in (*f).iter_mut() {
-            *v = value;
         }
         f
     }
@@ -577,13 +641,9 @@ impl State {
 
     /// Make the current state as current, moving it.
     /// Returns the previously-current state.
-    pub fn make_current(self) -> State {
-        STATE.with(|s| {
-            if s.borrow().len() != self.len() {
-                panic!("State::make_current with different length")
-            }
-            s.replace(self)
-        })
+    pub fn make_current(mut self) -> State {
+        std::mem::swap(&mut *CurrentState(), &mut self);
+        self
     }
 
     /// Convert the state into a `CompressedState`, consuming it. Notice
@@ -621,7 +681,7 @@ impl State {
         ser.serialize_u32(self.info.borrow().len() as u32)?;
         for fi in self.info.borrow().values() {
             ser.serialize_str(fi.name)?;
-            (*fi.serialize)(&mut ser)?;
+            (*fi.serialize)(&mut ser, &self)?;
         }
 
         let (_, res) = compress.finish();
@@ -667,10 +727,13 @@ impl State {
         }
 
         let num_fields: u32 = Deserialize::deserialize(&mut de)?;
+        let info = self.info.clone(); // avoid borrowing self
         for _ in 0..num_fields {
             let fname: String = Deserialize::deserialize(&mut de)?;
-            match self.info.borrow_mut().get_mut(&fname) {
-                Some(fi) => (*fi.deserialize)(&mut de)?,
+            match info.borrow_mut().get_mut(&fname) {
+                Some(fi) => {
+                    (*fi.deserialize)(&mut de, self)?;
+                }
                 None => {}
             };
         }
@@ -878,5 +941,89 @@ mod tests {
         assert_eq!(e[1], 1);
         assert_eq!(e[2], 2);
         assert_eq!(e[3], 3);
+    }
+
+    #[test]
+    fn serialize_non_current() {
+        use byteorder::BigEndian;
+
+        let mut a = Field::new("a", 4u64);
+        let mut b = Field::new("b", 12.0f64);
+        let mut c = EndianField::<u32, BigEndian>::new("c", 99u32);
+        let mut d = ArrayField::new("x", 7u8, 4, true);
+        let mut e = ArrayField::new("y", 7u8, 4, false);
+
+        let s1 = CurrentState().clone();
+
+        *a = 5;
+        *b = 13.0;
+        c.set(1234);
+        d[0] = 0;
+        d[1] = 1;
+        d[2] = 2;
+        d[3] = 3;
+        e[0] = 0;
+        e[1] = 1;
+        e[2] = 2;
+        e[3] = 3;
+
+        let bin = s1.serialize("test", 1).unwrap();
+        let mut s2 = CurrentState().clone();
+        s2.deserialize("test", 1, &bin).unwrap();
+
+        assert_eq!(*a, 5);
+        assert_eq!(*b, 13.0);
+        assert_eq!(c.get(), 1234);
+        assert_eq!(d[0], 0);
+        assert_eq!(d[1], 1);
+        assert_eq!(d[2], 2);
+        assert_eq!(d[3], 3);
+        assert_eq!(e[0], 0);
+        assert_eq!(e[1], 1);
+        assert_eq!(e[2], 2);
+        assert_eq!(e[3], 3);
+
+        s2.make_current();
+
+        assert_eq!(*a, 4);
+        assert_eq!(*b, 12.0);
+        assert_eq!(c.get(), 99);
+        assert_eq!(d[0], 7);
+        assert_eq!(d[1], 7);
+        assert_eq!(d[2], 7);
+        assert_eq!(d[3], 7);
+        assert_eq!(e[0], 0);
+        assert_eq!(e[1], 1);
+        assert_eq!(e[2], 2);
+        assert_eq!(e[3], 3);
+    }
+
+    #[test]
+    #[should_panic]
+    fn double_state_borrow() {
+        // Check that we CANNOT get two mutable borrows to the current state.
+        let s1 = CurrentState();
+        let s2 = CurrentState(); // This will panic: double mutable borrow
+        let s3 = s1.clone();
+        let s4 = s2.clone();
+        s3.make_current();
+        s4.make_current();
+    }
+
+    #[test]
+    fn double_field_borrow() {
+        // Check that we can get two mutable borrows to two fields within the
+        // current state. This is sound because the fields refer to distinct
+        // parts of the same state (concept similar to split_at_mut).
+        let mut a = ArrayField::new("a", 0u64, 8, true);
+        let mut b = ArrayField::new("b", 0u64, 8, true);
+
+        let ra = &mut a[0..7];
+        let rb = &mut b[0..7];
+        ra[0] = 5;
+        rb[3] = 6;
+
+        assert_eq!(ra[0], 5);
+        assert_eq!(rb[3], 6);
     }
 }
