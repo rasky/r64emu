@@ -145,6 +145,22 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::thread;
+use failure::{Error, Fail};
+
+#[derive(Debug, Fail)]
+enum SerializationFailure {
+    #[fail(display = "invalid state serialization format")]
+    InvalidFormat,
+
+    #[fail(display = "invalid magic string: {}", magic)]
+    InvalidMagic {
+        magic: String,
+    },
+    #[fail(display = "invalid version: {}", version)]
+    InvalidVersion {
+        version: u32,
+    }
+}
 
 // Global per-threat state. Notice that we use #[thread_local] rather than
 // thread_local!() as it's much faster at accessing the state, and also allows
@@ -502,18 +518,17 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> DerefMut for ArrayFie
     }
 }
 
-type Ser<'de, 'c> = rmp_serde::Serializer<
-    &'de mut lz4::Encoder<&'c mut Vec<u8>>,
+type Ser<'de> = rmp_serde::Serializer<&'de mut Vec<u8>,
     rmp_serde::encode::StructMapWriter,
 >;
-type Deser<'de> = rmp_serde::Deserializer<rmp_serde::decode::ReadReader<lz4::Decoder<&'de [u8]>>>;
+type Deser<'de> = rmp_serde::Deserializer<rmp_serde::decode::ReadReader<&'de [u8]>>;
 
 // FieldInfo contains the type-erased serialization and deserialization functions
 // for each field.
 struct FieldInfo {
     name: String,
     serialize:
-        Box<for<'de, 'c> Fn(&mut Ser<'de, 'c>, &State) -> Result<(), rmp_serde::encode::Error>>,
+        Box<for<'de> Fn(&mut Ser<'de>, &State) -> Result<(), rmp_serde::encode::Error>>,
     deserialize:
         Box<for<'de> FnMut(&mut Deser<'de>, &mut State) -> Result<(), rmp_serde::decode::Error>>,
 }
@@ -699,27 +714,22 @@ impl State {
     /// Serialize the state into a persistence format that can be written
     /// to disk and reloaded in different process. It relies on Serde-based
     /// serialization.
-    pub fn serialize(
+    pub fn serialize<W: io::Write>(
         &self,
+        mut writer: W,
         magic: &str,
         version: u32,
-    ) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+    ) -> Result<(), Error> {
         use serde::Serializer;
-        use std::io::Write;
 
         // Write the header
         let header = "EMUSTATE\x00";
-        let mut output = Vec::new();
-        (&mut output).write(header.as_bytes()).unwrap();
-
-        let mut compress = lz4::EncoderBuilder::new()
-            .level(9)
-            .build(&mut output)
-            .unwrap();
-        let mut ser = rmp_serde::Serializer::new_named(&mut compress);
+        writer.write(header.as_bytes())?;
 
         // Serialize the whole state like a struct. Each `Field` is a field
         // of this struct, using its name as name of the struct field.
+        let mut output = Vec::new();
+        let mut ser = rmp_serde::Serializer::new_named(&mut output);
         ser.serialize_str(magic)?;
         ser.serialize_u32(version)?;
         ser.serialize_u32(self.info.borrow().len() as u32)?;
@@ -728,46 +738,45 @@ impl State {
             (*fi.serialize)(&mut ser, &self)?;
         }
 
-        let (_, res) = compress.finish();
-        res.unwrap();
-        Ok(output)
+        // Compress the output
+        use lz4::block::CompressionMode::*;
+        let data = lz4::block::compress(&output, Some(HIGHCOMPRESSION(9)), true)?;
+
+        writer.write(&data)?;
+
+        Ok(())
     }
 
     /// Deserialize into the current state.
     /// Notice that any field not present in the serialized state
     /// maintain their current value, and no error is returned. It is thus
     /// suggested to deserialize over a default initial state.
-    pub fn deserialize(
+    pub fn deserialize<R: io::Read>(
         &mut self,
+        mut reader: R,
         wanted_magic: &str,
         wanted_version: u32,
-        data: &[u8],
-    ) -> Result<(), rmp_serde::decode::Error> {
-        use rmp_serde::decode::Error;
-        use std::io::Read;
-
-        let mut reader = &data[..];
+    ) -> Result<(), Error> {
         let mut header = vec![0u8; 9];
-        reader
-            .read_exact(&mut header)
-            .or_else(|_| Err(Error::Syntax(format!("invalid save state format"))))?;
+        reader.read_exact(&mut header)?;
         if header != "EMUSTATE\x00".as_bytes() {
-            return Err(Error::Syntax(format!("invalid save state format")));
+            return Err(SerializationFailure::InvalidFormat.into());
         }
 
-        let dec = lz4::Decoder::new(reader)
-            .or_else(|_| Err(Error::Syntax("invalid save state format".into())))?;
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        let dec = lz4::block::decompress(&buf, None)?;
 
-        let mut de = rmp_serde::Deserializer::new(dec);
+        let mut de = rmp_serde::Deserializer::new(&dec[..]);
 
         let magic: String = Deserialize::deserialize(&mut de)?;
         if magic != wanted_magic {
-            return Err(Error::Syntax(format!("invalid magic: {}", magic)));
+            return Err(SerializationFailure::InvalidMagic{magic}.into());
         }
 
         let version: u32 = Deserialize::deserialize(&mut de)?;
         if version != wanted_version {
-            return Err(Error::Syntax(format!("unsupported version: {}", version)));
+            return Err(SerializationFailure::InvalidVersion{version}.into());
         }
 
         let num_fields: u32 = Deserialize::deserialize(&mut de)?;
@@ -955,10 +964,11 @@ mod tests {
         let mut d = ArrayField::new("x", 7u8, 4, true);
         let mut e = ArrayField::new("y", 7u8, 4, false);
 
-        let s1 = CurrentState().serialize("test", 1).unwrap();
+        let mut s1 = Vec::new();
+        CurrentState().serialize(&mut s1, "test", 1).unwrap();
 
-        assert!(CurrentState().deserialize("xest", 1, &s1).is_err());
-        assert!(CurrentState().deserialize("test", 2, &s1).is_err());
+        assert!(CurrentState().deserialize(&s1[..], "xest", 1).is_err());
+        assert!(CurrentState().deserialize(&s1[..], "test", 2 ).is_err());
 
         *a = 5;
         *b = 13.0;
@@ -972,7 +982,7 @@ mod tests {
         e[2] = 2;
         e[3] = 3;
 
-        let res = CurrentState().deserialize("test", 1, &s1);
+        let res = CurrentState().deserialize(&s1[..], "test", 1);
         assert!(res.is_ok());
         assert_eq!(*a, 4);
         assert_eq!(*b, 12.0);
@@ -1011,9 +1021,11 @@ mod tests {
         e[2] = 2;
         e[3] = 3;
 
-        let bin = s1.serialize("test", 1).unwrap();
+        let mut bin = Vec::new();
+        s1.serialize(&mut bin, "test", 1).unwrap();
+
         let mut s2 = CurrentState().clone();
-        s2.deserialize("test", 1, &bin).unwrap();
+        s2.deserialize(&bin[..], "test", 1).unwrap();
 
         assert_eq!(*a, 5);
         assert_eq!(*b, 13.0);
