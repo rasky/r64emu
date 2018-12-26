@@ -398,8 +398,8 @@ pub type OwnedGfxBufferBE<CF> = OwnedGfxBuffer<CF, BigEndian>;
 #[cfg(test)]
 mod tests {
     use super::super::{Abgr8888, ColorConverter, Rgb565, Rgb888, Rgba8888, I4};
-    use super::byteorder::ByteOrder;
     use super::*;
+    use byteorder::ByteOrder;
 
     #[test]
     fn buffer() {

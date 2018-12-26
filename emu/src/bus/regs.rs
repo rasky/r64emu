@@ -268,9 +268,9 @@ impl<O: ByteOrderCombiner, U: RegDeref> DerefMut for RegRef<O, U> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::memint::{ByteOrderCombiner, MemInt};
     use super::super::{be, le};
     use super::{Reg, RegFlags};
+    use crate::memint::{ByteOrderCombiner, MemInt};
     use std::marker::PhantomData;
     use std::rc::Rc;
 
