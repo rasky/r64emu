@@ -3,7 +3,7 @@ extern crate num;
 use self::num::Float;
 use super::decode::{DecodedInsn, MEMOP_FMT, REG_NAMES};
 use super::{Cop, CpuContext};
-use emu::dbg::{Operand, Result, Tracer};
+use emu::dbg::{DebuggerRenderer, Operand, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
 use slog;
 use slog::*;
@@ -445,20 +445,48 @@ impl Cop for Fpu {
                                 IReg(fs),
                                 IReg(ft),
                             ),
-                            0x20 => DecodedInsn::new0(fp_suffix!("cvt.s", fmt)),
-                            0x21 => DecodedInsn::new0(fp_suffix!("cvt.d", fmt)),
-                            0x24 => DecodedInsn::new0(fp_suffix!("cvt.w", fmt)),
-                            0x25 => DecodedInsn::new0(fp_suffix!("cvt.l", fmt)),
+                            0x08 => {
+                                DecodedInsn::new2(fp_suffix!("round.l", fmt), OReg(fd), IReg(fs))
+                            }
+                            0x09 => {
+                                DecodedInsn::new2(fp_suffix!("trunc.l", fmt), OReg(fd), IReg(fs))
+                            }
+                            0x0A => {
+                                DecodedInsn::new2(fp_suffix!("ceil.l", fmt), OReg(fd), IReg(fs))
+                            }
+                            0x0B => {
+                                DecodedInsn::new2(fp_suffix!("floor.l", fmt), OReg(fd), IReg(fs))
+                            }
+                            0x0C => {
+                                DecodedInsn::new2(fp_suffix!("round.w", fmt), OReg(fd), IReg(fs))
+                            }
+                            0x0D => {
+                                DecodedInsn::new2(fp_suffix!("trunc.w", fmt), OReg(fd), IReg(fs))
+                            }
+                            0x0E => {
+                                DecodedInsn::new2(fp_suffix!("ceil.w", fmt), OReg(fd), IReg(fs))
+                            }
+                            0x0F => {
+                                DecodedInsn::new2(fp_suffix!("floor.w", fmt), OReg(fd), IReg(fs))
+                            }
+
+                            0x20 => DecodedInsn::new2(fp_suffix!("cvt.s", fmt), OReg(fd), IReg(fs)),
+                            0x21 => DecodedInsn::new2(fp_suffix!("cvt.d", fmt), OReg(fd), IReg(fs)),
+                            0x24 => DecodedInsn::new2(fp_suffix!("cvt.w", fmt), OReg(fd), IReg(fs)),
+                            0x25 => DecodedInsn::new2(fp_suffix!("cvt.l", fmt), OReg(fd), IReg(fs)),
                             0x32 => DecodedInsn::new2(fp_suffix!("c.eq", fmt), IReg(fs), IReg(ft)),
                             0x3E => DecodedInsn::new2(fp_suffix!("c.le", fmt), IReg(fs), IReg(ft)),
                             _ => DecodedInsn::new1("cop1op?", Imm32(func)),
                         }
                     }
-                    0x14 | 0x15 => match func {
-                        0x20 => DecodedInsn::new0(fp_suffix!("cvt.s", fmt)),
-                        0x21 => DecodedInsn::new0(fp_suffix!("cvt.d", fmt)),
-                        _ => DecodedInsn::new1("cop1cvt?", Imm32(func)),
-                    },
+                    0x14 | 0x15 => {
+                        let fd = FPU_REG_NAMES[((opcode >> 6) & 0x1f) as usize].into();
+                        match func {
+                            0x20 => DecodedInsn::new2(fp_suffix!("cvt.s", fmt), OReg(fd), IReg(fs)),
+                            0x21 => DecodedInsn::new2(fp_suffix!("cvt.d", fmt), OReg(fd), IReg(fs)),
+                            _ => DecodedInsn::new1("cop1cvt?", Imm32(func)),
+                        }
+                    }
                     _ => DecodedInsn::new1("cop1?", Imm32(fmt)),
                 }
             }
@@ -485,6 +513,40 @@ impl Cop for Fpu {
                 }
             }
             _ => DecodedInsn::new1("unkfpu", Imm8(op as u8)),
+        }
+    }
+
+    fn render_debug(&mut self, dr: &DebuggerRenderer) {
+        dr.render_regview(self);
+    }
+}
+
+impl RegisterView for Fpu {
+    const WINDOW_SIZE: (f32, f32) = (360.0, 400.0);
+    const COLUMNS: usize = 2;
+
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)
+    where
+        F: for<'a> FnMut(&'a str, RegisterSize<'a>, Option<&str>),
+    {
+        use self::RegisterSize::*;
+
+        for idx in 0..16 {
+            let idx = idx + col * 8;
+
+            let val = self.regs[idx];
+
+            let desc = format!(
+                "S:{:.5} D:{:.5}",
+                f32::from_u64bits(val),
+                f64::from_u64bits(val)
+            );
+
+            visit(FPU_REG_NAMES[idx], Reg64(&mut self.regs[idx]), Some(&desc));
         }
     }
 }
