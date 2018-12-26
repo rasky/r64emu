@@ -540,12 +540,11 @@ impl RegisterView for Fpu {
 
             let val = self.regs[idx];
 
-            let desc = format!(
-                "S:{:.5} D:{:.5}",
-                f32::from_u64bits(val),
-                f64::from_u64bits(val)
-            );
-
+            let desc = if val >> 32 == 0 {
+                format!("S:{:.5}", f32::from_u64bits(val))
+            } else {
+                format!("D:{:.5}", f64::from_u64bits(val))
+            };
             visit(FPU_REG_NAMES[idx], Reg64(&mut self.regs[idx]), Some(&desc));
         }
     }
