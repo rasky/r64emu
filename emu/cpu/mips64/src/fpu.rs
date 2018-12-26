@@ -313,6 +313,7 @@ impl Cop for Fpu {
         let fmt = (opcode >> 21) & 0x1F;
         let rt = ((opcode >> 16) & 0x1F) as usize;
         let rs = ((opcode >> 11) & 0x1F) as usize;
+        let rd = ((opcode >> 6) & 0x1F) as usize;
         match fmt {
             0x0 => cpu.regs[rt] = (self.regs[rs] as u32).sx64(), // MFC1
             0x2 => match rs {
@@ -344,16 +345,16 @@ impl Cop for Fpu {
             0x11 => return self.fop::<f64>(cpu, opcode, t),
 
             0x14 => match func {
-                0x20 => self.regs[rt] = (self.regs[rs] as i32 as f32).to_u64bits(), // CVT.S.W
-                0x21 => self.regs[rt] = (self.regs[rs] as i32 as f64).to_u64bits(), // CVT.D.W
+                0x20 => self.regs[rd] = (self.regs[rs] as i32 as f32).to_u64bits(), // CVT.S.W
+                0x21 => self.regs[rd] = (self.regs[rs] as i32 as f64).to_u64bits(), // CVT.D.W
                 _ => {
                     error!(self.logger, "unimplemented COP1 W: func={:x?}", func);
                     return t.break_here("unimplemented COP1 W opcode");
                 }
             },
             0x15 => match func {
-                0x20 => self.regs[rt] = (self.regs[rs] as i64 as f32).to_u64bits(), // CVT.S.L
-                0x21 => self.regs[rt] = (self.regs[rs] as i64 as f64).to_u64bits(), // CVT.D.L
+                0x20 => self.regs[rd] = (self.regs[rs] as i64 as f32).to_u64bits(), // CVT.S.L
+                0x21 => self.regs[rd] = (self.regs[rs] as i64 as f64).to_u64bits(), // CVT.D.L
                 _ => {
                     error!(self.logger, "unimplemented COP1 L: func={:x?}", func);
                     return t.break_here("unimplemented COP1 L opcode");
