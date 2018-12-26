@@ -695,7 +695,7 @@ impl State {
     /// suggested to deserialize over a default initial state.
     pub fn deserialize(
         &mut self,
-        wanted_magic: &'static str,
+        wanted_magic: &str,
         wanted_version: u32,
         data: &[u8],
     ) -> Result<(), rmp_serde::decode::Error> {
