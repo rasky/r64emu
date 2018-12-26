@@ -192,7 +192,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                     pc_range.0 =
                         (cur_pc.saturating_sub(4 * MAX_LINES / 2) / 1024 * 1024).max(pc_range.0);
                     pc_range.1 = pc_range.0.saturating_add(4 * MAX_LINES - 1).min(pc_range.1);
-                    let num_lines = pc_range.1 - pc_range.0 + 1;
+                    let num_lines = (pc_range.1 - pc_range.0 + 1) / 4;
 
                     // Check if we were asked to scroll to a specific PC.
                     if let Some(force_pc) = force_pc {
