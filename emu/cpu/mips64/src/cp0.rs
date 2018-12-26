@@ -305,7 +305,6 @@ impl Cop for Cp0 {
                             self.reg_index = 0x8000_0000;
                         }
                     };
-                    return t.break_here("TLB probe");
                 }
                 0x18 => {
                     // ERET
