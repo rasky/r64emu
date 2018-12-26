@@ -289,7 +289,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                                 hovered |= ui.is_item_hovered();
 
                                 // Args
-                                ui.same_line(220.0);
+                                ui.same_line(230.0);
                                 ui.text_colored(color(230, 219, 116), im_str!("{}", fields[1]));
                                 hovered |= ui.is_item_hovered();
 
