@@ -71,7 +71,7 @@ impl Mem {
             return unmapped_area_r();
         }
 
-        HwIoR::Mem(self.buf.clone(), self.mask as u32)
+        HwIoR::Mem(unsafe { self.buf.clone() }, self.mask as u32)
     }
 
     pub(crate) fn hwio_w<S: MemInt>(&self) -> HwIoW {
@@ -82,7 +82,7 @@ impl Mem {
             return unmapped_area_w();
         }
 
-        HwIoW::Mem(self.buf.clone(), self.mask as u32)
+        HwIoW::Mem(unsafe { self.buf.clone() }, self.mask as u32)
     }
 
     pub fn write<O: ByteOrder, S: MemInt>(&self, addr: u32, val: S) {

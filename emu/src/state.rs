@@ -187,8 +187,8 @@ unsafe fn UnsafeCurrentState() -> &'static mut State {
 /// trait (because its contents will be copied around when snapshotting the state),
 /// and the Serialize trait (to allow for long term persistence).
 ///
-/// Cloning a Field creates another field pointing to the same content (aliasing).
-#[derive(Clone)]
+/// Cloning a `Field` creates another field pointing to the same content (aliasing).
+/// For this reason, cloning is marked as unsafe.
 pub struct Field<F: Copy + Serialize + Deserialize<'static>> {
     offset: usize,
     phantom: PhantomData<F>,
@@ -205,24 +205,46 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> Field<F> {
     /// # Panics
     ///
     /// This function will panic if the name
-    pub fn new(name: &'static str, f: F) -> Self {
+    pub fn new(name: &str, f: F) -> Self {
         let mut field = CurrentState().new_field(name);
         *field = f;
         field
     }
 
-    fn as_ref(&self, state: &State) -> &F {
+    /// Create an aliased copy to this field, that is a field that points to the
+    /// same underlying data. It is unsafe because aliasing can allow multiple
+    /// mutable borrows, and thus it cannot be used to impl Clone.
+    pub unsafe fn clone(&self) -> Self {
+        Self {
+            offset: self.offset,
+            phantom: PhantomData,
+        }
+    }
+
+    fn as_ref_with_state<'s, 'f: 's>(&'s self, state: &'f State) -> &'f F {
         unsafe {
             let data = &state.data[self.offset];
             mem::transmute(data)
         }
     }
 
-    fn as_mut(&mut self, state: &mut State) -> &mut F {
+    fn as_mut_with_state<'s, 'f: 's>(&'s mut self, state: &'f mut State) -> &'f mut F {
         unsafe {
             let data = &mut state.data[self.offset];
             mem::transmute(data)
         }
+    }
+
+    /// `as–ref()` returns a reference to access the underlying data. It is
+    /// similar to the Deref trait, but it defines lifetimes to keep the `State`
+    /// borrowed rather than the field instance. Since this violates aliasing
+    /// rules, it is unsafe.
+    pub fn as_ref<'s, 'f: 's>(&'s self) -> &'f F {
+        unsafe { self.as_ref_with_state(UnsafeCurrentState()) }
+    }
+    /// `as_mut()` is the mutable version of [`as_ref()`](struct.Field.html#method.as_ref).
+    pub fn as_mut<'s, 'f: 's>(&'s mut self) -> &'f mut F {
+        unsafe { self.as_mut_with_state(UnsafeCurrentState()) }
     }
 }
 
@@ -242,13 +264,13 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> Deref for Field<F> {
     type Target = F;
 
     fn deref(&self) -> &F {
-        unsafe { self.as_ref(UnsafeCurrentState()) }
+        unsafe { self.as_ref_with_state(UnsafeCurrentState()) }
     }
 }
 
 impl<F: 'static + Copy + Serialize + Deserialize<'static>> DerefMut for Field<F> {
     fn deref_mut(&mut self) -> &mut F {
-        unsafe { self.as_mut(UnsafeCurrentState()) }
+        unsafe { self.as_mut_with_state(UnsafeCurrentState()) }
     }
 }
 
@@ -275,9 +297,8 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> DerefMut for Field<F>
 /// create an [`ArrayField`](struct.ArrayField.html) instance which points (is
 /// aliased) to the same field.
 ///
-/// Cloning an `EndianField` creates another field that points to the same
-/// contents (aliasing).
-#[derive(Clone)]
+/// Cloning a `EndianField` creates another `EndianField` pointing to the same
+/// content (aliasing). For this reason, cloning is marked as unsafe.
 pub struct EndianField<F: Copy + Serialize + Deserialize<'static> + MemInt, O: ByteOrderCombiner> {
     offset: usize,
     phantom: PhantomData<(F, O)>,
@@ -291,7 +312,7 @@ where
     F: 'static + Copy + Serialize + Deserialize<'static> + MemInt,
     O: 'static + ByteOrderCombiner,
 {
-    pub fn new(name: &'static str, f: F) -> Self {
+    pub fn new(name: &str, f: F) -> Self {
         let mut field = CurrentState().new_endian_field(name);
         field.set(f);
         field
@@ -300,6 +321,16 @@ where
         ArrayField {
             offset: self.offset,
             len: mem::size_of::<F>(),
+            phantom: PhantomData,
+        }
+    }
+
+    /// Create an aliased copy to this field, that is a field that points to the
+    /// same underlying data. It is unsafe because aliasing can allow multiple
+    /// mutable borrows, and thus it cannot be used to impl Clone.
+    pub unsafe fn clone(&self) -> Self {
+        Self {
+            offset: self.offset,
             phantom: PhantomData,
         }
     }
@@ -325,9 +356,14 @@ where
         *self.as_mut(state) = O::to_native(val);
     }
 
+    /// Get the current value for this field. Getters and setters are explicit
+    /// methods in `EndianField` because they must perform endianess adjustments.
     pub fn get(&self) -> F {
         unsafe { self.get_with_state(UnsafeCurrentState()) }
     }
+
+    /// Set the current value for this field. Getters and setters are explicit
+    /// methods in `EndianField` because they must perform endianess adjustments.
     pub fn set(&mut self, val: F) {
         unsafe {
             self.set_with_state(UnsafeCurrentState(), val);
@@ -357,7 +393,9 @@ impl<F: Copy + Serialize + MemInt, O: ByteOrderCombiner> Default for EndianField
 /// placeholder in structs for delayed initialization, but should eventually be
 /// replaced by a correctly-initialized instance returned by
 /// [`ArrayField::new()`](struct.ArrayField.html#method.new).
-#[derive(Clone)]
+///
+/// Cloning a `ArrayField` creates another `ArrayField` pointing to the same
+/// content (aliasing). For this reason, cloning is marked as unsafe.
 pub struct ArrayField<F: Copy + Serialize + Deserialize<'static>> {
     offset: usize,
     len: usize,
@@ -367,7 +405,7 @@ pub struct ArrayField<F: Copy + Serialize + Deserialize<'static>> {
 impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
     /// Create an `ArrayField` with the specified name, initial value, and length.
     /// NOTE: `serialize` is deprecated, always pass `true`.
-    pub fn new(name: &'static str, f: F, len: usize, serialize: bool) -> Self {
+    pub fn new(name: &str, f: F, len: usize, serialize: bool) -> Self {
         let mut field = CurrentState().new_array_field(name, len, serialize);
         for v in field.iter_mut() {
             *v = f;
@@ -378,6 +416,17 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
     /// Return the number of elements in the array
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    /// Create an aliased copy to this field, that is a field that points to the
+    /// same underlying data. It is unsafe because aliasing can allow multiple
+    /// mutable borrows, and thus it cannot be used to impl Clone.
+    pub unsafe fn clone(&self) -> Self {
+        Self {
+            offset: self.offset,
+            len: self.len,
+            phantom: PhantomData,
+        }
     }
 
     fn as_ref_with_state(&self, state: &State) -> &[F] {
@@ -462,7 +511,7 @@ type Deser<'de> = rmp_serde::Deserializer<rmp_serde::decode::ReadReader<lz4::Dec
 // FieldInfo contains the type-erased serialization and deserialization functions
 // for each field.
 struct FieldInfo {
-    name: &'static str,
+    name: String,
     serialize:
         Box<for<'de, 'c> Fn(&mut Ser<'de, 'c>, &State) -> Result<(), rmp_serde::encode::Error>>,
     deserialize:
@@ -470,31 +519,31 @@ struct FieldInfo {
 }
 
 impl FieldInfo {
-    fn new<F>(name: &'static str, field: &Field<F>) -> Self
+    fn new<F>(name: &str, field: &Field<F>) -> Self
     where
         F: 'static + Copy + Serialize + Deserialize<'static>,
     {
-        let field1 = field.clone();
-        let mut field2 = field.clone();
+        let field1 = unsafe { field.clone() };
+        let mut field2 = unsafe { field.clone() };
         Self {
-            name,
-            serialize: Box::new(move |ser, state| field1.as_ref(state).serialize(ser)),
+            name: name.to_owned(),
+            serialize: Box::new(move |ser, state| field1.as_ref_with_state(state).serialize(ser)),
             deserialize: Box::new(move |deser, state| {
-                *field2.as_mut(state) = serde::Deserialize::deserialize(deser)?;
+                *field2.as_mut_with_state(state) = serde::Deserialize::deserialize(deser)?;
                 Ok(())
             }),
         }
     }
 
-    fn new_endian<F, O>(name: &'static str, field: &EndianField<F, O>) -> Self
+    fn new_endian<F, O>(name: &str, field: &EndianField<F, O>) -> Self
     where
         F: 'static + Copy + Serialize + Deserialize<'static> + MemInt,
         O: 'static + ByteOrderCombiner,
     {
-        let field1 = field.clone();
-        let mut field2 = field.clone();
+        let field1 = unsafe { field.clone() };
+        let mut field2 = unsafe { field.clone() };
         Self {
-            name,
+            name: name.to_owned(),
             serialize: Box::new(move |ser, state| field1.get_with_state(state).serialize(ser)),
             deserialize: Box::new(move |deser, state| {
                 field2.set_with_state(state, serde::Deserialize::deserialize(deser)?);
@@ -503,14 +552,14 @@ impl FieldInfo {
         }
     }
 
-    fn new_array<F>(name: &'static str, field: &ArrayField<F>) -> Self
+    fn new_array<F>(name: &str, field: &ArrayField<F>) -> Self
     where
         F: 'static + Copy + Serialize + Deserialize<'static>,
     {
-        let field1 = field.clone();
-        let mut field2 = field.clone();
+        let field1 = unsafe { field.clone() };
+        let mut field2 = unsafe { field.clone() };
         Self {
-            name,
+            name: name.to_owned(),
             serialize: Box::new(move |ser, state| field1.as_ref_with_state(state).serialize(ser)),
             deserialize: Box::new(move |deser, state| {
                 let buf: Vec<F> = serde::Deserialize::deserialize(deser)?;
@@ -556,7 +605,7 @@ impl State {
         offset
     }
 
-    fn new_field<F>(&mut self, name: &'static str) -> Field<F>
+    fn new_field<F>(&mut self, name: &str) -> Field<F>
     where
         F: 'static + Copy + Serialize + Deserialize<'static>,
     {
@@ -577,7 +626,7 @@ impl State {
         f
     }
 
-    fn new_endian_field<F, O>(&mut self, name: &'static str) -> EndianField<F, O>
+    fn new_endian_field<F, O>(&mut self, name: &str) -> EndianField<F, O>
     where
         F: 'static + Copy + Serialize + Deserialize<'static> + MemInt,
         O: 'static + ByteOrderCombiner,
@@ -602,12 +651,7 @@ impl State {
         f
     }
 
-    fn new_array_field<F>(
-        &mut self,
-        name: &'static str,
-        len: usize,
-        serialize: bool,
-    ) -> ArrayField<F>
+    fn new_array_field<F>(&mut self, name: &str, len: usize, serialize: bool) -> ArrayField<F>
     where
         F: 'static + Copy + Serialize + Deserialize<'static>,
     {
@@ -680,7 +724,7 @@ impl State {
         ser.serialize_u32(version)?;
         ser.serialize_u32(self.info.borrow().len() as u32)?;
         for fi in self.info.borrow().values() {
-            ser.serialize_str(fi.name)?;
+            ser.serialize_str(&fi.name)?;
             (*fi.serialize)(&mut ser, &self)?;
         }
 

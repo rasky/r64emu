@@ -132,7 +132,7 @@ where
         match self.rcb {
             Some(ref rcb) => {
                 let rcb = Rc::downgrade(&rcb);
-                let raw = self.raw.clone();
+                let raw = unsafe { self.raw.clone() };
                 HwIoR::Func(Rc::new(move |addr: u32| {
                     let rcb = rcb.upgrade().unwrap();
 
@@ -157,7 +157,7 @@ where
         if self.romask == U::zero() && self.wcb.is_none() {
             HwIoW::Mem(self.raw.as_array_field(), (U::SIZE - 1) as u32)
         } else {
-            let mut raw = self.raw.clone();
+            let mut raw = unsafe { self.raw.clone() };
             let wcb = self.wcb.clone().map(|f| Rc::downgrade(&f));
             let romask = self.romask;
             HwIoW::Func(Rc::new(RefCell::new(move |addr: u32, val64: u64| {
@@ -235,7 +235,10 @@ impl<O: ByteOrderCombiner + 'static, U: RegDeref> RegRef<O, U> {
     fn new(r: &Reg<O, U::Type>) -> Self {
         let val = r.get();
         Self {
-            raw: r.raw.clone(),
+            // FIXME: RegRef is aliasing Reg without borrowing it!
+            // This is actually unsafe; we're masking unsafe here but
+            // it's potentially incorrect.
+            raw: unsafe { r.raw.clone() },
             val: U::from(val),
             old: U::from(val),
             phantom: PhantomData,

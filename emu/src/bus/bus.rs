@@ -18,16 +18,34 @@ use std::mem;
 use std::rc::Rc;
 use std::slice;
 
-#[derive(Clone)]
 pub(crate) enum HwIoR {
     Mem(ArrayField<u8>, u32),
     Func(Rc<Fn(u32) -> u64>),
 }
 
-#[derive(Clone)]
+impl Clone for HwIoR {
+    fn clone(&self) -> HwIoR {
+        use self::HwIoR::*;
+        match self {
+            Mem(f, m) => Mem(unsafe { (*f).clone() }, *m),
+            Func(f) => Func(f.clone()),
+        }
+    }
+}
+
 pub(crate) enum HwIoW {
     Mem(ArrayField<u8>, u32),
     Func(Rc<RefCell<FnMut(u32, u64)>>),
+}
+
+impl Clone for HwIoW {
+    fn clone(&self) -> HwIoW {
+        use self::HwIoW::*;
+        match self {
+            Mem(f, m) => Mem(unsafe { (*f).clone() }, *m),
+            Func(f) => Func(f.clone()),
+        }
+    }
 }
 
 impl HwIoR {
