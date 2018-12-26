@@ -22,8 +22,8 @@ pub type DecodedInsn = emu::dbg::DecodedInsn<&'static str, &'static str>;
 macro_rules! decode_cop {
     ($cpu:ident, $opcode:ident, $pc:ident, $copn:ident, $default:expr) => {{
         match $cpu.$copn.is_null_obj() {
-            false => DecodedInsn::new0($default),
-            true => $cpu.$copn.decode($opcode, $pc),
+            true => DecodedInsn::new0($default),
+            false => $cpu.$copn.decode($opcode, $pc),
         }
     }};
 }
