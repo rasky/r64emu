@@ -1,4 +1,4 @@
-use super::device::{DevPtr, Device};
+use super::device::Device;
 use super::mem::Mem;
 use super::radix::RadixTree;
 use super::regs::Reg;
@@ -324,16 +324,11 @@ where
         return Ok(());
     }
 
-    pub fn map_device<T>(
-        &'b mut self,
-        base: u32,
-        device: &DevPtr<T>,
-        bank: usize,
-    ) -> Result<(), &'s str>
+    pub fn map_device<T>(&'b mut self, base: u32, device: &T, bank: usize) -> Result<(), &'s str>
     where
         T: Device<Order = Order>,
     {
-        device.borrow().dev_map(self, bank, base)
+        device.dev_map(self, bank, base)
     }
 
     // Add a memory map for a "combiner": that is, an internal function that combines two

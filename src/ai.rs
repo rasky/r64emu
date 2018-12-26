@@ -1,7 +1,6 @@
-extern crate emu;
-extern crate slog;
 use emu::bus::be::Reg32;
 use emu::int::Numerics;
+use emu_derive::DeviceBE;
 
 #[derive(DeviceBE)]
 pub struct Ai {
@@ -41,8 +40,8 @@ pub struct Ai {
 }
 
 impl Ai {
-    pub fn new(logger: slog::Logger) -> Ai {
-        Ai {
+    pub fn new(logger: slog::Logger) -> Box<Ai> {
+        Box::new(Ai {
             dram_address: Reg32::default(),
             length: Reg32::default(),
             control: Reg32::default(),
@@ -50,7 +49,7 @@ impl Ai {
             dac_sample_period: Reg32::default(),
             bit_rate: Reg32::default(),
             logger,
-        }
+        })
     }
 
     fn cb_write_status(&self, _old: u32, new: u32) {

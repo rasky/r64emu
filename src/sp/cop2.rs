@@ -7,15 +7,13 @@ use super::vrcp;
 
 use crate::errors::*;
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
-use emu::bus::be::{Bus, DevPtr};
+use emu::bus::be::{Bus, Device};
 use emu::dbg;
 use emu::int::Numerics;
 use emu::memint::MemInt;
 use mips64::{Cop, CpuContext, DecodedInsn};
 use slog;
 use std::arch::x86_64::*;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 // Vector registers as array of u8.
 // Kept as little endian so that it's easier to directly load into SSE registers
@@ -63,7 +61,6 @@ pub struct SpCop2 {
     vcc_clip: VectorReg,
     div_in: Option<u32>,
     div_out: u32,
-    sp: DevPtr<Sp>,
     logger: slog::Logger,
 }
 
@@ -75,7 +72,7 @@ impl SpCop2 {
     pub const REG_ACCUM_MD: usize = 36;
     pub const REG_ACCUM_HI: usize = 37;
 
-    pub fn new(sp: &DevPtr<Sp>, logger: slog::Logger) -> Result<SpCop2> {
+    pub fn new(logger: slog::Logger) -> Result<SpCop2> {
         Ok(SpCop2 {
             vregs: [VectorReg([0u8; 16]); 32],
             accum: [VectorReg([0u8; 16]); 3],
@@ -86,7 +83,6 @@ impl SpCop2 {
             vcc_clip: VectorReg([0u8; 16]),
             div_in: None,
             div_out: 0,
-            sp: sp.clone(),
             logger: logger,
         })
     }
@@ -822,7 +818,7 @@ impl Cop for SpCop2 {
     }
 
     fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Bus) {
-        let mut sp = self.sp.borrow_mut();
+        let sp = Sp::get_mut();
         let dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
         let vt = &mut self.vregs[vtidx];
@@ -872,7 +868,7 @@ impl Cop for SpCop2 {
         }
     }
     fn swc(&mut self, op: u32, ctx: &CpuContext, _bus: &mut Bus) {
-        let mut sp = self.sp.borrow_mut();
+        let sp = Sp::get_mut();
         let mut dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
         let vt = &self.vregs[vtidx];

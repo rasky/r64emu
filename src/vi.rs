@@ -1,10 +1,10 @@
-use emu::bus::be::{Bus, DevPtr, Reg32};
+use emu::bus::be::{Device, Reg32};
 use emu::gfx::*;
 use emu::int::Numerics;
+use emu_derive::DeviceBE;
 
 use super::mi::{IrqMask, Mi};
 use super::n64::R4300;
-use emu::bus::DeviceGetter;
 
 use slog;
 
@@ -100,12 +100,11 @@ pub struct Vi {
 
     logger: slog::Logger,
     framecount: usize,
-    mi: DevPtr<Mi>,
 }
 
 impl Vi {
-    pub fn new(logger: slog::Logger, mi: DevPtr<Mi>) -> Vi {
-        Vi {
+    pub fn new(logger: slog::Logger) -> Box<Vi> {
+        Box::new(Vi {
             status: Reg32::default(),
             origin: Reg32::default(),
             width: Reg32::default(),
@@ -121,9 +120,8 @@ impl Vi {
             x_scale: Reg32::default(),
             y_scale: Reg32::default(),
             logger,
-            mi,
             framecount: 0,
-        }
+        })
     }
 
     pub fn set_line(&mut self, y: usize) {
@@ -132,14 +130,14 @@ impl Vi {
         self.current_line.set(y as u32);
 
         if y as u32 == self.vertical_interrupt.get() {
-            self.mi.borrow_mut().set_irq_line(IrqMask::VI, true);
+            Mi::get_mut().set_irq_line(IrqMask::VI, true);
         }
     }
 
     fn cb_write_current_line(&mut self, _old: u32, _new: u32) {
         info!(self.logger, "ack VI interrupt");
         // Writing the current line register acknowledge the interrupt
-        self.mi.borrow_mut().set_irq_line(IrqMask::VI, false);
+        Mi::get_mut().set_irq_line(IrqMask::VI, false);
     }
 
     fn cb_write_vertical_interrupt(&self, _old: u32, new: u32) {

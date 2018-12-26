@@ -44,7 +44,7 @@ pub fn romswap(rom: Vec<u8>) -> Vec<u8> {
 }
 
 impl Cartridge {
-    pub fn new(romfn: &str) -> Result<Cartridge> {
+    pub fn new(romfn: &str) -> Result<Box<Cartridge>> {
         let mut file = File::open(romfn)?;
         let mut contents = vec![];
         file.read_to_end(&mut contents)?;
@@ -54,11 +54,11 @@ impl Cartridge {
             contents.resize(newsize, 0xff);
         }
 
-        Ok(Cartridge {
+        Ok(Box::new(Cartridge {
             drive64_status: Reg32::default(),
             drive64_cmd: Reg32::default(),
             rom: Mem::from_buffer("rom", romswap(contents), MemFlags::READACCESS),
-        })
+        }))
     }
 
     // Detect the CIC model by checksumming the header of the ROM.

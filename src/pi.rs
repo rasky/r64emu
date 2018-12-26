@@ -1,11 +1,9 @@
-extern crate emu;
-extern crate slog;
 use super::mi::{IrqMask, Mi};
 use super::n64::R4300;
 use crate::errors::*;
-use emu::bus::be::{DevPtr, Mem, MemFlags, Reg32};
-use emu::bus::DeviceGetter;
+use emu::bus::be::{Device, Mem, MemFlags, Reg32};
 use emu::int::Numerics;
+use emu_derive::DeviceBE;
 use std::fs::File;
 use std::io::Read;
 
@@ -75,17 +73,15 @@ pub struct Pi {
     dom2_release: Reg32,
 
     logger: slog::Logger,
-    mi: DevPtr<Mi>,
 }
 
 impl Pi {
-    pub fn new(logger: slog::Logger, mi: DevPtr<Mi>, pifrom: &str) -> Result<Pi> {
+    pub fn new(logger: slog::Logger, pifrom: &str) -> Result<Box<Pi>> {
         let mut contents = vec![];
         File::open(pifrom)?.read_to_end(&mut contents)?;
 
-        Ok(Pi {
+        Ok(Box::new(Pi {
             logger,
-            mi,
             rom: Mem::from_buffer("pif_rom", contents, MemFlags::READACCESS),
             ram: Mem::default(),
             magic: Reg32::default(),
@@ -102,7 +98,7 @@ impl Pi {
             dom2_pulse_width: Reg32::default(),
             dom2_page_size: Reg32::default(),
             dom2_release: Reg32::default(),
-        })
+        }))
     }
 
     fn cb_read_magic(&self, val: u32) -> u32 {
@@ -119,7 +115,7 @@ impl Pi {
 
     fn cb_write_dma_status(&mut self, _old: u32, new: u32) {
         info!(self.logger, "write dma status"; o!("val" => format!("{:x}", new)));
-        self.mi.borrow_mut().set_irq_line(IrqMask::PI, false);
+        Mi::get_mut().set_irq_line(IrqMask::PI, false);
     }
 
     fn cb_write_dma_wr_len(&mut self, _old: u32, len: u32) {
@@ -141,7 +137,7 @@ impl Pi {
         }
         self.dma_rom_addr.set(raddr);
         self.dma_ram_addr.set(waddr);
-        self.mi.borrow_mut().set_irq_line(IrqMask::PI, true);
+        Mi::get_mut().set_irq_line(IrqMask::PI, true);
     }
 
     fn cb_write_dma_rd_len(&mut self, _old: u32, val: u32) {
@@ -162,7 +158,7 @@ impl Pi {
             waddr = waddr + 4;
             i += 4;
         }
-        self.mi.borrow_mut().set_irq_line(IrqMask::PI, true);
+        Mi::get_mut().set_irq_line(IrqMask::PI, true);
 
         unimplemented!();
     }

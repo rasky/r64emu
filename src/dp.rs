@@ -4,13 +4,10 @@ extern crate emu;
 extern crate slog;
 use super::n64::R4300;
 use super::rdp::Rdp;
-use emu::bus::be::{Bus, MemIoR, Reg32, RegDeref, RegRef};
-use emu::bus::DeviceGetter;
+use emu::bus::be::{Device, MemIoR, Reg32, RegDeref, RegRef};
 use emu::dbg;
 use emu::int::Numerics;
 use emu::sync;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 bitflags! {
     struct StatusFlags: u32 {
@@ -64,9 +61,9 @@ pub struct Dp {
 }
 
 impl Dp {
-    pub fn new(logger: slog::Logger) -> Dp {
+    pub fn new(logger: slog::Logger) -> Box<Dp> {
         let gfx_logger = logger.new(o!());
-        Dp {
+        Box::new(Dp {
             cmd_start: Reg32::default(),
             cmd_end: Reg32::default(),
             cmd_current: Reg32::default(),
@@ -78,7 +75,7 @@ impl Dp {
             fetched_start_addr: 0,
             fetched_end_addr: 0,
             gfx: Box::new(Rdp::new(gfx_logger)),
-        }
+        })
     }
 
     fn cmd_status_ref(&self) -> RegRef<StatusFlags> {

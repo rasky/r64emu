@@ -1,4 +1,5 @@
 #![recursion_limit = "128"]
+
 #[macro_use]
 extern crate synstructure;
 
@@ -214,38 +215,30 @@ fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemA
 
 fn expand_reg_devinit(
     fi: &synstructure::BindingInfo,
-    structname: &str,
+    dev_ident: &Ident,
+    dev_name: &str,
     varname: &str,
     ra: &RegAttributes,
 ) -> proc_macro2::TokenStream {
     let mut qrcb = quote! {None};
     let mut qwcb = quote! {None};
-    let mut initbody = quote! {};
 
     if ra.wcb {
-        initbody = quote! {
-            #initbody
-            let wdevw = Rc::downgrade(&_wself);
-        };
         let cbname = Ident::new(&format!("cb_write_{}", varname), Span::call_site());
         qwcb = quote! {
             Some(Rc::new(Box::new(move |old, val| {
-                let dev = wdevw.upgrade().unwrap();
-                dev.borrow_mut(). #cbname (old, val);
+                let dev = #dev_ident ::get_mut();
+                dev. #cbname (old, val);
             })))
         };
     }
 
     if ra.rcb {
-        initbody = quote! {
-            #initbody
-            let wdevr = Rc::downgrade(&_wself);
-        };
         let cbname = Ident::new(&format!("cb_read_{}", varname), Span::call_site());
         qrcb = quote! {
             Some(Rc::new(Box::new(move |val| {
-                let dev = wdevr.upgrade().unwrap();
-                let res = dev.borrow(). #cbname (val);
+                let dev = #dev_ident ::get_mut();
+                let res = dev. #cbname (val);
                 drop(dev);
                 res
             })))
@@ -258,9 +251,8 @@ fn expand_reg_devinit(
     let read = !ra.writeonly;
     let write = !ra.readonly;
     quote! {
-        #initbody
         *#fi = Reg::new(
-            concat!(#structname, "::", #varname),
+            concat!(#dev_name, "::", #varname),
             #init,
             #rwmask,
             RegFlags::new(#read, #write),
@@ -336,9 +328,10 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
     s.filter(|fi| fi.ast().attrs.len() != 0);
     s.bind_with(|_fi| BindStyle::RefMut);
 
+    let dev_ident = s.ast().ident.clone();
+    let dev_name = s.ast().ident.to_string();
     let mut dev_map = quote! {};
     let dev_init = s.each(|fi| {
-        let structname = s.ast().ident.to_string();
         let varname = fi.ast().ident.as_ref().unwrap().to_string();
 
         let attrs = &fi.ast().attrs;
@@ -364,7 +357,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
                     #dev_map
                     #dm;
                 };
-                expand_reg_devinit(fi, &structname, &varname, &ra)
+                expand_reg_devinit(fi, &dev_ident, &dev_name, &varname, &ra)
             }
 
             "mem" => {
@@ -375,7 +368,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
                     #dev_map
                     #dm;
                 };
-                expand_mem_devinit(fi, &structname, &varname, &ma)
+                expand_mem_devinit(fi, &dev_name, &varname, &ma)
             }
             _ => unreachable!(),
         }
@@ -390,12 +383,11 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
         Span::call_site(),
     );
     s.gen_impl(quote! {
-        extern crate emu;
-        extern crate byteorder;
         use ::std::result::Result;
         use ::std::cell::{RefCell};
         use ::std::rc::{Rc};
-        use emu::bus::{Bus, Device};
+        use ::std::pin::{Pin};
+        use emu::bus::{CurrentDeviceMap, Bus, Device};
         use byteorder:: #endian;
 
         #[allow(unused_imports)]
@@ -404,10 +396,17 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
         gen impl Device for @Self {
             type Order = #endian;
 
-            fn dev_init(&mut self, _wself: Rc<RefCell<Self>>) {
-                match *self {
+            fn tag() -> &'static str {
+                #dev_name
+            }
+
+            fn register(self: Box<Self>) {
+                let mut pself = Pin::new(self);
+                let pself_tag = #dev_name;
+                match *pself {
                     #dev_init
                 }
+                CurrentDeviceMap().register(pself);
             }
 
             fn dev_map(&self, bus: &mut Bus<Self::Order>, bank: usize, base: u32,) -> Result<(), &'static str> {

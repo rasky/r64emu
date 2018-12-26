@@ -7,13 +7,13 @@ mod radix;
 mod regs;
 
 pub use self::bus::{Bus, MemIoR, MemIoRIterator, MemIoW};
-pub use self::device::{CurrentDeviceMap, DevPtr, Device, DeviceGetter, DeviceMap, DeviceWithTag};
+pub use self::device::{CurrentDeviceMap, Device, DeviceMap};
 pub use self::mem::{Mem, MemFlags};
 pub use self::regs::{Reg, RegDeref, RegFlags, RegRef};
 
 pub mod le {
     use super::byteorder::LittleEndian;
-    pub use super::{DevPtr, Device, Mem, MemFlags, RegDeref, RegFlags};
+    pub use super::{Device, Mem, MemFlags, RegDeref, RegFlags};
     pub type Bus = super::Bus<LittleEndian>;
     pub type Reg8 = super::Reg<LittleEndian, u8>;
     pub type Reg16 = super::Reg<LittleEndian, u16>;
@@ -26,7 +26,7 @@ pub mod le {
 
 pub mod be {
     use super::byteorder::BigEndian;
-    pub use super::{DevPtr, Device, Mem, MemFlags, RegDeref, RegFlags};
+    pub use super::{Device, Mem, MemFlags, RegDeref, RegFlags};
     pub type Bus = super::Bus<BigEndian>;
     pub type Reg8 = super::Reg<BigEndian, u8>;
     pub type Reg16 = super::Reg<BigEndian, u16>;

@@ -1,7 +1,6 @@
 extern crate emu;
 extern crate slog;
 use emu::bus::be::{Mem, Reg32};
-use emu::int::Numerics;
 
 /// RDRAM
 #[derive(DeviceBE)]
@@ -84,8 +83,8 @@ pub struct Ri {
 }
 
 impl Ri {
-    pub fn new(logger: slog::Logger) -> Ri {
-        Ri {
+    pub fn new(logger: slog::Logger) -> Box<Ri> {
+        Box::new(Ri {
             rdram: Mem::default(),
 
             reg_rdram_config: Reg32::default(),
@@ -109,6 +108,6 @@ impl Ri {
             reg_ri_error_write: Reg32::default(),
 
             logger,
-        }
+        })
     }
 }

@@ -1,14 +1,10 @@
 use super::n64::R4300;
-use emu::bus::be::Reg32;
-use emu::bus::DeviceGetter;
+use emu::bus::be::{Device, Reg32};
 use mips64::Cop0;
 
 use bit_field::BitField;
 use bitflags::bitflags;
 use slog;
-
-use std::cell::RefCell;
-use std::rc::Rc;
 
 bitflags! {
     pub struct IrqMask: u32 {
@@ -33,12 +29,12 @@ pub struct Mi {
 }
 
 impl Mi {
-    pub fn new(logger: slog::Logger) -> Mi {
-        Mi {
+    pub fn new(logger: slog::Logger) -> Box<Mi> {
+        Box::new(Mi {
             irq_ack: Reg32::default(),
             irq_mask: Reg32::default(),
             logger,
-        }
+        })
     }
 
     pub fn set_irq_line(&mut self, mask: IrqMask, status: bool) {

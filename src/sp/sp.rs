@@ -1,17 +1,14 @@
-use super::super::dp::Dp;
 use super::super::mi::{IrqMask, Mi};
 use super::super::n64::R4300;
 use super::cop0::SpCop0;
 use super::cop2::SpCop2;
 use crate::errors::*;
-use emu::bus::be::{Bus, DevPtr, Mem, Reg32};
-use emu::bus::{CurrentDeviceMap, DeviceGetter, DeviceWithTag};
+use emu::bus::be::{Bus, Device, Mem, Reg32};
 use emu::int::Numerics;
 use mips64;
 
 use slog;
 use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
 
 bitflags! {
     pub(crate) struct StatusFlags: u32 {
@@ -49,8 +46,38 @@ impl mips64::Config for RSPCPUConfig {
     }
 }
 
+#[derive(DeviceBE)]
 pub struct RSPCPU {
     cpu: mips64::Cpu<RSPCPUConfig>,
+}
+
+impl RSPCPU {
+    fn new(logger: slog::Logger) -> Result<Box<Self>> {
+        Ok(Box::new(RSPCPU {
+            cpu: mips64::Cpu::new(
+                "RSP",
+                logger.new(o!()),
+                Bus::new(logger.new(o!())),
+                (
+                    SpCop0::new(logger.new(o!()))?,
+                    mips64::CopNull {},
+                    SpCop2::new(logger.new(o!()))?,
+                    mips64::CopNull {},
+                ),
+            ),
+        }))
+    }
+
+    pub fn map_bus(&mut self) -> Result<()> {
+        // Main bus of the RSPCPU is bank 0 of SP: IMEM and DMEM.
+        self.bus.map_device(0x0000_0000, Sp::get(), 0)?;
+
+        // COP0 has an internal bus, map it as well.
+        self.cop0.map_bus()?;
+
+        // Cop0 can access
+        Ok(())
+    }
 }
 
 impl Deref for RSPCPU {
@@ -63,12 +90,6 @@ impl Deref for RSPCPU {
 impl DerefMut for RSPCPU {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.cpu
-    }
-}
-
-impl DeviceWithTag for RSPCPU {
-    fn tag() -> &'static str {
-        "RSP_CPU"
     }
 }
 
@@ -108,16 +129,15 @@ pub struct Sp {
     reg_semaphore: Reg32,
 
     logger: slog::Logger,
-
-    pub(crate) mi: DevPtr<Mi>,
 }
 
 impl Sp {
-    pub fn new(logger: slog::Logger, dp: &DevPtr<Dp>, mi: DevPtr<Mi>) -> Result<DevPtr<Sp>> {
+    pub fn new(logger: slog::Logger) -> Result<Box<Sp>> {
         // Create the RSP internal MIPS CPU and its associated bus
-        let mut sp = DevPtr::new(Sp {
+        RSPCPU::new(logger.new(o!()))?.register();
+
+        Ok(Box::new(Sp {
             logger: logger.new(o!()),
-            mi,
             dmem: Mem::default(),
             imem: Mem::default(),
             reg_status: Reg32::default(),
@@ -129,29 +149,7 @@ impl Sp {
             reg_rsp_pc: Reg32::default(),
             reg_dma_full: Reg32::default(),
             reg_semaphore: Reg32::default(),
-        });
-
-        let bus = Bus::new(logger.new(o!()));
-
-        let mut cpu = Pin::new(Box::new(RSPCPU {
-            cpu: mips64::Cpu::new(
-                "RSP",
-                logger.new(o!()),
-                bus,
-                (
-                    SpCop0::new(&sp, dp, logger.new(o!()))?,
-                    mips64::CopNull {},
-                    SpCop2::new(&sp, logger.new(o!()))?,
-                    mips64::CopNull {},
-                ),
-            ),
-        }));
-
-        cpu.bus.map_device(0x0000_0000, &sp, 0)?;
-
-        CurrentDeviceMap().register(cpu);
-
-        Ok(sp)
+        }))
     }
 
     pub(crate) fn get_status(&self) -> StatusFlags {
@@ -162,7 +160,7 @@ impl Sp {
         self.reg_status.set(old); // restore previous value, as write bits are completely different
         let change_halt = self.write_status(new);
 
-        let mut cpu = RSPCPU::get_mut();
+        let cpu = RSPCPU::get_mut();
         match change_halt {
             Some(halt) => cpu.ctx_mut().set_halt_line(halt),
             None => {}
@@ -186,11 +184,11 @@ impl Sp {
         }
         if new & (1 << 3) != 0 {
             info!(self.logger, "clear RSP Interrupt");
-            self.mi.borrow_mut().set_irq_line(IrqMask::SP, false);
+            Mi::get_mut().set_irq_line(IrqMask::SP, false);
         }
         if new & (1 << 4) != 0 {
             info!(self.logger, "force-set RSP Interrupt");
-            self.mi.borrow_mut().set_irq_line(IrqMask::SP, true);
+            Mi::get_mut().set_irq_line(IrqMask::SP, true);
         }
         if new & (1 << 5) != 0 {
             status.remove(StatusFlags::SINGLESTEP);
@@ -269,7 +267,7 @@ impl Sp {
         if changed.contains(StatusFlags::HALT) {
             if status.contains(StatusFlags::HALT) {
                 if status.contains(StatusFlags::INTBREAK) {
-                    self.mi.borrow_mut().set_irq_line(IrqMask::SP, true);
+                    Mi::get_mut().set_irq_line(IrqMask::SP, true);
                 }
                 return Some(true);
             } else {
@@ -307,7 +305,7 @@ impl Sp {
         skip_src: usize,
         skip_dst: usize,
     ) {
-        let mut bus = &mut R4300::get_mut().bus;
+        let bus = &mut R4300::get_mut().bus;
         for _ in 0..count {
             let src_hwio = bus.fetch_read::<u8>(src);
             let mut dst_hwio = bus.fetch_write::<u8>(dst);

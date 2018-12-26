@@ -1,7 +1,7 @@
 use super::super::dp::Dp;
 use super::{Sp, StatusFlags};
 use crate::errors::*;
-use emu::bus::be::{Bus, DevPtr, Device};
+use emu::bus::be::{Bus, Device};
 use emu::dbg;
 use emu::dbg::{Operand, Tracer};
 use mips64;
@@ -43,25 +43,25 @@ const RSP_COP0_REG_NAMES: [&'static str; 32] = [
 ];
 
 pub struct SpCop0 {
-    sp: DevPtr<Sp>,
-    reg_bus: Box<Bus>, // bus to access SP HW registers via MTC/MFC
     _logger: slog::Logger,
+    reg_bus: Box<Bus>, // bus to access SP HW registers via MTC/MFC
 }
 
 impl SpCop0 {
-    pub fn new(sp: &DevPtr<Sp>, dp: &DevPtr<Dp>, logger: slog::Logger) -> Result<SpCop0> {
-        // Bank #1 in sp are the SP HW registers. Map them into a local
+    pub fn new(logger: slog::Logger) -> Result<SpCop0> {
+        Ok(SpCop0 {
+            _logger: logger.new(o!()),
+            reg_bus: Bus::new(logger.new(o!())),
+        })
+    }
+
+    pub fn map_bus(&mut self) -> Result<()> {
+        // Bank #1 in sp are the SP HW registers. Map them into our local COP0
         // bus that we can use to access them in MTC/MFC.
         // Same for DP registers.
-        let mut reg_bus = Bus::new(logger.new(o!()));
-        sp.borrow().dev_map(&mut reg_bus, 1, 0x0000_0000)?;
-        dp.borrow().dev_map(&mut reg_bus, 0, 0x0000_0020)?;
-
-        Ok(SpCop0 {
-            _logger: logger,
-            sp: sp.clone(),
-            reg_bus: reg_bus,
-        })
+        self.reg_bus.map_device(0x0000_0000, Sp::get(), 1)?;
+        self.reg_bus.map_device(0x0000_0020, Dp::get(), 0)?;
+        Ok(())
     }
 }
 
@@ -96,7 +96,7 @@ impl<'a> C0op<'a> {
 }
 
 impl mips64::Cop0 for SpCop0 {
-    fn set_hwint_line(&mut self, line: usize, status: bool) {
+    fn set_hwint_line(&mut self, _line: usize, _status: bool) {
         return; // RSP has no interrupts
     }
 
@@ -113,7 +113,7 @@ impl mips64::Cop0 for SpCop0 {
 
             // Breakpoint exception is used by RSP to halt itself
             mips64::Exception::Breakpoint => {
-                let mut sp = self.sp.borrow_mut();
+                let sp = Sp::get_mut();
                 let mut status = sp.get_status();
                 status.insert(StatusFlags::HALT | StatusFlags::BROKE);
                 match sp.set_status(status) {
@@ -134,7 +134,7 @@ impl mips64::Cop for SpCop0 {
         panic!("unsupported COP0 reg access in RSP")
     }
 
-    fn op(&mut self, cpu: &mut mips64::CpuContext, opcode: u32, t: &Tracer) -> dbg::Result<()> {
+    fn op(&mut self, cpu: &mut mips64::CpuContext, opcode: u32, _t: &Tracer) -> dbg::Result<()> {
         let mut op = C0op {
             opcode,
             cpu,
@@ -155,7 +155,7 @@ impl mips64::Cop for SpCop0 {
                 // Rust blocks these kind of circular references. Workaround
                 // by peeling some layer
                 if reg == 0x10 {
-                    let mut sp = op.cop0.sp.borrow_mut();
+                    let sp = Sp::get_mut();
                     match sp.write_status(val) {
                         Some(halt) => op.cpu.set_halt_line(halt),
                         None => {}

@@ -1,15 +1,14 @@
-use emu::bus::be::{Bus, DevPtr};
-use emu::bus::{CurrentDeviceMap, DeviceGetter, DeviceWithTag};
+use emu::bus::be::{Bus, Device};
 use emu::dbg;
 use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
 use emu::sync;
 use emu::sync::Subsystem;
+use emu_derive::DeviceBE;
 
 use slog;
 use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
 
 use super::ai::Ai;
 use super::cartridge::{Cartridge, CicModel};
@@ -37,6 +36,7 @@ impl mips64::Config for R4300Config {
     type Cop3 = mips64::CopNull;
 }
 
+#[derive(DeviceBE)]
 pub struct R4300 {
     cpu: mips64::Cpu<R4300Config>,
 }
@@ -54,15 +54,9 @@ impl DerefMut for R4300 {
     }
 }
 
-impl DeviceWithTag for R4300 {
-    fn tag() -> &'static str {
-        "R4300"
-    }
-}
-
 impl R4300 {
-    pub fn new(logger: slog::Logger, bus: Box<Bus>) -> R4300 {
-        R4300 {
+    pub fn new(logger: slog::Logger, bus: Box<Bus>) -> Box<Self> {
+        Box::new(R4300 {
             cpu: mips64::Cpu::new(
                 MAINCPU_NAME,
                 logger.new(o!()),
@@ -74,24 +68,36 @@ impl R4300 {
                     mips64::CopNull {},
                 ),
             ),
-        }
+        })
+    }
+
+    pub fn map_bus(&mut self) -> Result<()> {
+        self.bus.map_device(0x0000_0000, Ri::get(), 0)?;
+        self.bus.map_device(0x03F0_0000, Ri::get(), 1)?;
+        self.bus.map_device(0x0400_0000, Sp::get(), 0)?;
+        self.bus.map_device(0x0404_0000, Sp::get(), 1)?;
+        self.bus.map_device(0x0408_0000, Sp::get(), 2)?;
+        self.bus.map_device(0x0410_0000, Dp::get(), 0)?;
+        self.bus.map_device(0x0430_0000, Mi::get(), 0)?;
+        self.bus.map_device(0x0440_0000, Vi::get(), 0)?;
+        self.bus.map_device(0x0450_0000, Ai::get(), 0)?;
+        self.bus.map_device(0x0460_0000, Pi::get(), 0)?;
+        self.bus.map_device(0x0470_0000, Ri::get(), 2)?;
+        self.bus.map_device(0x0480_0000, Si::get(), 0)?;
+        self.bus.map_device(0x1000_0000, Cartridge::get(), 0)?;
+        self.bus.map_device(0x1800_0000, Cartridge::get(), 1)?;
+        self.bus.map_device(0x1FC0_0000, Pi::get(), 1)?;
+        Ok(())
     }
 }
 
 pub struct N64 {
     logger: slog::Logger,
     sync: Box<sync::Sync<SyncEmu>>,
-    cart: DevPtr<Cartridge>,
-
-    _mi: DevPtr<Mi>,
-    _pi: DevPtr<Pi>,
-    _si: DevPtr<Si>,
-    sp: DevPtr<Sp>,
-    _dp: DevPtr<Dp>,
-    vi: DevPtr<Vi>,
-    _ai: DevPtr<Ai>,
-    _ri: DevPtr<Ri>,
 }
+
+// N64 timings
+// https://assemblergames.com/threads/mapping-n64-overclockability-achieved-3-0x-multiplier-but-not-3-0x-speed.51656/
 
 // Oscillators
 const X1: i64 = 14_705_000;
@@ -119,6 +125,7 @@ impl sync::SyncEmu for SyncEmu {
         match idx {
             0 => Some((R4300::get_mut().deref_mut(), MAIN_CLOCK + MAIN_CLOCK / 2)), // FIXME: uses DIVMOD),
             1 => Some((RSPCPU::get_mut().deref_mut(), MAIN_CLOCK)),
+            2 => Some((Dp::get_mut(), MAIN_CLOCK)),
             _ => None,
         }
     }
@@ -126,85 +133,38 @@ impl sync::SyncEmu for SyncEmu {
 
 impl N64 {
     pub fn new(logger: slog::Logger, romfn: &str) -> Result<N64> {
-        // N64 timings
-        // https://assemblergames.com/threads/mapping-n64-overclockability-achieved-3-0x-multiplier-but-not-3-0x-speed.51656/
-
         let sync = sync::Sync::new(logger.new(o!()), SyncEmu);
 
         let bus = Bus::new(sync::Sync::new_logger(&sync));
-        let cpu = Pin::new(Box::new(R4300::new(sync::Sync::new_logger(&sync), bus)));
-        CurrentDeviceMap().register(cpu);
 
-        let mi = DevPtr::new(Mi::new(sync::Sync::new_logger(&sync)));
-        let cart = DevPtr::new(Cartridge::new(romfn).chain_err(|| "cannot open rom file")?);
-        let pi = DevPtr::new(
-            Pi::new(
-                sync::Sync::new_logger(&sync),
-                mi.clone(),
-                "bios/pifdata.bin",
-            )
-            .chain_err(|| "cannot open BIOS file")?,
-        );
-        let dp = DevPtr::new(Dp::new(sync::Sync::new_logger(&sync)));
-        let sp = Sp::new(sync::Sync::new_logger(&sync), &dp, mi.clone())?;
-        let si = DevPtr::new(Si::new(sync::Sync::new_logger(&sync)));
-        let vi = DevPtr::new(Vi::new(sync::Sync::new_logger(&sync), mi.clone()));
-        let ai = DevPtr::new(Ai::new(sync::Sync::new_logger(&sync)));
-        let ri = DevPtr::new(Ri::new(sync::Sync::new_logger(&sync)));
+        R4300::new(sync::Sync::new_logger(&sync), bus).register();
+        Mi::new(sync::Sync::new_logger(&sync)).register();
+        Cartridge::new(romfn)
+            .chain_err(|| "cannot open rom file")?
+            .register();
 
-        {
-            let cpu = R4300::get_mut();
-            // Configure main bus
-            cpu.bus.map_device(0x0000_0000, &ri, 0)?;
-            cpu.bus.map_device(0x03F0_0000, &ri, 1)?;
-            cpu.bus.map_device(0x0400_0000, &sp, 0)?;
-            cpu.bus.map_device(0x0404_0000, &sp, 1)?;
-            cpu.bus.map_device(0x0408_0000, &sp, 2)?;
-            cpu.bus.map_device(0x0410_0000, &dp, 0)?;
-            cpu.bus.map_device(0x0430_0000, &mi, 0)?;
-            cpu.bus.map_device(0x0440_0000, &vi, 0)?;
-            cpu.bus.map_device(0x0450_0000, &ai, 0)?;
-            cpu.bus.map_device(0x0460_0000, &pi, 0)?;
-            cpu.bus.map_device(0x0470_0000, &ri, 2)?;
-            cpu.bus.map_device(0x0480_0000, &si, 0)?;
-            cpu.bus.map_device(0x1000_0000, &cart, 0)?;
-            cpu.bus.map_device(0x1800_0000, &cart, 1)?;
-            cpu.bus.map_device(0x1FC0_0000, &pi, 1)?;
-        }
+        Pi::new(sync::Sync::new_logger(&sync), "bios/pifdata.bin")
+            .chain_err(|| "cannot open BIOS file")?
+            .register();
+        Dp::new(sync::Sync::new_logger(&sync)).register();
+        Sp::new(sync::Sync::new_logger(&sync))?.register();
+        Si::new(sync::Sync::new_logger(&sync)).register();
+        Vi::new(sync::Sync::new_logger(&sync)).register();
+        Ai::new(sync::Sync::new_logger(&sync)).register();
+        Ri::new(sync::Sync::new_logger(&sync)).register();
 
-        // Register subsystems into sync
-        /*
-        {
-            sync.register("cpu", cpu.clone(), MAIN_CLOCK + MAIN_CLOCK / 2); // FIXME: uses DIVMOD
-            sync.register(
-                "sp",
-                sp.borrow().core_cpu.as_ref().unwrap().clone(),
-                MAIN_CLOCK,
-            );
-            sync.register("dp", dp.clone().unwrap(), MAIN_CLOCK);
-        }
-        */
+        // Now that all devices have been created, map the CPU buses.
+        R4300::get_mut().map_bus()?;
+        RSPCPU::get_mut().map_bus()?;
 
-        return Ok(N64 {
-            logger,
-            sync,
-            cart,
-            _pi: pi,
-            _si: si,
-            sp: sp,
-            _dp: dp,
-            vi: vi,
-            _ai: ai,
-            _ri: ri,
-            _mi: mi,
-        });
+        return Ok(N64 { logger, sync });
     }
 
     // Setup the CIC (copy protection) emulation.
     pub fn setup_cic(&mut self) -> Result<()> {
         // Setup the encryption seed, given the CIC model that we detect
         // by checksumming the ROM header.
-        let seed: u32 = match self.cart.borrow().detect_cic_model()? {
+        let seed: u32 = match Cartridge::get().detect_cic_model()? {
             CicModel::Cic6101 => 0x3F, // starfox
             CicModel::Cic6102 => 0x3F, // mario
             CicModel::Cic6103 => 0x78, // banjo
@@ -218,15 +178,14 @@ impl N64 {
 
 impl hw::OutputProducer for N64 {
     fn render_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>) {
-        let mut vi = self.vi.clone();
         self.sync.run_frame(move |evt| match evt {
             sync::Event::HSync(x, y) if x == 0 => {
-                vi.borrow_mut().set_line(y);
+                Vi::get_mut().set_line(y);
             }
             _ => {}
         });
 
-        self.vi.borrow_mut().draw_frame(screen);
+        Vi::get_mut().draw_frame(screen);
     }
 
     fn finish(&mut self) {
@@ -240,18 +199,17 @@ impl DebuggerModel for N64 {
         screen: &mut GfxBufferMutLE<Rgb888>,
         tracer: &dbg::Tracer,
     ) -> dbg::Result<()> {
-        let mut vi = self.vi.clone();
         self.sync.trace_frame(
             move |evt| match evt {
                 sync::Event::HSync(x, y) if x == 0 => {
-                    vi.borrow_mut().set_line(y);
+                    Vi::get_mut().set_line(y);
                 }
                 _ => {}
             },
             tracer,
         )?;
 
-        self.vi.borrow_mut().draw_frame(screen);
+        Vi::get_mut().draw_frame(screen);
         Ok(())
     }
 
