@@ -11,11 +11,9 @@ extern crate r64emu;
 extern crate toml;
 
 use byteorder::{BigEndian, ByteOrder};
-use emu::bus::be::{Bus, DevPtr};
-use emu::bus::{CurrentDeviceMap, DeviceGetter};
+use emu::bus::be::Device;
 use emu::dbg::Tracer;
 use r64emu::dp::Dp;
-use r64emu::mi::Mi;
 use r64emu::sp::{Sp, RSPCPU};
 use r64emu::R4300;
 use slog::Discard;
@@ -24,25 +22,22 @@ use std::env;
 use std::fs;
 use std::iter::Iterator;
 use std::path::Path;
-use std::pin::Pin;
 
-fn make_sp() -> DevPtr<Sp> {
+fn make_sp() {
     let logger = slog::Logger::root(Discard, o!());
-    let main_bus = Bus::new(logger.new(o!()));
-    let main_cpu = Pin::new(Box::new(R4300::new(logger.new(o!()), main_bus)));
-    CurrentDeviceMap().register(main_cpu);
+    R4300::new(logger.new(o!())).register();
+    Dp::new(logger.new(o!())).register();
+    Sp::new(logger.new(o!())).unwrap().register();
 
-    let mi = DevPtr::new(Mi::new(logger.new(o!())));
-    let dp = DevPtr::new(Dp::new(logger.new(o!())));
-    let sp = Sp::new(logger.new(o!()), &dp, mi.clone()).unwrap();
+    // Simplified bus mapping for R4300: just SP registers.
     {
         let bus = &mut R4300::get_mut().bus;
-        bus.map_device(0x0400_0000, &sp, 0).unwrap();
-        bus.map_device(0x0404_0000, &sp, 1).unwrap();
-        bus.map_device(0x0408_0000, &sp, 2).unwrap();
+        bus.map_device(0x0400_0000, Sp::get(), 0).unwrap();
+        bus.map_device(0x0404_0000, Sp::get(), 1).unwrap();
+        bus.map_device(0x0408_0000, Sp::get(), 2).unwrap();
     }
-
-    sp
+    // Standard bus mapping for RSP.
+    RSPCPU::get_mut().map_bus().unwrap();
 }
 
 #[allow(dead_code)]
@@ -123,11 +118,11 @@ fn test_golden(testname: &str) {
     let tomlsrc = fs::read_to_string(tomlname).expect("TOML file not found");
     let test: Testsuite = toml::from_str(&tomlsrc).unwrap();
 
-    let mut sp = make_sp();
+    make_sp();
 
     {
         // Load RSP microcode into IMEM
-        let mut spb = sp.borrow_mut();
+        let spb = Sp::get_mut();
         let rspbin = fs::read(tomlname.with_extension("rsp")).expect("rsp binary not found");
         spb.imem[..rspbin.len()].clone_from_slice(&rspbin);
     }
@@ -142,7 +137,7 @@ fn test_golden(testname: &str) {
         println!("running test: {}", &t.name);
 
         {
-            let mut spb = sp.borrow_mut();
+            let spb = Sp::get_mut();
 
             println!("    inputs:");
             test.display_input(t.input.iter());
@@ -171,7 +166,7 @@ fn test_golden(testname: &str) {
 
         // Read the results
         {
-            let spb = sp.borrow();
+            let spb = Sp::get_mut();
             let outbuf = &spb.dmem[0x800..0x800 + output_size];
 
             println!("   outputs:");

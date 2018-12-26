@@ -55,12 +55,12 @@ impl DerefMut for R4300 {
 }
 
 impl R4300 {
-    pub fn new(logger: slog::Logger, bus: Box<Bus>) -> Box<Self> {
+    pub fn new(logger: slog::Logger) -> Box<Self> {
         Box::new(R4300 {
             cpu: mips64::Cpu::new(
                 MAINCPU_NAME,
                 logger.new(o!()),
-                bus,
+                Bus::new(logger.new(o!())),
                 (
                     mips64::Cp0::new("R4300-COP0", logger.new(o!())),
                     mips64::Fpu::new("R4300-FPU", logger.new(o!())),
@@ -135,9 +135,7 @@ impl N64 {
     pub fn new(logger: slog::Logger, romfn: &str) -> Result<N64> {
         let sync = sync::Sync::new(logger.new(o!()), SyncEmu);
 
-        let bus = Bus::new(sync::Sync::new_logger(&sync));
-
-        R4300::new(sync::Sync::new_logger(&sync), bus).register();
+        R4300::new(sync::Sync::new_logger(&sync)).register();
         Mi::new(sync::Sync::new_logger(&sync)).register();
         Cartridge::new(romfn)
             .chain_err(|| "cannot open rom file")?
