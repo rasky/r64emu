@@ -1,8 +1,10 @@
-use bit_field::BitField;
 use emu::int::Numerics;
+
+use bit_field::BitField;
+use serde_derive::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Serialize, Deserialize)]
 pub struct TlbEntry {
     /// Page Mask
     pub page_mask: u32,
@@ -80,7 +82,7 @@ impl fmt::Debug for TlbEntry {
 }
 
 // Memory mapping unit of a MIPS processor
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
 pub struct Mmu([TlbEntry; 32]);
 
 impl Mmu {

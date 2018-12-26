@@ -6,9 +6,11 @@ use emu::bus::be::{Bus, MemIoR};
 use emu::dbg::{DebuggerRenderer, DisasmView, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
 use emu::memint::MemInt;
+use emu::state::Field;
 use emu::sync;
 
 use byteorder::ByteOrder;
+use serde_derive::{Deserialize, Serialize};
 use slog;
 
 #[derive(Copy, Clone, Debug)]
@@ -36,18 +38,18 @@ impl Exception {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone, Serialize, Deserialize)]
 struct Lines {
     halt: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone, Serialize, Deserialize)]
 pub struct CpuContext {
     pub regs: [u64; 32],
     pub hi: u64,
     pub lo: u64,
-    pub(crate) pc: u64,
-    pub(crate) next_pc: u64,
+    pub pc: u64,
+    pub next_pc: u64,
     pub clock: i64,
     pub tight_exit: bool,
     pub delay_slot: bool,
@@ -62,7 +64,7 @@ pub struct Cpu<C: Config> {
     pub cop2: C::Cop2,
     pub cop3: C::Cop3,
 
-    ctx: CpuContext,
+    ctx: Field<CpuContext>,
 
     name: String,
     logger: slog::Logger,
@@ -73,6 +75,7 @@ pub struct Cpu<C: Config> {
 }
 
 struct Mipsop<'a, C: Config> {
+    ctx: &'a mut CpuContext,
     opcode: u32,
     cpu: &'a mut Cpu<C>,
 }
@@ -91,10 +94,10 @@ impl<'a, C: Config> Mipsop<'a, C> {
         ((self.opcode >> 6) & 0x1f) as usize
     }
     fn btgt(&self) -> u64 {
-        self.cpu.ctx.pc + self.sximm64() as u64 * 4
+        self.ctx.pc + self.sximm64() as u64 * 4
     }
     fn jtgt(&self) -> u64 {
-        (self.cpu.ctx.pc & 0xFFFF_FFFF_F000_0000) + ((self.opcode & 0x03FF_FFFF) * 4) as u64
+        (self.ctx.pc & 0xFFFF_FFFF_F000_0000) + ((self.opcode & 0x03FF_FFFF) * 4) as u64
     }
     fn rs(&self) -> usize {
         ((self.opcode >> 21) & 0x1f) as usize
@@ -115,10 +118,10 @@ impl<'a, C: Config> Mipsop<'a, C> {
         (self.opcode & 0xffff) as u64
     }
     fn rs64(&self) -> u64 {
-        self.cpu.ctx.regs[self.rs()]
+        self.ctx.regs[self.rs()]
     }
     fn rt64(&self) -> u64 {
-        self.cpu.ctx.regs[self.rt()]
+        self.ctx.regs[self.rt()]
     }
     fn irs64(&self) -> i64 {
         self.rs64() as i64
@@ -139,10 +142,12 @@ impl<'a, C: Config> Mipsop<'a, C> {
         self.rt64() as i32
     }
     fn mrt64(&'a mut self) -> &'a mut u64 {
-        &mut self.cpu.ctx.regs[self.rt()]
+        let rt = self.rt();
+        &mut self.ctx.regs[rt]
     }
     fn mrd64(&'a mut self) -> &'a mut u64 {
-        &mut self.cpu.ctx.regs[self.rd()]
+        let rd = self.rd();
+        &mut self.ctx.regs[rd]
     }
 }
 
@@ -191,10 +196,10 @@ macro_rules! branch {
     }};
     ($op:ident, $cond:expr, $tgt:expr,link($link:expr),likely($lkl:expr)) => {{
         if $link {
-            $op.cpu.ctx.regs[31] = $op.cpu.ctx.pc + 4;
+            $op.ctx.regs[31] = $op.ctx.pc + 4;
         }
         let (cond, tgt) = ($cond, $tgt);
-        $op.cpu.ctx.branch(cond, tgt, $lkl);
+        $op.ctx.branch(cond, tgt, $lkl);
     }};
 }
 
@@ -222,7 +227,7 @@ macro_rules! if_cop {
             let $cop = &mut $op.cpu.$cop;
             $do
         } else {
-            let pc = $op.cpu.ctx.pc;
+            let pc = $op.ctx.pc;
             let opcode = $op.opcode;
             warn!($op.cpu.logger, "COP opcode without COP";
                 "pc" => pc.hex(), "op" => opcode.hex());
@@ -238,7 +243,7 @@ impl<C: Config> Cpu<C> {
         cops: (C::Cop0, C::Cop1, C::Cop2, C::Cop3),
     ) -> Self {
         let mut cpu = Cpu {
-            ctx: CpuContext::default(),
+            ctx: Field::new(&("mips64::".to_owned() + name), CpuContext::default()),
             bus: bus,
             name: name.into(),
             cop0: cops.0,
@@ -275,9 +280,13 @@ impl<C: Config> Cpu<C> {
     }
 
     #[inline(always)]
-    fn op(&mut self, opcode: u32, t: &Tracer) -> Result<()> {
-        self.ctx.clock += 1;
-        let mut op = Mipsop { opcode, cpu: self };
+    fn op(&mut self, ctx: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()> {
+        ctx.clock += 1;
+        let mut op = Mipsop {
+            ctx,
+            opcode,
+            cpu: self,
+        };
         let h = |s| C::Arch::has_op(s);
         match op.op() {
             // SPECIAL
@@ -293,10 +302,10 @@ impl<C: Config> Cpu<C> {
                 0x0D if h("break") => op.cpu.exception(Exception::Breakpoint), // BREAK
                 0x0F if h("sync") => {}                                        // SYNC
 
-                0x10 if h("mfhi") => *op.mrd64() = op.cpu.ctx.hi, // MFHI
-                0x11 if h("mthi") => op.cpu.ctx.hi = op.rs64(),   // MTHI
-                0x12 if h("mflo") => *op.mrd64() = op.cpu.ctx.lo, // MFLO
-                0x13 if h("mtlo") => op.cpu.ctx.lo = op.rs64(),   // MTLO
+                0x10 if h("mfhi") => *op.mrd64() = op.ctx.hi, // MFHI
+                0x11 if h("mthi") => op.ctx.hi = op.rs64(),   // MTHI
+                0x12 if h("mflo") => *op.mrd64() = op.ctx.lo, // MFLO
+                0x13 if h("mtlo") => op.ctx.lo = op.rs64(),   // MTLO
                 0x14 if h("dsllv") => *op.mrd64() = op.rt64() << (op.rs32() & 0x3F), // DSLLV
                 0x16 if h("dsrlv") => *op.mrd64() = op.rt64() >> (op.rs32() & 0x3F), // DSRLV
                 0x17 if h("dsrav") => *op.mrd64() = (op.irt64() >> (op.rs32() & 0x3F)) as u64, // DSRAV
@@ -304,47 +313,47 @@ impl<C: Config> Cpu<C> {
                     // MULT
                     let (hi, lo) =
                         (i64::wrapping_mul(op.rt32().isx64(), op.rs32().isx64()) as u64).hi_lo();
-                    op.cpu.ctx.lo = lo;
-                    op.cpu.ctx.hi = hi;
+                    op.ctx.lo = lo;
+                    op.ctx.hi = hi;
                 }
                 0x19 if h("multu") => {
                     // MULTU
                     let (hi, lo) = u64::wrapping_mul(op.rt32() as u64, op.rs32() as u64).hi_lo();
-                    op.cpu.ctx.lo = lo;
-                    op.cpu.ctx.hi = hi;
+                    op.ctx.lo = lo;
+                    op.ctx.hi = hi;
                 }
                 0x1A if h("div") => {
                     // DIV
-                    op.cpu.ctx.lo = op.irs32().wrapping_div(op.irt32()).sx64();
-                    op.cpu.ctx.hi = op.irs32().wrapping_rem(op.irt32()).sx64();
+                    op.ctx.lo = op.irs32().wrapping_div(op.irt32()).sx64();
+                    op.ctx.hi = op.irs32().wrapping_rem(op.irt32()).sx64();
                 }
                 0x1B if h("divu") => {
                     // DIVU
-                    op.cpu.ctx.lo = op.rs32().wrapping_div(op.rt32()).sx64();
-                    op.cpu.ctx.hi = op.rs32().wrapping_rem(op.rt32()).sx64();
+                    op.ctx.lo = op.rs32().wrapping_div(op.rt32()).sx64();
+                    op.ctx.hi = op.rs32().wrapping_rem(op.rt32()).sx64();
                 }
                 0x1C if h("dmult") => {
                     // DMULT
                     let (hi, lo) =
                         i128::wrapping_mul(op.irt64() as i128, op.irs64() as i128).hi_lo();
-                    op.cpu.ctx.lo = lo as u64;
-                    op.cpu.ctx.hi = hi as u64;
+                    op.ctx.lo = lo as u64;
+                    op.ctx.hi = hi as u64;
                 }
                 0x1D if h("dmultu") => {
                     // DMULTU
                     let (hi, lo) = u128::wrapping_mul(op.rt64() as u128, op.rs64() as u128).hi_lo();
-                    op.cpu.ctx.lo = lo as u64;
-                    op.cpu.ctx.hi = hi as u64;
+                    op.ctx.lo = lo as u64;
+                    op.ctx.hi = hi as u64;
                 }
                 0x1E if h("ddiv") => {
                     // DDIV
-                    op.cpu.ctx.lo = op.irs64().wrapping_div(op.irt64()) as u64;
-                    op.cpu.ctx.hi = op.irs64().wrapping_rem(op.irt64()) as u64;
+                    op.ctx.lo = op.irs64().wrapping_div(op.irt64()) as u64;
+                    op.ctx.hi = op.irs64().wrapping_rem(op.irt64()) as u64;
                 }
                 0x1F if h("ddivu") => {
                     // DDIVU
-                    op.cpu.ctx.lo = op.rs64().wrapping_div(op.rt64());
-                    op.cpu.ctx.hi = op.rs64().wrapping_rem(op.rt64());
+                    op.ctx.lo = op.rs64().wrapping_div(op.rt64());
+                    op.ctx.hi = op.rs64().wrapping_rem(op.rt64());
                 }
 
                 0x20 if h("add") => check_overflow_add!(op, *op.mrd64(), op.irs32(), op.irt32()), // ADD
@@ -385,7 +394,7 @@ impl<C: Config> Cpu<C> {
                 _ => panic!(
                     "unimplemented regimm opcode: func=0x{:x?} pc=0x{:x?}",
                     op.rt(),
-                    op.cpu.ctx.pc - 4
+                    op.ctx.pc - 4
                 ),
             },
 
@@ -404,16 +413,16 @@ impl<C: Config> Cpu<C> {
             0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),      // XORI
             0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(), // LUI
 
-            0x10 => if_cop!(op, cop0, { return cop0.op(&mut op.cpu.ctx, opcode, t) }), // COP0
-            0x11 => if_cop!(op, cop1, { return cop1.op(&mut op.cpu.ctx, opcode, t) }), // COP1
-            0x12 => if_cop!(op, cop2, { return cop2.op(&mut op.cpu.ctx, opcode, t) }), // COP2
-            0x13 => if_cop!(op, cop3, { return cop3.op(&mut op.cpu.ctx, opcode, t) }), // COP3
-            0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)),      // BEQL
-            0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)),      // BNEL
-            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)),             // BLEZL
-            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),              // BGTZL
-            0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()),    // DADDI
-            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,                  // DADDIU
+            0x10 => if_cop!(op, cop0, { return cop0.op(&mut op.ctx, opcode, t) }), // COP0
+            0x11 => if_cop!(op, cop1, { return cop1.op(&mut op.ctx, opcode, t) }), // COP1
+            0x12 => if_cop!(op, cop2, { return cop2.op(&mut op.ctx, opcode, t) }), // COP2
+            0x13 => if_cop!(op, cop3, { return cop3.op(&mut op.ctx, opcode, t) }), // COP3
+            0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)),  // BEQL
+            0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)),  // BNEL
+            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)),         // BLEZL
+            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),          // BGTZL
+            0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()), // DADDI
+            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,              // DADDIU
 
             0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)?.sx64(), // LB
             0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)?.sx64(), // LH
@@ -434,22 +443,22 @@ impl<C: Config> Cpu<C> {
                 .write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32(), t)?, t)?, // SWR
             0x2F => {}                                                   // CACHE
 
-            0x31 => if_cop!(op, cop1, cop1.lwc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LWC1
-            0x32 => if_cop!(op, cop2, cop2.lwc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LWC2
-            0x35 => if_cop!(op, cop1, cop1.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC1
-            0x36 => if_cop!(op, cop2, cop2.ldc(op.opcode, &op.cpu.ctx, &op.cpu.bus)), // LDC2
-            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea(), t)?,                    // LD
-            0x39 => if_cop!(op, cop1, cop1.swc(op.opcode, &op.cpu.ctx, &mut op.cpu.bus)), // SWC1
-            0x3A => if_cop!(op, cop2, cop2.swc(op.opcode, &op.cpu.ctx, &mut op.cpu.bus)), // SWC2
-            0x3D => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.cpu.ctx, &mut op.cpu.bus)), // SDC1
-            0x3E => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.cpu.ctx, &mut op.cpu.bus)), // SDC2
-            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64(), t)?,                      // SD
+            0x31 => if_cop!(op, cop1, cop1.lwc(op.opcode, &op.ctx, &op.cpu.bus)), // LWC1
+            0x32 => if_cop!(op, cop2, cop2.lwc(op.opcode, &op.ctx, &op.cpu.bus)), // LWC2
+            0x35 => if_cop!(op, cop1, cop1.ldc(op.opcode, &op.ctx, &op.cpu.bus)), // LDC1
+            0x36 => if_cop!(op, cop2, cop2.ldc(op.opcode, &op.ctx, &op.cpu.bus)), // LDC2
+            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea(), t)?,                // LD
+            0x39 => if_cop!(op, cop1, cop1.swc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SWC1
+            0x3A => if_cop!(op, cop2, cop2.swc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SWC2
+            0x3D => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SDC1
+            0x3E => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SDC2
+            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64(), t)?,                  // SD
 
             _ => {
                 panic!(
                     "unimplemented opcode: func=0x{:x?}, pc={}",
                     op.op(),
-                    op.cpu.ctx.pc.hex()
+                    op.ctx.pc.hex()
                 );
             }
         };
@@ -510,31 +519,32 @@ impl<C: Config> Cpu<C> {
 
     pub fn run(&mut self, until: i64, t: &Tracer) -> Result<()> {
         self.until = until;
-        while self.ctx.clock < self.until {
-            if self.ctx.lines.halt {
-                self.ctx.clock = self.until;
+        let ctx = self.ctx.as_mut();
+        while ctx.clock < self.until {
+            if ctx.lines.halt {
+                ctx.clock = self.until;
                 return Ok(());
             }
 
             if self.cop0.pending_int() {
-                self.cop0.exception(&mut self.ctx, Exception::Interrupt);
+                self.cop0.exception(ctx, Exception::Interrupt);
                 continue;
             }
 
-            let mem = self.fetch(self.ctx.pc);
+            let mem = self.fetch(ctx.pc);
             let mut iter = mem
                 .iter()
-                .unwrap_or_else(|| panic!("jumped to non-linear memory: {}", self.ctx.pc.hex()));
+                .unwrap_or_else(|| panic!("jumped to non-linear memory: {}", ctx.pc.hex()));
 
             // Tight loop: go through continuous memory, no branches, no IRQs
             while let Some(op) = iter.next() {
-                self.ctx.tight_exit = self.ctx.delay_slot;
-                self.ctx.delay_slot = false;
-                self.ctx.pc = self.ctx.next_pc;
-                self.ctx.next_pc += 4;
-                self.op(op, t)?;
-                t.trace_insn(&self.name, C::pc_mask(self.ctx.pc as u32) as u64)?;
-                if self.ctx.clock >= self.until || self.ctx.tight_exit {
+                ctx.tight_exit = ctx.delay_slot;
+                ctx.delay_slot = false;
+                ctx.pc = ctx.next_pc;
+                ctx.next_pc += 4;
+                self.op(ctx, op, t)?;
+                t.trace_insn(&self.name, C::pc_mask(ctx.pc as u32) as u64)?;
+                if ctx.clock >= self.until || ctx.tight_exit {
                     break;
                 }
             }

@@ -515,6 +515,8 @@ dependencies = [
  "byteorder 1.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "emu 0.1.0",
  "num 0.1.42 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.82 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
  "slog 2.4.1 (git+https://github.com/rasky/slog?branch=nothreads)",
 ]
 
