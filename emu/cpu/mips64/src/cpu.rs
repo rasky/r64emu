@@ -519,7 +519,8 @@ impl<C: Config> Cpu<C> {
 
     pub fn run(&mut self, until: i64, t: &Tracer) -> Result<()> {
         self.until = until;
-        let ctx = self.ctx.as_mut();
+
+        let ctx = unsafe { self.ctx.as_mut() };
         while ctx.clock < self.until {
             if ctx.lines.halt {
                 ctx.clock = self.until;

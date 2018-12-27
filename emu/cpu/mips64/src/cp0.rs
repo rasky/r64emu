@@ -4,6 +4,8 @@ use super::decode::{DecodedInsn, REG_NAMES};
 use super::{Cop, Cop0, CpuContext, Exception};
 use emu::dbg::{DebuggerRenderer, Operand, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
+use emu::state::Field;
+use serde_derive::{Deserialize, Serialize};
 use slog;
 
 const COP0_REG_NAMES: [&'static str; 32] = [
@@ -42,6 +44,7 @@ const COP0_REG_NAMES: [&'static str; 32] = [
 ];
 
 bitfield! {
+    #[derive(Default, Copy, Clone, Serialize, Deserialize)]
     struct RegStatus(u32);
     impl Debug;
     pub ie, set_ie: 0;    // Interrupt enable
@@ -60,6 +63,7 @@ bitfield! {
 }
 
 bitfield! {
+    #[derive(Default, Copy, Clone, Serialize, Deserialize)]
     struct RegCause(u32);
     impl Debug;
     pub exc, set_exc: 6,2; // Current exception code
@@ -70,7 +74,8 @@ bitfield! {
     pub bd, set_bd: 31;    // Exception taken from delay slot
 }
 
-pub struct Cp0 {
+#[derive(Default, Copy, Clone, Serialize, Deserialize)]
+struct Cp0Context {
     reg_status: RegStatus,
     reg_cause: RegCause,
     reg_errorepc: u64,
@@ -80,7 +85,10 @@ pub struct Cp0 {
     reg_entryhi: u64,
     reg_entrylo0: u64,
     reg_entrylo1: u64,
+}
 
+pub struct Cp0 {
+    ctx: Field<Cp0Context>,
     logger: slog::Logger,
     name: &'static str,
 }
@@ -88,15 +96,7 @@ pub struct Cp0 {
 impl Cp0 {
     pub fn new(name: &'static str, logger: slog::Logger) -> Cp0 {
         Cp0 {
-            reg_status: RegStatus(0),
-            reg_cause: RegCause(0),
-            reg_epc: 0,
-            reg_errorepc: 0,
-            reg_index: 0,
-            reg_pagemask: 0,
-            reg_entrylo0: 0,
-            reg_entrylo1: 0,
-            reg_entryhi: 0,
+            ctx: Field::new(&("mips64::cp0::".to_owned() + name), Cp0Context::default()),
             logger: logger,
             name,
         }
@@ -105,54 +105,57 @@ impl Cp0 {
 
 impl Cop0 for Cp0 {
     fn set_hwint_line(&mut self, line: usize, status: bool) {
-        let mut ip = self.reg_cause.ip();
+        let mut ip = self.ctx.reg_cause.ip();
         let mask = 1 << (line + 2);
         let val = (status as u32) << (line + 2);
 
         ip = (ip & !mask) | (val & mask);
-        self.reg_cause.set_ip(ip);
+        self.ctx.reg_cause.set_ip(ip);
     }
 
+    #[inline(always)]
     fn pending_int(&self) -> bool {
-        self.reg_status.ie()
-            && !self.reg_status.erl()
-            && !self.reg_status.exl()
-            && self.reg_cause.ip() & self.reg_status.im() != 0
+        let ctx = unsafe { self.ctx.as_ref() };
+        ctx.reg_status.ie()
+            && !ctx.reg_status.erl()
+            && !ctx.reg_status.exl()
+            && ctx.reg_cause.ip() & ctx.reg_status.im() != 0
     }
 
     fn exception(&mut self, cpu: &mut CpuContext, exc: Exception) {
         use self::Exception::*;
 
         info!(self.logger, "exception"; "exc" => ?exc);
+        let ctx = unsafe { self.ctx.as_mut() };
 
         match exc {
             ColdReset => {
-                // self.reg_random = 31;
-                // self.reg_wired = 0;
-                // self.reg_config.set_k0(2);
-                // self.reg_config[0..3] should be configured as specified in MipsConfig
-                self.reg_status.set_rp(false);
-                self.reg_status.set_bev(true);
-                self.reg_status.set_ts(false);
-                self.reg_status.set_sr(false);
-                self.reg_status.set_nmi(false);
-                self.reg_status.set_erl(true);
+                // ctx.reg_random = 31;
+                // ctx.reg_wired = 0;
+                // ctx.reg_config.set_k0(2);
+                // ctx.reg_config[0..3] should be configured as specified in MipsConfig
+                ctx.reg_status.set_rp(false);
+                ctx.reg_status.set_bev(true);
+                ctx.reg_status.set_ts(false);
+                ctx.reg_status.set_sr(false);
+                ctx.reg_status.set_nmi(false);
+                ctx.reg_status.set_erl(true);
                 // self.watch_lo[..] = 0;
-                // self.reg_perfcnt[..].set_ie(0);
-                self.reg_epc = cpu.pc;
+                // ctx.reg_perfcnt[..].set_ie(0);
+                ctx.reg_epc = cpu.pc;
                 cpu.set_pc(0xFFFF_FFFF_BFC0_0000);
             }
             SoftReset => {
                 // self.ref_config.set_k0(2);
-                self.reg_status.set_rp(false);
-                self.reg_status.set_bev(true);
-                self.reg_status.set_ts(false);
-                self.reg_status.set_sr(true);
-                self.reg_status.set_nmi(false);
-                self.reg_status.set_erl(true);
+                ctx.reg_status.set_rp(false);
+                ctx.reg_status.set_bev(true);
+                ctx.reg_status.set_ts(false);
+                ctx.reg_status.set_sr(true);
+                ctx.reg_status.set_nmi(false);
+                ctx.reg_status.set_erl(true);
                 // self.watch_lo[..] = 0;
-                // self.reg_perfcnt[..].set_ie(0);
-                self.reg_epc = cpu.pc;
+                // ctx.reg_perfcnt[..].set_ie(0);
+                ctx.reg_epc = cpu.pc;
                 cpu.set_pc(0xFFFF_FFFF_BFC0_0000);
             }
             Nmi => {
@@ -160,19 +163,19 @@ impl Cop0 for Cp0 {
             }
             _ => {
                 // Standard exception
-                let vector = if !self.reg_status.exl() {
+                let vector = if !ctx.reg_status.exl() {
                     if !cpu.delay_slot {
-                        self.reg_epc = cpu.pc;
-                        self.reg_cause.set_bd(false);
+                        ctx.reg_epc = cpu.pc;
+                        ctx.reg_cause.set_bd(false);
                     } else {
-                        self.reg_epc = cpu.pc - 4;
-                        self.reg_cause.set_bd(true);
+                        ctx.reg_epc = cpu.pc - 4;
+                        ctx.reg_cause.set_bd(true);
                     }
 
                     match exc {
                         TlbRefill => 0x0,
                         XTlbRefill => 0x80,
-                        Interrupt if self.reg_cause.iv() => 0x200,
+                        Interrupt if ctx.reg_cause.iv() => 0x200,
                         _ => 0x180,
                     }
                 } else {
@@ -180,10 +183,10 @@ impl Cop0 for Cp0 {
                 };
 
                 // Coprocessor unit number
-                self.reg_cause.set_ce(0);
-                self.reg_cause.set_exc(exc.exc_code().unwrap_or(0));
-                self.reg_status.set_exl(true);
-                if self.reg_status.bev() {
+                ctx.reg_cause.set_ce(0);
+                ctx.reg_cause.set_exc(exc.exc_code().unwrap_or(0));
+                ctx.reg_status.set_exl(true);
+                if ctx.reg_status.bev() {
                     cpu.set_pc(0xFFFF_FFFF_BFC0_0200 + vector);
                 } else {
                     cpu.set_pc(0xFFFF_FFFF_8000_0000 + vector);
@@ -196,30 +199,30 @@ impl Cop0 for Cp0 {
 impl Cop for Cp0 {
     fn reg(&self, idx: usize) -> u128 {
         match idx {
-            0 => self.reg_index as u128,
-            2 => self.reg_entrylo0 as u128,
-            3 => self.reg_entrylo1 as u128,
-            5 => self.reg_pagemask as u128,
-            10 => self.reg_entryhi as u128,
-            12 => self.reg_status.0 as u128,
-            13 => self.reg_cause.0 as u128,
-            14 => self.reg_epc as u128,
-            30 => self.reg_errorepc as u128,
+            0 => self.ctx.reg_index as u128,
+            2 => self.ctx.reg_entrylo0 as u128,
+            3 => self.ctx.reg_entrylo1 as u128,
+            5 => self.ctx.reg_pagemask as u128,
+            10 => self.ctx.reg_entryhi as u128,
+            12 => self.ctx.reg_status.0 as u128,
+            13 => self.ctx.reg_cause.0 as u128,
+            14 => self.ctx.reg_epc as u128,
+            30 => self.ctx.reg_errorepc as u128,
             _ => 0,
         }
     }
 
     fn set_reg(&mut self, idx: usize, val: u128) {
         match idx {
-            0 => self.reg_index = val as u32 & 0x1F,
-            2 => self.reg_entrylo0 = val as u64,
-            3 => self.reg_entrylo1 = val as u64,
-            5 => self.reg_pagemask = val as u32,
-            10 => self.reg_entryhi = val as u64,
-            12 => self.reg_status.0 = val as u32,
-            13 => self.reg_cause.0 = val as u32,
-            14 => self.reg_epc = val as u64,
-            30 => self.reg_errorepc = val as u64,
+            0 => self.ctx.reg_index = val as u32 & 0x1F,
+            2 => self.ctx.reg_entrylo0 = val as u64,
+            3 => self.ctx.reg_entrylo1 = val as u64,
+            5 => self.ctx.reg_pagemask = val as u32,
+            10 => self.ctx.reg_entryhi = val as u64,
+            12 => self.ctx.reg_status.0 = val as u32,
+            13 => self.ctx.reg_cause.0 = val as u32,
+            14 => self.ctx.reg_epc = val as u64,
+            30 => self.ctx.reg_errorepc = val as u64,
             _ => {}
         }
     }
@@ -229,6 +232,7 @@ impl Cop for Cp0 {
         let rs = ((opcode >> 21) & 0x1f) as usize;
         let rt = ((opcode >> 16) & 0x1f) as usize;
         let rd = ((opcode >> 11) & 0x1f) as usize;
+        let ctx = unsafe { self.ctx.as_mut() };
 
         match rs {
             0x00 => {
@@ -266,55 +270,55 @@ impl Cop for Cp0 {
             0x10..=0x1F => match func {
                 0x01 => {
                     // TLBR
-                    let entry = cpu.mmu.read(self.reg_index as usize);
-                    self.reg_entryhi = entry.hi();
-                    self.reg_entrylo0 = entry.lo0;
-                    self.reg_entrylo1 = entry.lo1;
-                    self.reg_pagemask = entry.page_mask;
+                    let entry = cpu.mmu.read(ctx.reg_index as usize);
+                    ctx.reg_entryhi = entry.hi();
+                    ctx.reg_entrylo0 = entry.lo0;
+                    ctx.reg_entrylo1 = entry.lo1;
+                    ctx.reg_pagemask = entry.page_mask;
                     info!(self.logger, "read TLB entry";
-                        "idx" => self.reg_index,
+                        "idx" => ctx.reg_index,
                         "tlb" => ?entry);
                 }
                 0x02 => {
                     // TLBWI
                     cpu.mmu.write(
-                        self.reg_index as usize,
-                        self.reg_pagemask,
-                        self.reg_entryhi,
-                        self.reg_entrylo0,
-                        self.reg_entrylo1,
+                        ctx.reg_index as usize,
+                        ctx.reg_pagemask,
+                        ctx.reg_entryhi,
+                        ctx.reg_entrylo0,
+                        ctx.reg_entrylo1,
                     );
 
                     info!(self.logger, "wrote TLB entry";
-                        "idx" => self.reg_index,
-                        "tlb" => ?cpu.mmu.read(self.reg_index as usize));
+                        "idx" => ctx.reg_index,
+                        "tlb" => ?cpu.mmu.read(ctx.reg_index as usize));
                 }
                 0x08 => {
                     // TLBP
-                    match cpu.mmu.probe(self.reg_entryhi, self.reg_entryhi as u8) {
+                    match cpu.mmu.probe(ctx.reg_entryhi, ctx.reg_entryhi as u8) {
                         Some(idx) => {
                             info!(self.logger, "probe TLB entry: found";
-                                "entry_hi" => self.reg_entryhi.hex(),
+                                "entry_hi" => ctx.reg_entryhi.hex(),
                                 "found_idx" => idx,
-                                "found_tlb" => ?cpu.mmu.read(self.reg_index as usize));
-                            self.reg_index = idx as u32;
+                                "found_tlb" => ?cpu.mmu.read(ctx.reg_index as usize));
+                            ctx.reg_index = idx as u32;
                         }
                         None => {
                             info!(self.logger, "probe TLB entry: not found";
-                                "entry_hi" => self.reg_entryhi.hex());
-                            self.reg_index = 0x8000_0000;
+                                "entry_hi" => ctx.reg_entryhi.hex());
+                            ctx.reg_index = 0x8000_0000;
                         }
                     };
                 }
                 0x18 => {
                     // ERET
                     // FIXME: verify that it's a NOP when ERL/EXL are 0
-                    if self.reg_status.erl() {
-                        self.reg_status.set_erl(false);
-                        cpu.set_pc(self.reg_errorepc);
-                    } else if self.reg_status.exl() {
-                        self.reg_status.set_exl(false);
-                        cpu.set_pc(self.reg_epc);
+                    if ctx.reg_status.erl() {
+                        ctx.reg_status.set_erl(false);
+                        cpu.set_pc(ctx.reg_errorepc);
+                    } else if ctx.reg_status.exl() {
+                        ctx.reg_status.set_exl(false);
+                        cpu.set_pc(ctx.reg_epc);
                     }
                 }
                 _ => {
@@ -374,32 +378,33 @@ impl RegisterView for Cp0 {
         F: for<'a> FnMut(&'a str, RegisterSize<'a>, Option<&str>),
     {
         use self::RegisterSize::*;
+        let ctx = unsafe { self.ctx.as_mut() };
 
         match col {
             0 => {
                 let status = format!(
                     "IM:{:08b} IE:{} EXL:{} ERL:{}",
-                    self.reg_status.im(),
-                    self.reg_status.ie() as u8,
-                    self.reg_status.exl() as u8,
-                    self.reg_status.erl() as u8,
+                    ctx.reg_status.im(),
+                    ctx.reg_status.ie() as u8,
+                    ctx.reg_status.exl() as u8,
+                    ctx.reg_status.erl() as u8,
                 );
                 let cause = format!(
                     "IP:{:08b} EXC:{} BD:{}",
-                    self.reg_cause.ip(),
-                    self.reg_cause.exc(),
-                    self.reg_cause.bd() as u8,
+                    ctx.reg_cause.ip(),
+                    ctx.reg_cause.exc(),
+                    ctx.reg_cause.bd() as u8,
                 );
-                visit("Status", Reg32(&mut self.reg_status.0), Some(&status));
-                visit("Cause", Reg32(&mut self.reg_cause.0), Some(&cause));
-                visit("EPC", Reg64(&mut self.reg_epc), None);
-                visit("ErrorEPC", Reg64(&mut self.reg_errorepc), None);
+                visit("Status", Reg32(&mut ctx.reg_status.0), Some(&status));
+                visit("Cause", Reg32(&mut ctx.reg_cause.0), Some(&cause));
+                visit("EPC", Reg64(&mut ctx.reg_epc), None);
+                visit("ErrorEPC", Reg64(&mut ctx.reg_errorepc), None);
 
-                visit("Index", Reg32(&mut self.reg_index), None);
-                visit("PageMask", Reg32(&mut self.reg_pagemask), None);
-                visit("EntryHi", Reg64(&mut self.reg_entryhi), None);
-                visit("EntryLo0", Reg64(&mut self.reg_entrylo0), None);
-                visit("EntryLo1", Reg64(&mut self.reg_entrylo1), None);
+                visit("Index", Reg32(&mut ctx.reg_index), None);
+                visit("PageMask", Reg32(&mut ctx.reg_pagemask), None);
+                visit("EntryHi", Reg64(&mut ctx.reg_entryhi), None);
+                visit("EntryLo0", Reg64(&mut ctx.reg_entrylo0), None);
+                visit("EntryLo1", Reg64(&mut ctx.reg_entrylo1), None);
             }
             _ => unreachable!(),
         }

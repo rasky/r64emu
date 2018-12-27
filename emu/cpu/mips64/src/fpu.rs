@@ -1,10 +1,12 @@
-extern crate num;
-
-use self::num::Float;
 use super::decode::{DecodedInsn, MEMOP_FMT, REG_NAMES};
 use super::{Cop, CpuContext};
+
 use emu::dbg::{DebuggerRenderer, Operand, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
+use emu::state::Field;
+
+use num::Float;
+use serde_derive::{Deserialize, Serialize};
 use slog;
 use slog::*;
 use std::marker::PhantomData;
@@ -21,14 +23,18 @@ const FPU_CREG_NAMES: [&'static str; 32] = [
     "?25?", "?26?", "?27?", "?28?", "?29?", "?30?", "FCSR",
 ];
 
-pub struct Fpu {
+#[derive(Default, Copy, Clone, Serialize, Deserialize)]
+struct FpuContext {
     regs: [u64; 32],
     _fir: u64,
     fccr: u64,
     _fexr: u64,
     _fenr: u64,
     fcsr: u64,
+}
 
+pub struct Fpu {
+    ctx: Field<FpuContext>,
     logger: slog::Logger,
     name: &'static str,
 }
@@ -97,6 +103,7 @@ impl FloatRawConvert for f64 {
 struct Fop<'a, F: Float + FloatRawConvert> {
     opcode: u32,
     fpu: &'a mut Fpu,
+    ctx: &'a mut FpuContext,
     _cpu: &'a mut CpuContext,
     phantom: PhantomData<F>,
 }
@@ -118,16 +125,16 @@ impl<'a, F: Float + FloatRawConvert> Fop<'a, F> {
         ((self.opcode >> 6) & 0x1f) as usize
     }
     fn fs(&self) -> F {
-        F::from_u64bits(self.fpu.regs[self.rs()])
+        F::from_u64bits(self.ctx.regs[self.rs()])
     }
     fn ft(&self) -> F {
-        F::from_u64bits(self.fpu.regs[self.rt()])
+        F::from_u64bits(self.ctx.regs[self.rt()])
     }
     fn set_fd(&mut self, v: F) {
-        self.fpu.regs[self.rd()] = v.to_u64bits();
+        self.ctx.regs[self.rd()] = v.to_u64bits();
     }
     fn mfd64(&'a mut self) -> &'a mut u64 {
-        &mut self.fpu.regs[self.rd()]
+        &mut self.ctx.regs[self.rd()]
     }
 }
 
@@ -173,12 +180,7 @@ macro_rules! fp_suffix {
 impl Fpu {
     pub fn new(name: &'static str, logger: slog::Logger) -> Fpu {
         Fpu {
-            regs: [0u64; 32],
-            _fir: 0,
-            fccr: 0,
-            _fexr: 0,
-            _fenr: 0,
-            fcsr: 0,
+            ctx: Field::new(&("mips64::fpu::".to_owned() + name), FpuContext::default()),
             logger,
             name,
         }
@@ -188,19 +190,19 @@ impl Fpu {
         if cc > 8 {
             panic!("invalid cc code");
         }
-        self.fccr = (self.fccr & !(1 << cc)) | ((val as u64) << cc);
+        self.ctx.fccr = (self.ctx.fccr & !(1 << cc)) | ((val as u64) << cc);
         let mut cc2 = cc + 23;
         if cc > 0 {
             cc2 += 1;
         }
-        self.fcsr = (self.fcsr & !(1 << cc2)) | ((val as u64) << cc2);
+        self.ctx.fcsr = (self.ctx.fcsr & !(1 << cc2)) | ((val as u64) << cc2);
     }
 
     fn get_cc(&mut self, cc: usize) -> bool {
         if cc > 8 {
             panic!("invalid cc code");
         }
-        (self.fccr & (1 << cc)) != 0
+        (self.ctx.fccr & (1 << cc)) != 0
     }
 
     fn fop<M: Float + FloatRawConvert>(
@@ -211,6 +213,7 @@ impl Fpu {
     ) -> Result<()> {
         let mut op = Fop::<M> {
             opcode,
+            ctx: unsafe { self.ctx.as_mut() },
             fpu: self,
             _cpu: cpu,
             phantom: PhantomData,
@@ -302,10 +305,10 @@ impl Fpu {
 
 impl Cop for Fpu {
     fn reg(&self, idx: usize) -> u128 {
-        self.regs[idx] as u128
+        self.ctx.regs[idx] as u128
     }
     fn set_reg(&mut self, idx: usize, val: u128) {
-        self.regs[idx] = val as u64;
+        self.ctx.regs[idx] = val as u64;
     }
 
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()> {
@@ -315,19 +318,19 @@ impl Cop for Fpu {
         let rs = ((opcode >> 11) & 0x1F) as usize;
         let rd = ((opcode >> 6) & 0x1F) as usize;
         match fmt {
-            0x0 => cpu.regs[rt] = (self.regs[rs] as u32).sx64(), // MFC1
+            0x0 => cpu.regs[rt] = (self.ctx.regs[rs] as u32).sx64(), // MFC1
             0x2 => match rs {
                 // CFC1
-                31 => cpu.regs[rt] = self.fcsr,
+                31 => cpu.regs[rt] = self.ctx.fcsr,
                 _ => {
                     error!(self.logger, "CFC1 from unknown register: {:x}", rs);
                     return t.break_here("CFC1 from unknown register");
                 }
             },
-            0x4 => self.regs[rs] = (cpu.regs[rt] as u32) as u64, // MTC1
+            0x4 => self.ctx.regs[rs] = (cpu.regs[rt] as u32) as u64, // MTC1
             0x6 => match rs {
                 // CTC1
-                31 => self.fcsr = cpu.regs[rt],
+                31 => self.ctx.fcsr = cpu.regs[rt],
                 _ => {
                     error!(self.logger, "CTC1 to unknown register: {:x}", rs);
                     return t.break_here("CTC1 to unknown register");
@@ -345,16 +348,16 @@ impl Cop for Fpu {
             0x11 => return self.fop::<f64>(cpu, opcode, t),
 
             0x14 => match func {
-                0x20 => self.regs[rd] = (self.regs[rs] as i32 as f32).to_u64bits(), // CVT.S.W
-                0x21 => self.regs[rd] = (self.regs[rs] as i32 as f64).to_u64bits(), // CVT.D.W
+                0x20 => self.ctx.regs[rd] = (self.ctx.regs[rs] as i32 as f32).to_u64bits(), // CVT.S.W
+                0x21 => self.ctx.regs[rd] = (self.ctx.regs[rs] as i32 as f64).to_u64bits(), // CVT.D.W
                 _ => {
                     error!(self.logger, "unimplemented COP1 W: func={:x?}", func);
                     return t.break_here("unimplemented COP1 W opcode");
                 }
             },
             0x15 => match func {
-                0x20 => self.regs[rd] = (self.regs[rs] as i64 as f32).to_u64bits(), // CVT.S.L
-                0x21 => self.regs[rd] = (self.regs[rs] as i64 as f64).to_u64bits(), // CVT.D.L
+                0x20 => self.ctx.regs[rd] = (self.ctx.regs[rs] as i64 as f32).to_u64bits(), // CVT.S.L
+                0x21 => self.ctx.regs[rd] = (self.ctx.regs[rs] as i64 as f64).to_u64bits(), // CVT.D.L
                 _ => {
                     error!(self.logger, "unimplemented COP1 L: func={:x?}", func);
                     return t.break_here("unimplemented COP1 L opcode");
@@ -538,14 +541,17 @@ impl RegisterView for Fpu {
         for idx in 0..16 {
             let idx = idx + col * 8;
 
-            let val = self.regs[idx];
-
+            let val = self.ctx.regs[idx];
             let desc = if val >> 32 == 0 {
                 format!("S:{:.5}", f32::from_u64bits(val))
             } else {
                 format!("D:{:.5}", f64::from_u64bits(val))
             };
-            visit(FPU_REG_NAMES[idx], Reg64(&mut self.regs[idx]), Some(&desc));
+            visit(
+                FPU_REG_NAMES[idx],
+                Reg64(&mut self.ctx.regs[idx]),
+                Some(&desc),
+            );
         }
     }
 }
