@@ -3,6 +3,7 @@ use emu::dbg;
 use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
+use emu::state::{CurrentState, State};
 use emu::sync;
 use emu::sync::Subsystem;
 use emu_derive::DeviceBE;
@@ -94,7 +95,7 @@ impl R4300 {
 pub struct N64 {
     logger: slog::Logger,
     sync: Box<sync::Sync<SyncEmu>>,
-    must_reset: Option<bool>,
+    initial_state: State,
 }
 
 // N64 timings
@@ -159,7 +160,7 @@ impl N64 {
         return Ok(N64 {
             logger,
             sync,
-            must_reset: None,
+            initial_state: CurrentState().clone(),
         });
     }
 
@@ -211,11 +212,6 @@ impl DebuggerModel for N64 {
             tracer,
         )?;
         Vi::get_mut().draw_frame(screen);
-        if self.must_reset.is_some() {
-            R4300::get_mut().reset();
-            RSPCPU::get_mut().reset();
-            self.must_reset = None;
-        }
         Ok(())
     }
 
@@ -245,6 +241,15 @@ impl DebuggerModel for N64 {
     }
 
     fn reset(&mut self, hard: bool) {
-        self.must_reset = Some(hard);
+        if hard {
+            // Hard reset: restore initial emulator status
+            self.initial_state.clone().make_current();
+            self.setup_cic().unwrap(); // FIXME: move this elsewhere?
+            self.sync.reset();
+        } else {
+            // Soft reset: just trigger a reset on CPUs and hope for the best
+            R4300::get_mut().reset();
+            RSPCPU::get_mut().reset();
+        }
     }
 }
