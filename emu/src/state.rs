@@ -136,6 +136,7 @@ use futures::*;
 use lz4;
 use rmp_serde;
 use serde::{Deserialize, Serialize};
+use serde_bytes;
 
 use failure::{Error, Fail};
 use std::cell::Cell;
@@ -588,15 +589,81 @@ impl FieldInfo {
     where
         F: 'static + Copy + Serialize + Deserialize<'static>,
     {
+        // Use trait specialization to special-case ArrayField<u8> using
+        // serde_bytes. This speeds us serialization of large memory buffers
+        // a lot, because they're handled through a fast-path that just copies
+        // the whole buffer, rather than iterating element by element
+        // like for a slice of any other type.
+        trait BufferSerializer: Serialize {
+            fn buffer_serialize<'de>(
+                &self,
+                ser: &mut Ser<'de>,
+            ) -> Result<(), rmp_serde::encode::Error>;
+        }
+
+        // Generic version
+        impl<F: Serialize> BufferSerializer for F {
+            default fn buffer_serialize<'de>(
+                &self,
+                ser: &mut Ser<'de>,
+            ) -> Result<(), rmp_serde::encode::Error> {
+                self.serialize(ser)
+            }
+        }
+
+        // Specialization for [u8]
+        impl BufferSerializer for &[u8] {
+            fn buffer_serialize<'de>(
+                &self,
+                ser: &mut Ser<'de>,
+            ) -> Result<(), rmp_serde::encode::Error> {
+                serde_bytes::Bytes::new(self).serialize(ser)
+            }
+        }
+
+        trait BufferDeserializer {
+            fn buffer_deserialize<'de>(
+                self,
+                deser: &mut Deser<'de>,
+            ) -> Result<(), rmp_serde::decode::Error>;
+        }
+
+        // Generic version
+        impl<'r, F: 'static + Copy> BufferDeserializer for &'r mut [F]
+        where
+            F: serde::de::Deserialize<'static>,
+        {
+            default fn buffer_deserialize<'de>(
+                self,
+                deser: &mut Deser<'de>,
+            ) -> Result<(), rmp_serde::decode::Error> {
+                let buf: Vec<F> = serde::Deserialize::deserialize(deser)?;
+                (*self).copy_from_slice(&buf[..]);
+                Ok(())
+            }
+        }
+
+        // Specialization for [u8]
+        impl<'r> BufferDeserializer for &mut [u8] {
+            fn buffer_deserialize<'de>(
+                self,
+                deser: &mut Deser<'de>,
+            ) -> Result<(), rmp_serde::decode::Error> {
+                let buf: Vec<u8> = serde_bytes::deserialize(deser)?;
+                (*self).copy_from_slice(&buf[..]);
+                Ok(())
+            }
+        }
+
         let field1 = unsafe { field.clone() };
         let mut field2 = unsafe { field.clone() };
         Self {
             name: name.to_owned(),
-            serialize: Box::new(move |ser, state| field1.as_ref_with_state(state).serialize(ser)),
+            serialize: Box::new(move |ser, state| {
+                field1.as_ref_with_state(state).buffer_serialize(ser)
+            }),
             deserialize: Box::new(move |deser, state| {
-                let buf: Vec<F> = serde::Deserialize::deserialize(deser)?;
-                field2.as_mut_with_state(state).copy_from_slice(&buf[..]);
-                Ok(())
+                field2.as_mut_with_state(state).buffer_deserialize(deser)
             }),
         }
     }
