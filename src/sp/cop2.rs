@@ -11,13 +11,15 @@ use emu::bus::be::{Bus, Device};
 use emu::dbg;
 use emu::int::Numerics;
 use emu::memint::MemInt;
+use emu::state::Field;
 use mips64::{Cop, CpuContext, DecodedInsn};
+use serde_derive::{Deserialize, Serialize};
 use slog;
 use std::arch::x86_64::*;
 
 // Vector registers as array of u8.
 // Kept as little endian so that it's easier to directly load into SSE registers
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone, Serialize, Deserialize)]
 #[repr(align(16))]
 struct VectorReg([u8; 16]);
 
@@ -51,7 +53,8 @@ impl VectorReg {
     }
 }
 
-pub struct SpCop2 {
+#[derive(Copy, Clone, Default, Serialize, Deserialize)]
+struct SpCop2Context {
     vregs: [VectorReg; 32],
     accum: [VectorReg; 3],
     vco_carry: VectorReg,
@@ -61,6 +64,10 @@ pub struct SpCop2 {
     vcc_clip: VectorReg,
     div_in: Option<u32>,
     div_out: u32,
+}
+
+pub struct SpCop2 {
+    ctx: Field<SpCop2Context>,
     logger: slog::Logger,
 }
 
@@ -74,15 +81,7 @@ impl SpCop2 {
 
     pub fn new(logger: slog::Logger) -> Result<SpCop2> {
         Ok(SpCop2 {
-            vregs: [VectorReg([0u8; 16]); 32],
-            accum: [VectorReg([0u8; 16]); 3],
-            vco_carry: VectorReg([0u8; 16]),
-            vco_ne: VectorReg([0u8; 16]),
-            vce: VectorReg([0u8; 16]),
-            vcc_normal: VectorReg([0u8; 16]),
-            vcc_clip: VectorReg([0u8; 16]),
-            div_in: None,
-            div_out: 0,
+            ctx: Field::new("sp::cop2", SpCop2Context::default()),
             logger: logger,
         })
     }
@@ -95,7 +94,9 @@ impl SpCop2 {
         let offset = op & 0x7F;
         (base, vt, opcode, element, offset)
     }
+}
 
+impl SpCop2Context {
     fn vce(&self) -> u8 {
         let mut res = 0u8;
         for i in 0..8 {
@@ -152,6 +153,7 @@ impl SpCop2 {
 
 struct Vectorop<'a> {
     op: u32,
+    ctx: &'a mut SpCop2Context,
     spv: &'a mut SpCop2,
 }
 
@@ -172,13 +174,13 @@ impl<'a> Vectorop<'a> {
         ((self.op >> 6) & 0x1F) as usize
     }
     fn vs(&self) -> __m128i {
-        self.spv.vregs[self.rs()].m128()
+        self.ctx.vregs[self.rs()].m128()
     }
     fn vt(&self) -> __m128i {
-        self.spv.vregs[self.rt()].m128()
+        self.ctx.vregs[self.rt()].m128()
     }
     unsafe fn vte(&self) -> __m128i {
-        let vt = self.spv.vregs[self.rt()];
+        let vt = self.ctx.vregs[self.rt()];
         let e = self.e();
         match e {
             0..=1 => vt.m128(),
@@ -193,49 +195,49 @@ impl<'a> Vectorop<'a> {
         }
     }
     fn setvd(&mut self, val: __m128i) {
-        self.spv.vregs[self.rd()].setm128(val);
+        self.ctx.vregs[self.rd()].setm128(val);
     }
     fn accum(&self, idx: usize) -> __m128i {
-        unsafe { _mm_loadu_si128(self.spv.accum[idx].0.as_ptr() as *const _) }
+        unsafe { _mm_loadu_si128(self.ctx.accum[idx].0.as_ptr() as *const _) }
     }
     fn setaccum(&mut self, idx: usize, val: __m128i) {
-        unsafe { _mm_store_si128(self.spv.accum[idx].0.as_ptr() as *mut _, val) }
+        unsafe { _mm_store_si128(self.ctx.accum[idx].0.as_ptr() as *mut _, val) }
     }
     fn carry(&self) -> __m128i {
-        self.spv.vco_carry.m128()
+        self.ctx.vco_carry.m128()
     }
     fn setcarry(&mut self, val: __m128i) {
-        self.spv.vco_carry.setm128(val);
+        self.ctx.vco_carry.setm128(val);
     }
     fn ne(&self) -> __m128i {
-        self.spv.vco_ne.m128()
+        self.ctx.vco_ne.m128()
     }
     fn setne(&mut self, val: __m128i) {
-        self.spv.vco_ne.setm128(val);
+        self.ctx.vco_ne.setm128(val);
     }
 
     fn vce(&self) -> __m128i {
-        self.spv.vce.m128()
+        self.ctx.vce.m128()
     }
     fn setvce(&mut self, val: __m128i) {
-        self.spv.vce.setm128(val);
+        self.ctx.vce.setm128(val);
     }
     fn setvccnormal(&mut self, val: __m128i) {
-        self.spv.vcc_normal.setm128(val);
+        self.ctx.vcc_normal.setm128(val);
     }
     fn setvccclipl(&mut self, val: __m128i) {
-        self.spv.vcc_clip.setm128(val);
+        self.ctx.vcc_clip.setm128(val);
     }
 
     fn vt_lane(&self, idx: usize) -> u16 {
-        self.spv.vregs[self.rt()].lane(idx)
+        self.ctx.vregs[self.rt()].lane(idx)
     }
 
     fn setvd_lane(&mut self, idx: usize, val: u16) {
-        self.spv.vregs[self.rd()].setlane(idx, val);
+        self.ctx.vregs[self.rd()].setlane(idx, val);
     }
     fn setvs_lane(&mut self, idx: usize, val: u16) {
-        self.spv.vregs[self.rs()].setlane(idx, val);
+        self.ctx.vregs[self.rs()].setlane(idx, val);
     }
 }
 
@@ -258,7 +260,11 @@ macro_rules! op_vmul {
 impl SpCop2 {
     #[target_feature(enable = "sse2")]
     unsafe fn uop(&mut self, cpu: &mut CpuContext, op: u32, t: &dbg::Tracer) -> dbg::Result<()> {
-        let mut op = Vectorop { op, spv: self };
+        let mut op = Vectorop {
+            op,
+            ctx: unsafe { self.ctx.as_mut() },
+            spv: self,
+        };
         let vzero = _mm_setzero_si128();
         #[allow(overflowing_literals)]
         let vones = _mm_set1_epi16(0xFFFF);
@@ -635,26 +641,26 @@ impl SpCop2 {
                     let res = vrcp::vrcp(x.sx32());
                     op.setvd_lane(op.rs() & 7, res as u16);
                     op.setaccum(0, op.vt());
-                    op.spv.div_out = res;
+                    op.ctx.div_out = res;
                 }
                 0x31 => {
                     // VRCPL
                     let x = op.vt_lane(op.e() & 7);
-                    let res = match op.spv.div_in {
+                    let res = match op.ctx.div_in {
                         Some(div_in) => vrcp::vrcp((x as u32) | div_in),
                         None => vrcp::vrcp(x.sx32()),
                     };
                     op.setvd_lane(op.rs() & 7, res as u16);
                     op.setaccum(0, op.vt());
-                    op.spv.div_out = res;
-                    op.spv.div_in = None;
+                    op.ctx.div_out = res;
+                    op.ctx.div_in = None;
                 }
                 0x32 => {
                     // VRCPH
                     let x = op.vt_lane(op.e() & 7);
-                    op.setvd_lane(op.rs() & 7, (op.spv.div_out >> 16) as u16);
+                    op.setvd_lane(op.rs() & 7, (op.ctx.div_out >> 16) as u16);
                     op.setaccum(0, op.vt());
-                    op.spv.div_in = Some((x as u32) << 16);
+                    op.ctx.div_in = Some((x as u32) << 16);
                 }
                 0x33 => {
                     // VMOV
@@ -677,26 +683,26 @@ impl SpCop2 {
                     let res = vrcp::vrsq(x.sx32());
                     op.setvd_lane(op.rs() & 7, res as u16);
                     op.setaccum(0, op.vt());
-                    op.spv.div_out = res;
+                    op.ctx.div_out = res;
                 }
                 0x35 => {
                     // VRSQL
                     let x = op.vt_lane(op.e() & 7);
-                    let res = match op.spv.div_in {
+                    let res = match op.ctx.div_in {
                         Some(div_in) => vrcp::vrsq((x as u32) | div_in),
                         None => vrcp::vrsq(x.sx32()),
                     };
                     op.setvd_lane(op.rs() & 7, res as u16);
                     op.setaccum(0, op.vt());
-                    op.spv.div_out = res;
-                    op.spv.div_in = None;
+                    op.ctx.div_out = res;
+                    op.ctx.div_in = None;
                 }
                 0x36 => {
                     // VRSQH
                     let x = op.vt_lane(op.e() & 7);
-                    op.setvd_lane(op.rs() & 7, (op.spv.div_out >> 16) as u16);
+                    op.setvd_lane(op.rs() & 7, (op.ctx.div_out >> 16) as u16);
                     op.setaccum(0, op.vt());
-                    op.spv.div_in = Some((x as u32) << 16);
+                    op.ctx.div_in = Some((x as u32) << 16);
                 }
                 0x37 => {} // VNOP
                 0x3f => {} // VNULL
@@ -707,9 +713,9 @@ impl SpCop2 {
             match op.e() {
                 0x2 => match op.rs() {
                     // CFC2
-                    0 => cpu.regs[op.rt()] = op.spv.vco().sx64(),
-                    1 => cpu.regs[op.rt()] = op.spv.vcc().sx64(),
-                    2 => cpu.regs[op.rt()] = op.spv.vce() as u64,
+                    0 => cpu.regs[op.rt()] = op.ctx.vco().sx64(),
+                    1 => cpu.regs[op.rt()] = op.ctx.vcc().sx64(),
+                    2 => cpu.regs[op.rt()] = op.ctx.vce() as u64,
                     _ => panic!("unimplement COP2 CFC2 reg:{}", op.rs()),
                 },
                 0x4 => {
@@ -720,9 +726,9 @@ impl SpCop2 {
                 }
                 0x6 => match op.rs() {
                     // CTC2
-                    0 => op.spv.set_vco(cpu.regs[op.rt()] as u16),
-                    1 => op.spv.set_vcc(cpu.regs[op.rt()] as u16),
-                    2 => op.spv.set_vce(cpu.regs[op.rt()] as u8),
+                    0 => op.ctx.set_vco(cpu.regs[op.rt()] as u16),
+                    1 => op.ctx.set_vcc(cpu.regs[op.rt()] as u16),
+                    2 => op.ctx.set_vce(cpu.regs[op.rt()] as u8),
                     _ => panic!("unimplement COP2 CTC2 reg:{}", op.rd()),
                 },
                 _ => {
@@ -792,24 +798,24 @@ fn sxv<T: MemInt>(dmem: &mut [u8], base: u32, offset: u32, reg: &VectorReg, elem
 impl Cop for SpCop2 {
     fn reg(&self, idx: usize) -> u128 {
         match idx {
-            SpCop2::REG_VCO => self.vco() as u128,
-            SpCop2::REG_VCC => self.vcc() as u128,
-            SpCop2::REG_VCE => self.vce() as u128,
-            SpCop2::REG_ACCUM_LO => LittleEndian::read_u128(&self.accum[0].0),
-            SpCop2::REG_ACCUM_MD => LittleEndian::read_u128(&self.accum[1].0),
-            SpCop2::REG_ACCUM_HI => LittleEndian::read_u128(&self.accum[2].0),
-            _ => self.vregs[idx].u128(),
+            SpCop2::REG_VCO => self.ctx.vco() as u128,
+            SpCop2::REG_VCC => self.ctx.vcc() as u128,
+            SpCop2::REG_VCE => self.ctx.vce() as u128,
+            SpCop2::REG_ACCUM_LO => LittleEndian::read_u128(&self.ctx.accum[0].0),
+            SpCop2::REG_ACCUM_MD => LittleEndian::read_u128(&self.ctx.accum[1].0),
+            SpCop2::REG_ACCUM_HI => LittleEndian::read_u128(&self.ctx.accum[2].0),
+            _ => self.ctx.vregs[idx].u128(),
         }
     }
     fn set_reg(&mut self, idx: usize, val: u128) {
         match idx {
-            SpCop2::REG_VCO => self.set_vco(val as u16),
-            SpCop2::REG_VCC => self.set_vcc(val as u16),
-            SpCop2::REG_VCE => self.set_vce(val as u8),
-            SpCop2::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.accum[0].0, val),
-            SpCop2::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.accum[1].0, val),
-            SpCop2::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.accum[2].0, val),
-            _ => self.vregs[idx].setu128(val),
+            SpCop2::REG_VCO => self.ctx.set_vco(val as u16),
+            SpCop2::REG_VCC => self.ctx.set_vcc(val as u16),
+            SpCop2::REG_VCE => self.ctx.set_vce(val as u8),
+            SpCop2::REG_ACCUM_LO => LittleEndian::write_u128(&mut self.ctx.accum[0].0, val),
+            SpCop2::REG_ACCUM_MD => LittleEndian::write_u128(&mut self.ctx.accum[1].0, val),
+            SpCop2::REG_ACCUM_HI => LittleEndian::write_u128(&mut self.ctx.accum[2].0, val),
+            _ => self.ctx.vregs[idx].setu128(val),
         }
     }
 
@@ -821,7 +827,7 @@ impl Cop for SpCop2 {
         let sp = Sp::get_mut();
         let dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
-        let vt = &mut self.vregs[vtidx];
+        let vt = &mut self.ctx.vregs[vtidx];
         match op {
             0x00 => lxv::<u8>(vt, element as usize, &dmem, base, offset), // LBV
             0x01 => lxv::<u16>(vt, element as usize, &dmem, base, offset), // LSV
@@ -858,7 +864,7 @@ impl Cop for SpCop2 {
                 mem = mem.rotate_left((element + (ea & 0x8)) * 8);
 
                 for e in 0..8 {
-                    self.vregs[vtbase + vtoff].setlane(e, (mem >> (128 - 16)) as u16);
+                    self.ctx.vregs[vtbase + vtoff].setlane(e, (mem >> (128 - 16)) as u16);
                     mem <<= 16;
                     vtoff += 1;
                     vtoff &= 7;
@@ -871,7 +877,7 @@ impl Cop for SpCop2 {
         let sp = Sp::get_mut();
         let mut dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
-        let vt = &self.vregs[vtidx];
+        let vt = &self.ctx.vregs[vtidx];
         match op {
             0x00 => sxv::<u8>(&mut dmem, base, offset, vt, element as usize), // SBV
             0x01 => sxv::<u16>(&mut dmem, base, offset, vt, element as usize), // SSV
@@ -921,7 +927,7 @@ impl Cop for SpCop2 {
                 let mut vtoff = element as usize >> 1;
 
                 for e in 0..8 {
-                    let r = self.vregs[vtbase + vtoff].lane(e);
+                    let r = self.ctx.vregs[vtbase + vtoff].lane(e);
                     mem <<= 16;
                     mem |= r as u128;
                     vtoff += 1;
