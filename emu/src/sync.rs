@@ -132,6 +132,7 @@ impl<E: SyncEmu + 'static> Sync<E> {
     pub fn reset(&mut self) {
         self.frames = 0;
         self.cycles = 0;
+        self.curr_frame = None;
     }
 
     pub fn frames(&self) -> i64 {
