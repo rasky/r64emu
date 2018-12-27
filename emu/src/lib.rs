@@ -4,6 +4,7 @@
 #![feature(optin_builtin_traits)]
 #![feature(pin)]
 #![feature(thread_local)]
+#![feature(integer_atomics)]
 
 pub mod bus;
 pub mod dbg;

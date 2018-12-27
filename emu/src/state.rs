@@ -137,15 +137,18 @@ use lz4;
 use rmp_serde;
 use serde::{Deserialize, Serialize};
 
+use failure::{Error, Fail};
+use std::cell::Cell;
 use std::cell::{RefCell, RefMut};
 use std::collections::BTreeMap;
 use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::ptr;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread;
-use failure::{Error, Fail};
 
 #[derive(Debug, Fail)]
 enum SerializationFailure {
@@ -153,20 +156,21 @@ enum SerializationFailure {
     InvalidFormat,
 
     #[fail(display = "invalid magic string: {}", magic)]
-    InvalidMagic {
-        magic: String,
-    },
+    InvalidMagic { magic: String },
     #[fail(display = "invalid version: {}", version)]
-    InvalidVersion {
-        version: u32,
-    }
+    InvalidVersion { version: u32 },
 }
 
-// Global per-threat state. Notice that we use #[thread_local] rather than
+// Global per-thread state. Notice that we use #[thread_local] rather than
 // thread_local!() as it's much faster at accessing the state, and also allows
 // non-scoped access (that is, without `with`).
 #[thread_local]
 static mut STATE: Option<RefCell<State>> = None;
+
+// ID used to cache pointers within the global state. Any time the global State
+// changes in a way that makes all previous pointer invalid, this counter is
+// incremented.
+static STATE_ID: AtomicU32 = AtomicU32::new(0);
 
 /// Return a mutable reference to the current [`State`](struct.State.html) (for
 /// the current thread).
@@ -207,7 +211,7 @@ unsafe fn UnsafeCurrentState() -> &'static mut State {
 /// For this reason, cloning is marked as unsafe.
 pub struct Field<F: Copy + Serialize + Deserialize<'static>> {
     offset: usize,
-    phantom: PhantomData<F>,
+    cache: Cell<(u32, *mut F)>,
 }
 
 // A field refers implicitly to the current thread's State, thus we cannot
@@ -233,7 +237,7 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> Field<F> {
     pub unsafe fn clone(&self) -> Self {
         Self {
             offset: self.offset,
-            phantom: PhantomData,
+            cache: Cell::new(self.cache.get()),
         }
     }
 
@@ -255,12 +259,26 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> Field<F> {
     /// similar to the Deref trait, but it defines lifetimes to keep the `State`
     /// borrowed rather than the field instance. Since this violates aliasing
     /// rules, it is unsafe.
-    pub fn as_ref<'s, 'f: 's>(&'s self) -> &'f F {
-        unsafe { self.as_ref_with_state(UnsafeCurrentState()) }
+    pub unsafe fn as_ref<'s, 'f: 's>(&'s self) -> &'f F {
+        let sid = STATE_ID.load(Ordering::Relaxed);
+        let cache = self.cache.get();
+        if sid == cache.0 {
+            return &*cache.1;
+        }
+        let f = self.as_ref_with_state(UnsafeCurrentState());
+        self.cache.set((sid, f as *const F as *mut F));
+        f
     }
     /// `as_mut()` is the mutable version of [`as_ref()`](struct.Field.html#method.as_ref).
-    pub fn as_mut<'s, 'f: 's>(&'s mut self) -> &'f mut F {
-        unsafe { self.as_mut_with_state(UnsafeCurrentState()) }
+    pub unsafe fn as_mut<'s, 'f: 's>(&'s mut self) -> &'f mut F {
+        let sid = STATE_ID.load(Ordering::Relaxed);
+        let cache = self.cache.get();
+        if sid == cache.0 {
+            return &mut *cache.1;
+        }
+        let f = self.as_mut_with_state(UnsafeCurrentState());
+        self.cache.set((sid, f as *mut F));
+        f
     }
 }
 
@@ -271,7 +289,7 @@ impl<F: Copy + Serialize + Deserialize<'static>> Default for Field<F> {
     fn default() -> Self {
         Self {
             offset: usize::max_value(),
-            phantom: PhantomData,
+            cache: Cell::new((u32::max_value(), ptr::null_mut())),
         }
     }
 }
@@ -280,13 +298,15 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> Deref for Field<F> {
     type Target = F;
 
     fn deref(&self) -> &F {
-        unsafe { self.as_ref_with_state(UnsafeCurrentState()) }
+        // Keeping self borrowed makes as_ref() safe
+        unsafe { self.as_ref() }
     }
 }
 
 impl<F: 'static + Copy + Serialize + Deserialize<'static>> DerefMut for Field<F> {
     fn deref_mut(&mut self) -> &mut F {
-        unsafe { self.as_mut_with_state(UnsafeCurrentState()) }
+        // Keeping self borrowed makes as_mut() safe
+        unsafe { self.as_mut() }
     }
 }
 
@@ -518,17 +538,14 @@ impl<F: 'static + Copy + Serialize + Deserialize<'static>> DerefMut for ArrayFie
     }
 }
 
-type Ser<'de> = rmp_serde::Serializer<&'de mut Vec<u8>,
-    rmp_serde::encode::StructMapWriter,
->;
+type Ser<'de> = rmp_serde::Serializer<&'de mut Vec<u8>, rmp_serde::encode::StructMapWriter>;
 type Deser<'de> = rmp_serde::Deserializer<rmp_serde::decode::ReadReader<&'de [u8]>>;
 
 // FieldInfo contains the type-erased serialization and deserialization functions
 // for each field.
 struct FieldInfo {
     name: String,
-    serialize:
-        Box<for<'de> Fn(&mut Ser<'de>, &State) -> Result<(), rmp_serde::encode::Error>>,
+    serialize: Box<for<'de> Fn(&mut Ser<'de>, &State) -> Result<(), rmp_serde::encode::Error>>,
     deserialize:
         Box<for<'de> FnMut(&mut Deser<'de>, &mut State) -> Result<(), rmp_serde::decode::Error>>,
 }
@@ -616,7 +633,11 @@ impl State {
 
     fn alloc_raw(&mut self, size: usize, align: usize) -> usize {
         let offset = round_up(self.data.len(), align);
-        self.data.resize(offset + size, 0);
+        let newsize = offset + size;
+        if newsize > self.data.capacity() {
+            STATE_ID.fetch_add(1, Ordering::Relaxed);
+        }
+        self.data.resize(newsize, 0);
         offset
     }
 
@@ -633,7 +654,7 @@ impl State {
 
         let f = Field {
             offset: self.alloc_raw(mem::size_of::<F>(), mem::align_of::<F>()),
-            phantom: PhantomData,
+            cache: Cell::new((u32::max_value(), ptr::null_mut())),
         };
         self.info
             .borrow_mut()
@@ -702,6 +723,7 @@ impl State {
     /// Returns the previously-current state.
     pub fn make_current(mut self) -> State {
         std::mem::swap(&mut *CurrentState(), &mut self);
+        STATE_ID.fetch_add(1, Ordering::Relaxed);
         self
     }
 
@@ -771,12 +793,12 @@ impl State {
 
         let magic: String = Deserialize::deserialize(&mut de)?;
         if magic != wanted_magic {
-            return Err(SerializationFailure::InvalidMagic{magic}.into());
+            return Err(SerializationFailure::InvalidMagic { magic }.into());
         }
 
         let version: u32 = Deserialize::deserialize(&mut de)?;
         if version != wanted_version {
-            return Err(SerializationFailure::InvalidVersion{version}.into());
+            return Err(SerializationFailure::InvalidVersion { version }.into());
         }
 
         let num_fields: u32 = Deserialize::deserialize(&mut de)?;
@@ -968,7 +990,7 @@ mod tests {
         CurrentState().serialize(&mut s1, "test", 1).unwrap();
 
         assert!(CurrentState().deserialize(&s1[..], "xest", 1).is_err());
-        assert!(CurrentState().deserialize(&s1[..], "test", 2 ).is_err());
+        assert!(CurrentState().deserialize(&s1[..], "test", 2).is_err());
 
         *a = 5;
         *b = 13.0;
