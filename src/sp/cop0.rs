@@ -105,14 +105,15 @@ impl mips64::Cop0 for SpCop0 {
     }
 
     fn exception(&mut self, ctx: &mut mips64::CpuContext, exc: mips64::Exception) {
+        use mips64::Exception::*;
         match exc {
-            mips64::Exception::ColdReset => {
+            ColdReset | SoftReset => {
                 ctx.set_halt_line(true);
                 ctx.set_pc(0);
             }
 
             // Breakpoint exception is used by RSP to halt itself
-            mips64::Exception::Breakpoint => {
+            Breakpoint => {
                 let sp = Sp::get_mut();
                 let mut status = sp.get_status();
                 status.insert(StatusFlags::HALT | StatusFlags::BROKE);

@@ -94,6 +94,7 @@ impl R4300 {
 pub struct N64 {
     logger: slog::Logger,
     sync: Box<sync::Sync<SyncEmu>>,
+    must_reset: Option<bool>,
 }
 
 // N64 timings
@@ -155,7 +156,11 @@ impl N64 {
         R4300::get_mut().map_bus()?;
         RSPCPU::get_mut().map_bus()?;
 
-        return Ok(N64 { logger, sync });
+        return Ok(N64 {
+            logger,
+            sync,
+            must_reset: None,
+        });
     }
 
     // Setup the CIC (copy protection) emulation.
@@ -182,7 +187,6 @@ impl hw::OutputProducer for N64 {
             }
             _ => {}
         });
-
         Vi::get_mut().draw_frame(screen);
     }
 
@@ -206,8 +210,12 @@ impl DebuggerModel for N64 {
             },
             tracer,
         )?;
-
         Vi::get_mut().draw_frame(screen);
+        if self.must_reset.is_some() {
+            R4300::get_mut().reset();
+            RSPCPU::get_mut().reset();
+            self.must_reset = None;
+        }
         Ok(())
     }
 
@@ -234,5 +242,9 @@ impl DebuggerModel for N64 {
 
     fn frames(&self) -> i64 {
         self.sync.frames()
+    }
+
+    fn reset(&mut self, hard: bool) {
+        self.must_reset = Some(hard);
     }
 }

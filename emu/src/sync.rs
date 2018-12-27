@@ -129,6 +129,11 @@ impl<E: SyncEmu + 'static> Sync<E> {
         self.current_sub().map_or(None, |(s, _)| s.pc())
     }
 
+    pub fn reset(&mut self) {
+        self.frames = 0;
+        self.cycles = 0;
+    }
+
     pub fn frames(&self) -> i64 {
         self.frames
     }

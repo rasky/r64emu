@@ -53,6 +53,9 @@ pub trait DebuggerModel {
     /// step (opcode).
     fn trace_step(&mut self, cpu_name: &str, tracer: &Tracer) -> Result<()>;
 
+    /// Reset the emulator.
+    fn reset(&mut self, hard: bool);
+
     fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>);
 }
 
@@ -251,7 +254,12 @@ impl DebuggerUI {
 
         ui.main_menu_bar(|| {
             ui.menu(im_str!("Emulation")).build(|| {
-                ui.menu_item(im_str!("Reset")).build();
+                if ui.menu_item(im_str!("Soft Reset")).build() {
+                    model.reset(false);
+                }
+                if ui.menu_item(im_str!("Hard Reset")).build() {
+                    model.reset(true);
+                }
             });
 
             ui.same_line(200.0);
