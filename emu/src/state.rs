@@ -198,7 +198,11 @@ pub fn CurrentState() -> RefMut<'static, State> {
 #[allow(non_snake_case)]
 #[inline(always)]
 unsafe fn UnsafeCurrentState() -> &'static mut State {
-    &mut *STATE.as_ref().unwrap().as_ptr()
+    // NOTE: we don't use unwrap() here because it doesn't always get inlined.
+    if let Some(S) = STATE.as_ref() {
+        return &mut *S.as_ptr();
+    }
+    panic!("UnsafeCurrentState called before State initialization");
 }
 
 /// A `Field` is an object that is part of the emulator state. It is a lightweight
