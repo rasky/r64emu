@@ -108,6 +108,13 @@ impl<O: ByteOrder, U: MemInt> MemIoR<O, U> {
         }
     }
 
+    pub fn is_mem(&self) -> bool {
+        match &self.hwio {
+            HwIoR::Mem(_, _) => true,
+            HwIoR::Func(_) => false,
+        }
+    }
+
     pub fn read(&self) -> U {
         self.hwio.read::<O, U>(self.addr)
     }
@@ -139,30 +146,6 @@ impl<O: ByteOrder> MemIoR<O, u8> {
     }
 }
 
-#[derive(Clone)]
-pub struct MemIoW<O: ByteOrder, U: MemInt> {
-    hwio: HwIoW,
-    addr: u32,
-    phantom: PhantomData<(O, U)>,
-}
-
-impl<O: ByteOrder, U: MemInt> MemIoW<O, U> {
-    pub fn write(&mut self, val: U) {
-        self.hwio.write::<O, U>(self.addr, val);
-    }
-}
-
-impl<O: ByteOrder> MemIoW<O, u8> {
-    pub fn mem<'s, 'r: 's>(&'s mut self) -> Option<&'r mut [u8]> {
-        match self.hwio {
-            HwIoW::Mem(ref mut buf, mask) => {
-                Some(&mut unsafe { buf.as_slice_mut() }[(self.addr & mask) as usize..])
-            }
-            HwIoW::Func(_) => None,
-        }
-    }
-}
-
 impl<O: ByteOrder, U: MemInt> io::Read for MemIoR<O, U> {
     fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
         match self.hwio.clone() {
@@ -178,6 +161,36 @@ impl<O: ByteOrder, U: MemInt> io::Read for MemIoR<O, U> {
                 io::ErrorKind::Other,
                 "memory area is not a linearly mapped",
             )),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct MemIoW<O: ByteOrder, U: MemInt> {
+    hwio: HwIoW,
+    addr: u32,
+    phantom: PhantomData<(O, U)>,
+}
+
+impl<O: ByteOrder, U: MemInt> MemIoW<O, U> {
+    pub fn is_mem(&self) -> bool {
+        match &self.hwio {
+            HwIoW::Mem(_, _) => true,
+            HwIoW::Func(_) => false,
+        }
+    }
+    pub fn write(&mut self, val: U) {
+        self.hwio.write::<O, U>(self.addr, val);
+    }
+}
+
+impl<O: ByteOrder> MemIoW<O, u8> {
+    pub fn mem<'s, 'r: 's>(&'s mut self) -> Option<&'r mut [u8]> {
+        match self.hwio {
+            HwIoW::Mem(ref mut buf, mask) => {
+                Some(&mut unsafe { buf.as_slice_mut() }[(self.addr & mask) as usize..])
+            }
+            HwIoW::Func(_) => None,
         }
     }
 }
@@ -491,6 +504,12 @@ mod tests {
         let mut bus = Bus::<LittleEndian>::new(logger());
         assert_eq!(bus.map_reg(0x04000120, &reg1).is_ok(), true);
         assert_eq!(bus.map_reg(0x04000124, &reg2).is_ok(), true);
+
+        assert_eq!(bus.fetch_read::<u32>(0x04000120).is_mem(), true);
+        assert_eq!(bus.fetch_read::<u16>(0x04000122).is_mem(), true);
+        assert_eq!(bus.fetch_read::<u8>(0x04000121).is_mem(), true);
+        assert_eq!(bus.fetch_read::<u32>(0x04000124).is_mem(), false); // callback
+        assert_eq!(bus.fetch_read::<u8>(0x04000125).is_mem(), false); // callback
 
         assert_eq!(bus.read::<u32>(0x04000120), 0x12345678);
         assert_eq!(bus.read::<u16>(0x04000122), 0x1234);

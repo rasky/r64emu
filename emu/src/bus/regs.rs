@@ -274,6 +274,7 @@ mod tests {
     use super::super::{be, le};
     use super::{Reg, RegFlags};
     use crate::memint::{ByteOrderCombiner, MemInt};
+    use byteorder::BigEndian;
     use std::marker::PhantomData;
     use std::rc::Rc;
 
@@ -372,5 +373,15 @@ mod tests {
         assert_eq!(bus.read::<u32>(&r, 0), 0xffffffff);
         bus.write::<u32>(&r, 0, 0xaabbccdd);
         assert_eq!(bus.read::<u32>(&r, 0), 0xffffffff);
+    }
+
+    #[test]
+    fn reg32be_wcb() {
+        let _bus = FakeBus::<BigEndian, u32>::default();
+        let r = be::Reg32::new_basic("reg32")
+            .with_rwmask(0x0000_ffff)
+            .with_wcb(Some(Rc::new(box move |_old, _val| {})));
+        assert_eq!(r.reader().is_mem(), true);
+        assert_eq!(r.writer().is_mem(), false);
     }
 }
