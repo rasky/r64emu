@@ -69,6 +69,7 @@ pub struct Cpu<C: Config> {
     name: String,
     logger: slog::Logger,
     until: i64,
+    last_busycheck: u64,
 }
 
 struct Mipsop<'a, C: Config> {
@@ -197,6 +198,13 @@ macro_rules! branch {
         }
         let (cond, tgt) = ($cond, $tgt);
         $op.ctx.branch(cond, tgt, $lkl);
+        if cond {
+            if tgt == $op.ctx.pc - 4 {
+                $op.cpu.detect_busywait_2insn($op.ctx.pc - 4);
+            } else if tgt == $op.ctx.pc - 8 {
+                $op.cpu.detect_busywait_3insn($op.ctx.pc - 4);
+            }
+        }
     }};
 }
 
@@ -249,6 +257,7 @@ impl<C: Config> Cpu<C> {
             cop3: cops.3,
             logger: logger,
             until: 0,
+            last_busycheck: 0,
         };
         cpu.exception(Exception::ColdReset); // Trigger a reset exception at startup
         cpu
@@ -486,6 +495,60 @@ impl<C: Config> Cpu<C> {
         let shift = (!addr & 3) * 8;
         let mask = (1 << shift) - 1;
         Ok((mem & mask) | ((reg << shift) & !mask))
+    }
+
+    fn op_has_side_effects(&mut self, opcode: u32) -> bool {
+        if opcode == 0 {
+            // NOP
+            return false;
+        }
+        match opcode >> 26 {
+            0x20 | 0x21 | 0x22 | 0x23 | 0x24 | 0x25 | 0x26 | 0x27 => {
+                // Load opcode. Check if the address is raw memory.
+                let sximm32 = (opcode & 0xffff) as i16 as i32;
+                let rs = ((opcode >> 21) & 0x1f) as usize;
+                let ea = self.ctx.regs[rs] as u32 + sximm32 as u32;
+                let mem = self.bus.fetch_read_nolog::<u32>(C::addr_mask(ea));
+                return !mem.is_mem();
+            }
+            0x28 | 0x29 | 0x2A | 0x2B | 0x2E => {
+                // Store opcode. Check if the address is raw memory.
+                let sximm32 = (opcode & 0xffff) as i16 as i32;
+                let rs = ((opcode >> 21) & 0x1f) as usize;
+                let ea = self.ctx.regs[rs] as u32 + sximm32 as u32;
+                let mem = self.bus.fetch_write_nolog::<u32>(C::addr_mask(ea));
+                return !mem.is_mem();
+            }
+            _ => return true,
+        }
+    }
+
+    fn detect_busywait_2insn(&mut self, branch_pc: u64) {
+        if self.last_busycheck == branch_pc {
+            return;
+        }
+        self.last_busycheck = branch_pc;
+        let opcode_after = self.fetch(branch_pc + 4).read();
+        let busywait = !self.op_has_side_effects(opcode_after);
+        if busywait {
+            self.ctx.clock = self.until;
+            self.last_busycheck = 0;
+        }
+    }
+
+    fn detect_busywait_3insn(&mut self, branch_pc: u64) {
+        if self.last_busycheck == branch_pc {
+            return;
+        }
+        self.last_busycheck = branch_pc;
+        let opcode_before = self.fetch(branch_pc - 4).read();
+        let opcode_after = self.fetch(branch_pc + 4).read();
+        let busywait =
+            !self.op_has_side_effects(opcode_before) && !self.op_has_side_effects(opcode_after);
+        if busywait {
+            self.ctx.clock = self.until;
+            self.last_busycheck = 0;
+        }
     }
 
     fn fetch(&mut self, addr: u64) -> MemIoR<u32> {
