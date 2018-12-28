@@ -69,9 +69,6 @@ pub struct Cpu<C: Config> {
     name: String,
     logger: slog::Logger,
     until: i64,
-
-    last_fetch_addr: u32,
-    last_fetch_mem: MemIoR<u32>,
 }
 
 struct Mipsop<'a, C: Config> {
@@ -252,8 +249,6 @@ impl<C: Config> Cpu<C> {
             cop3: cops.3,
             logger: logger,
             until: 0,
-            last_fetch_addr: 0xFFFF_FFFF,
-            last_fetch_mem: MemIoR::default(),
         };
         cpu.exception(Exception::ColdReset); // Trigger a reset exception at startup
         cpu
@@ -494,13 +489,7 @@ impl<C: Config> Cpu<C> {
     }
 
     fn fetch(&mut self, addr: u64) -> MemIoR<u32> {
-        // Save last fetched memio, to speed up hot loops
-        let addr = C::pc_mask(addr as u32);
-        if self.last_fetch_addr != addr {
-            self.last_fetch_addr = addr;
-            self.last_fetch_mem = self.bus.fetch_read::<u32>(addr as u32);
-        }
-        self.last_fetch_mem.clone()
+        self.bus.fetch_read::<u32>(C::pc_mask(addr as u32))
     }
 
     fn read<U: MemInt>(&self, addr: u32, t: &Tracer) -> Result<U> {
@@ -521,6 +510,9 @@ impl<C: Config> Cpu<C> {
         self.until = until;
 
         let ctx = unsafe { self.ctx.as_mut() };
+        let mut mem = self.fetch(ctx.pc);
+        let mut last_mem_pc = ctx.pc;
+
         while ctx.clock < self.until {
             if ctx.lines.halt {
                 ctx.clock = self.until;
@@ -532,7 +524,11 @@ impl<C: Config> Cpu<C> {
                 continue;
             }
 
-            let mem = self.fetch(ctx.pc);
+            if ctx.pc != last_mem_pc {
+                mem = self.fetch(ctx.pc);
+                last_mem_pc = ctx.pc;
+            }
+
             let mut iter = mem
                 .iter()
                 .unwrap_or_else(|| panic!("jumped to non-linear memory: {}", ctx.pc.hex()));
