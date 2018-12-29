@@ -3,7 +3,8 @@ use crate::memint::ByteOrderCombiner;
 use hashbrown::HashMap;
 use std::any::Any;
 use std::cell::RefCell;
-use std::pin::{Pin, Unpin};
+use std::marker::Unpin;
+use std::pin::Pin;
 
 pub trait Device: Sized {
     type Order: ByteOrderCombiner;
