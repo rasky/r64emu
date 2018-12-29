@@ -53,6 +53,9 @@ version = "2.4.1"
 features = ["nothreads"]
 
 [patch.crates-io]
+# SDL2 fork needed until this PR is merged:
+# https://github.com/Rust-SDL2/rust-sdl2/pull/834
+"sdl2" = { git="https://github.com/rasky/rust-sdl2", branch="master" }
 "slog" = { git="https://github.com/rasky/slog", branch="nothreads" }
 "imgui-sdl2" = { git="https://github.com/rasky/rust-imgui-sdl2", branch="r64emu" }
 "imgui-opengl-renderer" = { git="https://github.com/rasky/rust-imgui-opengl-renderer", branch="r64emu"}
