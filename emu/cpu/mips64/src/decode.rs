@@ -1,5 +1,5 @@
 extern crate emu;
-use super::{Config, Cop, Cpu};
+use super::{Arch, Config, Cop, Cpu};
 use emu::dbg::Operand;
 
 // Decoding format for arguments of load/store ops
@@ -181,12 +181,16 @@ fn humanize(insn: DecodedInsn) -> DecodedInsn {
         "bgez" if op0 == IReg(zr) => DecodedInsn::new1("j", op1), // relocatable encoding
         "bgezal" if op0 == IReg(zr) => DecodedInsn::new1("jal", op1), // relocatable encoding
         "or" if op1 == IReg(zr) && op2 == IReg(zr) => DecodedInsn::new2("li", op0, Imm32(0)),
-        "or" if op1 == IReg(zr) => DecodedInsn::new2("move", op0, op2),
-        "or" if op2 == IReg(zr) => DecodedInsn::new2("move", op0, op1),
+        "add" | "or" if op1 == IReg(zr) => DecodedInsn::new2("move", op0, op2),
+        "add" | "or" if op2 == IReg(zr) => DecodedInsn::new2("move", op0, op1),
         _ => insn,
     }
 }
 
 pub(crate) fn decode<C: Config>(cpu: &Cpu<C>, opcode: u32, pc: u64) -> DecodedInsn {
-    humanize(decode1(cpu, opcode, pc))
+    let insn = decode1(cpu, opcode, pc);
+    if !C::Arch::has_op(insn.op) {
+        return DecodedInsn::new0("unsupp?");
+    }
+    humanize(insn)
 }

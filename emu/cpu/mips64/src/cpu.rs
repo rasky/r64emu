@@ -364,37 +364,53 @@ impl<C: Config> Cpu<C> {
                 0x21 if h("addu") => *op.mrd64() = (op.rs32() + op.rt32()).sx64(), // ADDU
                 0x22 if h("sub") => check_overflow_sub!(op, *op.mrd64(), op.irs32(), op.irt32()), // SUB
                 0x23 if h("subu") => *op.mrd64() = (op.rs32() - op.rt32()).sx64(), // SUBU
-                0x24 => *op.mrd64() = op.rs64() & op.rt64(),                       // AND
-                0x25 => *op.mrd64() = op.rs64() | op.rt64(),                       // OR
-                0x26 => *op.mrd64() = op.rs64() ^ op.rt64(),                       // XOR
-                0x27 => *op.mrd64() = !(op.rs64() | op.rt64()),                    // NOR
-                0x2A => *op.mrd64() = (op.irs32() < op.irt32()) as u64,            // SLT
-                0x2B => *op.mrd64() = (op.rs32() < op.rt32()) as u64,              // SLTU
-                0x2C => check_overflow_add!(op, *op.mrd64(), op.irs64(), op.irt64()), // DADD
-                0x2D => *op.mrd64() = op.rs64() + op.rt64(),                       // DADDU
-                0x2E => check_overflow_sub!(op, *op.mrd64(), op.irs64(), op.irt64()), // DSUB
-                0x2F => *op.mrd64() = op.rs64() - op.rt64(),                       // DSUBU
+                0x24 if h("and") => *op.mrd64() = op.rs64() & op.rt64(),           // AND
+                0x25 if h("or") => *op.mrd64() = op.rs64() | op.rt64(),            // OR
+                0x26 if h("xor") => *op.mrd64() = op.rs64() ^ op.rt64(),           // XOR
+                0x27 if h("nor") => *op.mrd64() = !(op.rs64() | op.rt64()),        // NOR
+                0x2A if h("slt") => *op.mrd64() = (op.irs32() < op.irt32()) as u64, // SLT
+                0x2B if h("sltu") => *op.mrd64() = (op.rs32() < op.rt32()) as u64, // SLTU
+                0x2C if h("dadd") => check_overflow_add!(op, *op.mrd64(), op.irs64(), op.irt64()), // DADD
+                0x2D if h("daddu") => *op.mrd64() = op.rs64() + op.rt64(), // DADDU
+                0x2E if h("dsub") => check_overflow_sub!(op, *op.mrd64(), op.irs64(), op.irt64()), // DSUB
+                0x2F if h("dsubu") => *op.mrd64() = op.rs64() - op.rt64(), // DSUBU
 
-                0x38 => *op.mrd64() = op.rt64() << op.sa(), // DSLL
-                0x3A => *op.mrd64() = op.rt64() >> op.sa(), // DSRL
-                0x3B => *op.mrd64() = (op.irt64() >> op.sa()) as u64, // DSRA
-                0x3C => *op.mrd64() = op.rt64() << (op.sa() + 32), // DSLL32
-                0x3E => *op.mrd64() = op.rt64() >> (op.sa() + 32), // DSRL32
-                0x3F => *op.mrd64() = (op.irt64() >> (op.sa() + 32)) as u64, // DSRA32
+                0x38 if h("dsll") => *op.mrd64() = op.rt64() << op.sa(), // DSLL
+                0x3A if h("dsrl") => *op.mrd64() = op.rt64() >> op.sa(), // DSRL
+                0x3B if h("dsra") => *op.mrd64() = (op.irt64() >> op.sa()) as u64, // DSRA
+                0x3C if h("dsll32") => *op.mrd64() = op.rt64() << (op.sa() + 32), // DSLL32
+                0x3E if h("dsrl32") => *op.mrd64() = op.rt64() >> (op.sa() + 32), // DSRL32
+                0x3F if h("dsra32") => *op.mrd64() = (op.irt64() >> (op.sa() + 32)) as u64, // DSRA32
 
                 _ => panic!("unimplemented special opcode: func=0x{:x?}", op.special()),
             },
 
             // REGIMM
             0x01 => match op.rt() {
-                0x00 => branch!(op, op.irs64() < 0, op.btgt(), link(false), likely(false)), // BLTZ
-                0x01 => branch!(op, op.irs64() >= 0, op.btgt(), link(false), likely(false)), // BGEZ
-                0x02 => branch!(op, op.irs64() < 0, op.btgt(), link(false), likely(true)),  // BLTZL
-                0x03 => branch!(op, op.irs64() >= 0, op.btgt(), link(false), likely(true)), // BGEZL
-                0x10 => branch!(op, op.irs64() < 0, op.btgt(), link(true), likely(false)), // BLTZAL
-                0x11 => branch!(op, op.irs64() >= 0, op.btgt(), link(true), likely(false)), // BGEZAL
-                0x12 => branch!(op, op.irs64() < 0, op.btgt(), link(true), likely(true)), // BLTZALL
-                0x13 => branch!(op, op.irs64() >= 0, op.btgt(), link(true), likely(true)), // BGEZALL
+                0x00 if h("bltz") => {
+                    branch!(op, op.irs64() < 0, op.btgt(), link(false), likely(false))
+                }
+                0x01 if h("bgez") => {
+                    branch!(op, op.irs64() >= 0, op.btgt(), link(false), likely(false))
+                }
+                0x02 if h("btlzl") => {
+                    branch!(op, op.irs64() < 0, op.btgt(), link(false), likely(true))
+                }
+                0x03 if h("bgezl") => {
+                    branch!(op, op.irs64() >= 0, op.btgt(), link(false), likely(true))
+                }
+                0x10 if h("bltzal") => {
+                    branch!(op, op.irs64() < 0, op.btgt(), link(true), likely(false))
+                }
+                0x11 if h("bgezal") => {
+                    branch!(op, op.irs64() >= 0, op.btgt(), link(true), likely(false))
+                }
+                0x12 if h("bltzall") => {
+                    branch!(op, op.irs64() < 0, op.btgt(), link(true), likely(true))
+                }
+                0x13 if h("bgezall") => {
+                    branch!(op, op.irs64() >= 0, op.btgt(), link(true), likely(true))
+                }
                 _ => panic!(
                     "unimplemented regimm opcode: func=0x{:x?} pc=0x{:x?}",
                     op.rt(),
@@ -402,61 +418,63 @@ impl<C: Config> Cpu<C> {
                 ),
             },
 
-            0x02 => branch!(op, true, op.jtgt(), link(false)), // J
-            0x03 => branch!(op, true, op.jtgt(), link(true)),  // JAL
-            0x04 => branch!(op, op.rs64() == op.rt64(), op.btgt()), // BEQ
-            0x05 => branch!(op, op.rs64() != op.rt64(), op.btgt()), // BNE
-            0x06 => branch!(op, op.irs64() <= 0, op.btgt()),   // BLEZ
-            0x07 => branch!(op, op.irs64() > 0, op.btgt()),    // BGTZ
-            0x08 => check_overflow_add!(op, *op.mrt64(), op.irs32(), op.sximm32()), // ADDI
-            0x09 => *op.mrt64() = (op.irs32() + op.sximm32()).sx64(), // ADDIU
-            0x0A => *op.mrt64() = (op.irs32() < op.sximm32()) as u64, // SLTI
-            0x0B => *op.mrt64() = (op.rs32() < op.sximm32() as u32) as u64, // SLTIU
-            0x0C => *op.mrt64() = op.rs64() & op.imm64(),      // ANDI
-            0x0D => *op.mrt64() = op.rs64() | op.imm64(),      // ORI
-            0x0E => *op.mrt64() = op.rs64() ^ op.imm64(),      // XORI
-            0x0F => *op.mrt64() = (op.sximm32() << 16).sx64(), // LUI
+            0x02 if h("j") => branch!(op, true, op.jtgt(), link(false)), // J
+            0x03 if h("jal") => branch!(op, true, op.jtgt(), link(true)), // JAL
+            0x04 if h("beq") => branch!(op, op.rs64() == op.rt64(), op.btgt()), // BEQ
+            0x05 if h("bne") => branch!(op, op.rs64() != op.rt64(), op.btgt()), // BNE
+            0x06 if h("blez") => branch!(op, op.irs64() <= 0, op.btgt()), // BLEZ
+            0x07 if h("bgtz") => branch!(op, op.irs64() > 0, op.btgt()), // BGTZ
+            0x08 if h("addi") => check_overflow_add!(op, *op.mrt64(), op.irs32(), op.sximm32()), // ADDI
+            0x09 if h("addiu") => *op.mrt64() = (op.irs32() + op.sximm32()).sx64(), // ADDIU
+            0x0A if h("slti") => *op.mrt64() = (op.irs32() < op.sximm32()) as u64,  // SLTI
+            0x0B if h("sltiu") => *op.mrt64() = (op.rs32() < op.sximm32() as u32) as u64, // SLTIU
+            0x0C if h("andi") => *op.mrt64() = op.rs64() & op.imm64(),              // ANDI
+            0x0D if h("ori") => *op.mrt64() = op.rs64() | op.imm64(),               // ORI
+            0x0E if h("xori") => *op.mrt64() = op.rs64() ^ op.imm64(),              // XORI
+            0x0F if h("lui") => *op.mrt64() = (op.sximm32() << 16).sx64(),          // LUI
 
             0x10 => if_cop!(op, cop0, { return cop0.op(&mut op.ctx, opcode, t) }), // COP0
             0x11 => if_cop!(op, cop1, { return cop1.op(&mut op.ctx, opcode, t) }), // COP1
             0x12 => if_cop!(op, cop2, { return cop2.op(&mut op.ctx, opcode, t) }), // COP2
             0x13 => if_cop!(op, cop3, { return cop3.op(&mut op.ctx, opcode, t) }), // COP3
-            0x14 => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)),  // BEQL
-            0x15 => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)),  // BNEL
-            0x16 => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)),         // BLEZL
-            0x17 => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),          // BGTZL
-            0x18 => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()), // DADDI
-            0x19 => *op.mrt64() = (op.irs64() + op.sximm64()) as u64,              // DADDIU
+            0x14 if h("beql") => branch!(op, op.rs64() == op.rt64(), op.btgt(), likely(true)), // BEQL
+            0x15 if h("bnel") => branch!(op, op.rs64() != op.rt64(), op.btgt(), likely(true)), // BNEL
+            0x16 if h("blezl") => branch!(op, op.irs64() <= 0, op.btgt(), likely(true)), // BLEZL
+            0x17 if h("bgtzl") => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),  // BGTZL
+            0x18 if h("daddi") => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()), // DADDI
+            0x19 if h("daddiu") => *op.mrt64() = (op.irs64() + op.sximm64()) as u64, // DADDIU
 
-            0x20 => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)?.sx64(), // LB
-            0x21 => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)?.sx64(), // LH
-            0x22 => *op.mrt64() = op.cpu.lwl(op.ea(), op.rt32(), t)?.sx64(), // LWL
-            0x23 => *op.mrt64() = op.cpu.read::<u32>(op.ea(), t)?.sx64(), // LW
-            0x24 => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)? as u64, // LBU
-            0x25 => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)? as u64, // LHU
-            0x26 => *op.mrt64() = op.cpu.lwr(op.ea(), op.rt32(), t)?.sx64(), // LWR
-            0x27 => *op.mrt64() = op.cpu.read::<u32>(op.ea(), t)? as u64, // LWU
-            0x28 => op.cpu.write::<u8>(op.ea(), op.rt32() as u8, t)?,    // SB
-            0x29 => op.cpu.write::<u16>(op.ea(), op.rt32() as u16, t)?,  // SH
-            0x2A => op
-                .cpu
-                .write::<u32>(op.ea(), op.cpu.swl(op.ea(), op.rt32(), t)?, t)?, // SWL
-            0x2B => op.cpu.write::<u32>(op.ea(), op.rt32(), t)?,         // SW
-            0x2E => op
-                .cpu
-                .write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32(), t)?, t)?, // SWR
-            0x2F => {}                                                   // CACHE
+            0x20 if h("lb") => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)?.sx64(), // LB
+            0x21 if h("lh") => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)?.sx64(), // LH
+            0x22 if h("lwl") => *op.mrt64() = op.cpu.lwl(op.ea(), op.rt32(), t)?.sx64(), // LWL
+            0x23 if h("lw") => *op.mrt64() = op.cpu.read::<u32>(op.ea(), t)?.sx64(), // LW
+            0x24 if h("lbu") => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)? as u64, // LBU
+            0x25 if h("lhu") => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)? as u64, // LHU
+            0x26 if h("lwr") => *op.mrt64() = op.cpu.lwr(op.ea(), op.rt32(), t)?.sx64(), // LWR
+            0x27 if h("lwu") => *op.mrt64() = op.cpu.read::<u32>(op.ea(), t)? as u64, // LWU
+            0x28 if h("sb") => op.cpu.write::<u8>(op.ea(), op.rt32() as u8, t)?,    // SB
+            0x29 if h("sh") => op.cpu.write::<u16>(op.ea(), op.rt32() as u16, t)?,  // SH
+            0x2A if h("swl") => {
+                op.cpu
+                    .write::<u32>(op.ea(), op.cpu.swl(op.ea(), op.rt32(), t)?, t)?
+            } // SWL
+            0x2B if h("sw") => op.cpu.write::<u32>(op.ea(), op.rt32(), t)?,         // SW
+            0x2E if h("swr") => {
+                op.cpu
+                    .write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32(), t)?, t)?
+            } // SWR
+            0x2F => {}                                                              // CACHE
 
-            0x31 => if_cop!(op, cop1, cop1.lwc(op.opcode, &op.ctx, &op.cpu.bus)), // LWC1
-            0x32 => if_cop!(op, cop2, cop2.lwc(op.opcode, &op.ctx, &op.cpu.bus)), // LWC2
-            0x35 => if_cop!(op, cop1, cop1.ldc(op.opcode, &op.ctx, &op.cpu.bus)), // LDC1
-            0x36 => if_cop!(op, cop2, cop2.ldc(op.opcode, &op.ctx, &op.cpu.bus)), // LDC2
-            0x37 => *op.mrt64() = op.cpu.read::<u64>(op.ea(), t)?,                // LD
-            0x39 => if_cop!(op, cop1, cop1.swc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SWC1
-            0x3A => if_cop!(op, cop2, cop2.swc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SWC2
-            0x3D => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SDC1
-            0x3E => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SDC2
-            0x3F => op.cpu.write::<u64>(op.ea(), op.rt64(), t)?,                  // SD
+            0x31 if h("lwc1") => if_cop!(op, cop1, cop1.lwc(op.opcode, &op.ctx, &op.cpu.bus)), // LWC1
+            0x32 if h("lwc2") => if_cop!(op, cop2, cop2.lwc(op.opcode, &op.ctx, &op.cpu.bus)), // LWC2
+            0x35 if h("ldc1") => if_cop!(op, cop1, cop1.ldc(op.opcode, &op.ctx, &op.cpu.bus)), // LDC1
+            0x36 if h("ldc2") => if_cop!(op, cop2, cop2.ldc(op.opcode, &op.ctx, &op.cpu.bus)), // LDC2
+            0x37 if h("ld") => *op.mrt64() = op.cpu.read::<u64>(op.ea(), t)?,                  // LD
+            0x39 if h("swc1") => if_cop!(op, cop1, cop1.swc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SWC1
+            0x3A if h("swc2") => if_cop!(op, cop2, cop2.swc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SWC2
+            0x3D if h("sdc1") => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SDC1
+            0x3E if h("sdc2") => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SDC2
+            0x3F if h("sd") => op.cpu.write::<u64>(op.ea(), op.rt64(), t)?, // SD
 
             _ => {
                 panic!(
@@ -497,6 +515,8 @@ impl<C: Config> Cpu<C> {
         Ok((mem & mask) | ((reg << shift) & !mask))
     }
 
+    // Check if the opcode has a visible effect on the CPU state, eg:
+    // if it modifies any register. This is part of busy-wait detection.
     fn op_has_side_effects(&mut self, opcode: u32) -> bool {
         if opcode == 0 {
             // NOP
@@ -523,6 +543,8 @@ impl<C: Config> Cpu<C> {
         }
     }
 
+    // Check if a 2-insn loop is a busy wait. If the delay slot has no visible
+    // effect on the CPU state, then it is a busy-wait and can be skipped.
     fn detect_busywait_2insn(&mut self, branch_pc: u64) {
         if self.last_busycheck == branch_pc {
             return;
@@ -531,11 +553,16 @@ impl<C: Config> Cpu<C> {
         let opcode_after = self.fetch(branch_pc + 4).read();
         let busywait = !self.op_has_side_effects(opcode_after);
         if busywait {
+            // Skip busy-wait by short-circuiting the interpret loop until
+            // the end of our timeslice.
             self.ctx.clock = self.until;
             self.last_busycheck = 0;
         }
     }
 
+    // Check if a 3-insn loop is a busy wait. If the delay slot and the
+    // instruction before the branch have no visible effect on the CPU state,
+    // then it is a busy-wait and can be skipped.
     fn detect_busywait_3insn(&mut self, branch_pc: u64) {
         if self.last_busycheck == branch_pc {
             return;
@@ -546,6 +573,8 @@ impl<C: Config> Cpu<C> {
         let busywait =
             !self.op_has_side_effects(opcode_before) && !self.op_has_side_effects(opcode_after);
         if busywait {
+            // Skip busy-wait by short-circuiting the interpret loop until
+            // the end of our timeslice.
             self.ctx.clock = self.until;
             self.last_busycheck = 0;
         }
