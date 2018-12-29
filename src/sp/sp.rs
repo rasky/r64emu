@@ -31,9 +31,25 @@ bitflags! {
 }
 
 pub struct RSPCPUConfig;
+pub struct ArchRSP;
+
+impl mips64::Arch for ArchRSP {
+    fn has_op(op: &'static str) -> bool {
+        // Inherit ArchI restrictions
+        if !mips64::ArchI::has_op(op) {
+            return false;
+        }
+        match op {
+            "lwl" | "lwr" | "swl" | "swr" => false,
+            "mult" | "multu" | "div" | "divu" => false,
+            "mfhi" | "mflo" | "mthi" | "mhlo" => false,
+            _ => true,
+        }
+    }
+}
 
 impl mips64::Config for RSPCPUConfig {
-    type Arch = mips64::ArchI; // 32-bit MIPS I architecture
+    type Arch = ArchRSP; // Specific arch based on MIPS1 but with less ops
     type Cop0 = SpCop0;
     type Cop1 = mips64::CopNull;
     type Cop2 = SpCop2;
