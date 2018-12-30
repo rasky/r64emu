@@ -443,27 +443,29 @@ impl<C: Config> Cpu<C> {
             0x17 if h("bgtzl") => branch!(op, op.irs64() > 0, op.btgt(), likely(true)),  // BGTZL
             0x18 if h("daddi") => check_overflow_add!(op, *op.mrt64(), op.irs64(), op.sximm64()), // DADDI
             0x19 if h("daddiu") => *op.mrt64() = (op.irs64() + op.sximm64()) as u64, // DADDIU
+            0x1a if h("ldl") => *op.mrt64() = op.cpu.lwl::<u64>(op.ea(), op.rt64(), t)?, // LDL
+            0x1b if h("ldr") => *op.mrt64() = op.cpu.lwr::<u64>(op.ea(), op.rt64(), t)?, // LDR
 
             0x20 if h("lb") => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)?.sx64(), // LB
             0x21 if h("lh") => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)?.sx64(), // LH
-            0x22 if h("lwl") => *op.mrt64() = op.cpu.lwl(op.ea(), op.rt32(), t)?.sx64(), // LWL
+            0x22 if h("lwl") => *op.mrt64() = op.cpu.lwl::<u32>(op.ea(), op.rt32(), t)?.sx64(), // LWL
             0x23 if h("lw") => *op.mrt64() = op.cpu.read::<u32>(op.ea(), t)?.sx64(), // LW
             0x24 if h("lbu") => *op.mrt64() = op.cpu.read::<u8>(op.ea(), t)? as u64, // LBU
             0x25 if h("lhu") => *op.mrt64() = op.cpu.read::<u16>(op.ea(), t)? as u64, // LHU
-            0x26 if h("lwr") => *op.mrt64() = op.cpu.lwr(op.ea(), op.rt32(), t)?.sx64(), // LWR
+            0x26 if h("lwr") => *op.mrt64() = op.cpu.lwr::<u32>(op.ea(), op.rt32(), t)?.sx64(), // LWR
             0x27 if h("lwu") => *op.mrt64() = op.cpu.read::<u32>(op.ea(), t)? as u64, // LWU
-            0x28 if h("sb") => op.cpu.write::<u8>(op.ea(), op.rt32() as u8, t)?,    // SB
-            0x29 if h("sh") => op.cpu.write::<u16>(op.ea(), op.rt32() as u16, t)?,  // SH
+            0x28 if h("sb") => op.cpu.write::<u8>(op.ea(), op.rt32() as u8, t)?,      // SB
+            0x29 if h("sh") => op.cpu.write::<u16>(op.ea(), op.rt32() as u16, t)?,    // SH
             0x2A if h("swl") => {
                 op.cpu
                     .write::<u32>(op.ea(), op.cpu.swl(op.ea(), op.rt32(), t)?, t)?
             } // SWL
-            0x2B if h("sw") => op.cpu.write::<u32>(op.ea(), op.rt32(), t)?,         // SW
+            0x2B if h("sw") => op.cpu.write::<u32>(op.ea(), op.rt32(), t)?,           // SW
             0x2E if h("swr") => {
                 op.cpu
                     .write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32(), t)?, t)?
             } // SWR
-            0x2F => {}                                                              // CACHE
+            0x2F => {}                                                                // CACHE
 
             0x31 if h("lwc1") => if_cop!(op, cop1, cop1.lwc(op.opcode, &mut op.ctx, &op.cpu.bus)), // LWC1
             0x32 if h("lwc2") => if_cop!(op, cop2, cop2.lwc(op.opcode, &mut op.ctx, &op.cpu.bus)), // LWC2
@@ -487,17 +489,17 @@ impl<C: Config> Cpu<C> {
         Ok(())
     }
 
-    fn lwl(&self, addr: u32, reg: u32, t: &Tracer) -> Result<u32> {
-        let mem = self.read::<u32>(addr, t)?;
-        let shift = (addr & 3) * 8;
-        let mask = (1 << shift) - 1;
+    fn lwl<S: MemInt>(&self, addr: u32, reg: S, t: &Tracer) -> Result<S> {
+        let mem = self.read::<S>(addr, t)?;
+        let shift = (addr as usize & (S::SIZE - 1)) << (S::SIZE_LOG + 1);
+        let mask = S::truncate_from((1u64 << shift) - 1u64);
         Ok((reg & mask) | ((mem << shift) & !mask))
     }
 
-    fn lwr(&self, addr: u32, reg: u32, t: &Tracer) -> Result<u32> {
-        let mem = self.read::<u32>(addr, t)?;
-        let shift = (!addr & 3) * 8;
-        let mask = ((1u64 << (32 - shift)) - 1) as u32;
+    fn lwr<S: MemInt>(&self, addr: u32, reg: S, t: &Tracer) -> Result<S> {
+        let mem = self.read::<S>(addr, t)?;
+        let shift = (!addr as usize & (S::SIZE - 1)) << (S::SIZE_LOG + 1);
+        let mask = S::truncate_from((1u64 << (32 - shift)) - 1);
         Ok((reg & !mask) | ((mem >> shift) & mask))
     }
 
