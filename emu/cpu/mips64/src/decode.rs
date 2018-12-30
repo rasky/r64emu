@@ -181,8 +181,11 @@ fn humanize(insn: DecodedInsn) -> DecodedInsn {
         "bgez" if op0 == IReg(zr) => DecodedInsn::new1("j", op1), // relocatable encoding
         "bgezal" if op0 == IReg(zr) => DecodedInsn::new1("jal", op1), // relocatable encoding
         "or" if op1 == IReg(zr) && op2 == IReg(zr) => DecodedInsn::new2("li", op0, Imm32(0)),
-        "add" | "or" if op1 == IReg(zr) => DecodedInsn::new2("move", op0, op2),
-        "add" | "or" if op2 == IReg(zr) => DecodedInsn::new2("move", op0, op1),
+        "add" | "addu" | "or" if op1 == IReg(zr) && op2 == IReg(zr) => {
+            DecodedInsn::new2("li", op0, Imm32(0))
+        }
+        "add" | "addu" | "or" if op1 == IReg(zr) => DecodedInsn::new2("move", op0, op2),
+        "add" | "addu" | "or" if op2 == IReg(zr) => DecodedInsn::new2("move", op0, op1),
         _ => insn,
     }
 }
