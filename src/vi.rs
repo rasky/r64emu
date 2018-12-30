@@ -196,7 +196,7 @@ impl Vi {
                     }
                     // 16-bit
                     2 => {
-                        let src = GfxBufferBE::<Rgb555>::new(src, 320, 240, 320 * 2).unwrap();
+                        let src = GfxBufferBE::<Xbgr1555>::new(src, 320, 240, 320 * 2).unwrap();
                         for y in 0..240 {
                             let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
                             let src = src.line(y);
