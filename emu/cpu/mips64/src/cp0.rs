@@ -88,6 +88,7 @@ struct Cp0Context {
     reg_compare: u32,
     last_count: u32,
     last_count_clock: i64,
+    next_timer_interrupt: i64,
 }
 
 pub struct Cp0 {
@@ -105,19 +106,45 @@ impl Cp0 {
         }
     }
 
-    // Calc the current count register.
     fn get_count(&self, cpu: &CpuContext) -> u32 {
-        self.ctx.last_count + ((cpu.clock - self.ctx.last_count_clock) >> 1) as u32
+        self.ctx
+            .last_count
+            .wrapping_add(((cpu.clock - self.ctx.last_count_clock) >> 1) as u32)
     }
 
-    // Update the count
     fn set_count(&mut self, cpu: &CpuContext, val: u32) {
+        info!(self.logger, "COP0 write count"; "val" => val);
         self.ctx.last_count = val;
         self.ctx.last_count_clock = cpu.clock;
+        self.update_timer_interrupt(cpu);
+    }
+
+    fn set_compare(&mut self, cpu: &CpuContext, val: u32) {
+        info!(self.logger, "COP0 write compare"; "val" => val);
+
+        self.ctx.reg_compare = val;
+        self.update_timer_interrupt(cpu);
+
+        // Writing compare also clears the IRQ line (IP5 in Cause)
+        self.set_hwint_line(5, false);
+    }
+
+    fn update_timer_interrupt(&mut self, cpu: &CpuContext) {
+        // Compute the CPU clock at which there will be the next timer interrupt.
+        // There always is a potential timer interrupt in the future because of
+        // the 32-bit wrap-around.
+        self.ctx.next_timer_interrupt =
+            cpu.clock + ((self.ctx.reg_compare.wrapping_sub(self.get_count(cpu)) as i64) << 1);
+        info!(self.logger, "COP0 update timer IRQ";
+            "clock" => cpu.clock,
+            "next_irq" => self.ctx.next_timer_interrupt,
+            "count" => self.get_count(cpu),
+            "compare" => self.ctx.reg_compare);
     }
 }
 
 impl Cop0 for Cp0 {
+    #[inline(always)]
     fn set_hwint_line(&mut self, line: usize, status: bool) {
         let mut ip = self.ctx.reg_cause.ip();
         let mask = 1 << (line + 2);
@@ -129,7 +156,12 @@ impl Cop0 for Cp0 {
 
     #[inline(always)]
     fn poll_interrupts(&mut self, cpu: &mut CpuContext) {
-        let ctx = unsafe { self.ctx.as_ref() };
+        let ctx = unsafe { self.ctx.as_mut() };
+        if cpu.clock >= ctx.next_timer_interrupt {
+            self.set_hwint_line(5, true);
+            ctx.next_timer_interrupt += 0x8000_0000; // 2**32 / 2
+            info!(self.logger, "COP0 timer IRQ raised");
+        }
         if ctx.reg_status.ie()
             && !ctx.reg_status.erl()
             && !ctx.reg_status.exl()
@@ -246,7 +278,7 @@ impl Cop for Cp0 {
             5 => self.ctx.reg_pagemask = val as u32,
             9 => self.set_count(cpu, val as u32),
             10 => self.ctx.reg_entryhi = val as u64,
-            11 => self.ctx.reg_compare = val as u32,
+            11 => self.set_compare(cpu, val as u32),
             12 => {
                 self.ctx.reg_status.0 = val as u32;
                 cpu.tight_exit = true;
