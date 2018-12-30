@@ -19,7 +19,13 @@ mod tests {
 
     #[derive(Default, DeviceLE)]
     struct Gpu {
-        #[mem(bank = 1, offset = 0x0, size = 4194304, vsize = 0x0200_0000)]
+        #[mem(
+            bank = 1,
+            offset = 0x0,
+            size = 4194304,
+            vsize = 0x0200_0000,
+            fill = "Mirror"
+        )]
         ram: Mem,
 
         #[reg(bank = 0, offset = 0xC, rwmask = 0xffff0000, rcb, wcb)]

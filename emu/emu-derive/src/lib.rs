@@ -11,9 +11,38 @@ extern crate proc_macro2;
 use proc_macro2::{Ident, Span};
 use std::num::ParseIntError;
 use synstructure::BindStyle;
+use synstructure::ToTokens;
 
 decl_derive!([DeviceLE, attributes(reg, mem)] => derive_device_le);
 decl_derive!([DeviceBE, attributes(reg, mem)] => derive_device_be);
+
+// Copy of emu::bus::BusFill
+#[derive(Debug, Clone, Copy)]
+enum BusFill {
+    None,
+    Mirror,
+    Fixed(u8),
+}
+
+impl Default for BusFill {
+    fn default() -> Self {
+        BusFill::None
+    }
+}
+
+impl ToTokens for BusFill {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match *self {
+            BusFill::None => quote_spanned!(Span::call_site() => BusFill::None).to_tokens(tokens),
+            BusFill::Mirror => {
+                quote_spanned!(Span::call_site() => BusFill::Mirror).to_tokens(tokens)
+            }
+            BusFill::Fixed(val) => {
+                quote_spanned!(Span::call_site() => BusFill::Fixed(#val)).to_tokens(tokens)
+            }
+        }
+    }
+}
 
 #[derive(Default, Debug)]
 struct RegAttributes {
@@ -37,6 +66,7 @@ struct MemAttributes {
     bank: usize,
     offset: u32,
     vsize: u32,
+    fill: BusFill,
 }
 
 fn parse_u32(s: &str) -> Result<u32, ParseIntError> {
@@ -194,6 +224,29 @@ fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemA
                 ma.vsize = parse_u32(kv[1].trim())
                     .expect(&format!("cannot parse vsize: {:?}", kv[1].trim()));
             }
+            "fill" => {
+                let fillval = kv[1].replace(" ", "");
+                let fillval = fillval.trim();
+
+                ma.fill = match fillval {
+                    "\"None\"" => BusFill::None,
+                    "\"Mirror\"" => BusFill::Mirror,
+                    _ => {
+                        if fillval.starts_with("\"Fixed(") && fillval.ends_with(")\"") {
+                            let fixed = parse_u32(&fillval[7..fillval.len() - 2]).expect(&format!(
+                                "{}: cannot parse fixed-size variant value",
+                                varname
+                            ));
+                            if fixed >= 256 {
+                                panic!("{}: fixed-size value is too big", varname);
+                            }
+                            BusFill::Fixed(fixed as u8)
+                        } else {
+                            panic!("{}: {} is not a variant of bus::BusFill", varname, fillval);
+                        }
+                    }
+                };
+            }
             _ => panic!(format!("{}: invalid attribute: {}", varname, kv[0].trim())),
         }
     }
@@ -317,9 +370,10 @@ fn expand_mem_devmap(
     let off = ma.offset;
     let vsize = ma.vsize;
     let varname = Ident::new(varname, Span::call_site());
+    let fill = ma.fill;
     quote! {
         if bank == #bank {
-            bus.map_mem(base + #off, base + #off + #vsize - 1, &self. #varname)?;
+            bus.map_mem(base + #off, base + #off + #vsize - 1, &self. #varname, #fill)?;
         }
     }
 }
@@ -387,7 +441,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
         use ::std::cell::{RefCell};
         use ::std::rc::{Rc};
         use ::std::pin::{Pin};
-        use emu::bus::{CurrentDeviceMap, Bus, Device};
+        use emu::bus::{CurrentDeviceMap, Bus, Device, BusFill};
         use byteorder:: #endian;
 
         #[allow(unused_imports)]

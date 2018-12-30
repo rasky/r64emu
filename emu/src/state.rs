@@ -445,8 +445,13 @@ pub struct ArrayField<F: Copy + Serialize + Deserialize<'static>> {
 
 impl<F: 'static + Copy + Serialize + Deserialize<'static>> ArrayField<F> {
     /// Create an `ArrayField` with the specified name, initial value, and length.
-    /// NOTE: `serialize` is deprecated, always pass `true`.
-    pub fn new(name: &str, f: F, len: usize, serialize: bool) -> Self {
+    pub fn new(name: &str, f: F, len: usize) -> Self {
+        Self::internal_new(name, f, len, true)
+    }
+
+    // FIXME: this is hack for Bus; instead of having a "non-serializable ArrayState",
+    // we should revisit Bus::HwIo in a way that it doesn't require ArrayField.
+    pub(crate) fn internal_new(name: &str, f: F, len: usize, serialize: bool) -> Self {
         let mut field = CurrentState().new_array_field(name, len, serialize);
         for v in field.iter_mut() {
             *v = f;
@@ -1054,8 +1059,8 @@ mod tests {
         let mut a = Field::new("a", 4u64);
         let mut b = Field::new("b", 12.0f64);
         let mut c = EndianField::<u32, BigEndian>::new("c", 99u32);
-        let mut d = ArrayField::new("x", 7u8, 4, true);
-        let mut e = ArrayField::new("y", 7u8, 4, false);
+        let mut d = ArrayField::internal_new("x", 7u8, 4, true);
+        let mut e = ArrayField::internal_new("y", 7u8, 4, false);
 
         let mut s1 = Vec::new();
         CurrentState().serialize(&mut s1, "test", 1).unwrap();
@@ -1097,8 +1102,8 @@ mod tests {
         let mut a = Field::new("a", 4u64);
         let mut b = Field::new("b", 12.0f64);
         let mut c = EndianField::<u32, BigEndian>::new("c", 99u32);
-        let mut d = ArrayField::new("x", 7u8, 4, true);
-        let mut e = ArrayField::new("y", 7u8, 4, false);
+        let mut d = ArrayField::internal_new("x", 7u8, 4, true);
+        let mut e = ArrayField::internal_new("y", 7u8, 4, false);
 
         let s1 = CurrentState().clone();
 
@@ -1164,8 +1169,8 @@ mod tests {
         // Check that we can get two mutable borrows to two fields within the
         // current state. This is sound because the fields refer to distinct
         // parts of the same state (concept similar to split_at_mut).
-        let mut a = ArrayField::new("a", 0u64, 8, true);
-        let mut b = ArrayField::new("b", 0u64, 8, true);
+        let mut a = ArrayField::new("a", 0u64, 8);
+        let mut b = ArrayField::new("b", 0u64, 8);
 
         let ra = &mut a[0..7];
         let rb = &mut b[0..7];

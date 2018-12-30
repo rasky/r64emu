@@ -5,6 +5,7 @@ use super::regs::Reg;
 use crate::memint::{AccessSize, ByteOrderCombiner, MemInt};
 use crate::state::ArrayField;
 
+use array_macro::array;
 use byteorder::ByteOrder;
 use enum_map::{enum_map, EnumMap};
 use slog::*;
@@ -195,6 +196,37 @@ impl<O: ByteOrder> MemIoW<O, u8> {
     }
 }
 
+/// BusFill specifies the behavior of the bus when requested to map a bus object
+/// into a virtual range longer than its physical range; eg. a
+/// [`Mem`](struct.Mem.html) object with physical size of 4Kb might be mapped
+/// over a 16Mb virtual range, by passing a 16Mb address range in the call to
+/// [`Bus::map_mem()`](struct.Bus.html#method.map_mem).
+///
+/// BusFill implements the `Default` trait with its `None` variant.
+#[derive(Debug, Copy, Clone)]
+pub enum BusFill {
+    /// `None` means that no behavior is specified because the mapping should
+    /// not exceed the physical size. If this is not true, a panic will be raised.
+    None,
+
+    /// `Mirror` means that the bus should mirror the bus object over the virtual
+    /// size. If the virtual size is not an exact multiple of the physical size,
+    /// the mapping function will panic.
+    Mirror,
+
+    /// `Fixed` means that the object will be mapped at the start of the
+    /// specified virtual range. Any read access beyond the physical size
+    /// will return the specified fixed value. Any write access beyond the
+    /// physical size will be logged as an error and will be ignored.
+    Fixed(u8),
+}
+
+impl Default for BusFill {
+    fn default() -> Self {
+        BusFill::None
+    }
+}
+
 pub(crate) fn unmapped_area_r() -> HwIoR {
     thread_local!(
         static FN: Rc<Fn(u32)->u64> = Rc::new(|_| {
@@ -215,6 +247,7 @@ pub struct Bus<Order: ByteOrderCombiner> {
     reads: EnumMap<AccessSize, Box<RadixTree<HwIoR>>>,
     writes: EnumMap<AccessSize, Box<RadixTree<HwIoW>>>,
 
+    fillers: [ArrayField<u8>; 256],
     unmap_r: HwIoR,
     unmap_w: HwIoW,
 
@@ -244,6 +277,7 @@ where
                 AccessSize::Size32 => RadixTree::new(),
                 AccessSize::Size64 => RadixTree::new(),
             },
+            fillers: array![|idx| ArrayField::internal_new(&format!("Bus::filler{}", idx), idx as u8, 64, false); 256],
             unmap_r: unmapped_area_r(),
             unmap_w: unmapped_area_w(),
             logger: logger,
@@ -341,16 +375,103 @@ where
         reg.map_into(self, addr)
     }
 
-    pub fn map_mem(&'b mut self, begin: u32, end: u32, mem: &'b Mem) -> Result<(), &'s str> {
-        self.reads[AccessSize::Size8].insert_range(begin, end, mem.hwio_r::<u8>(), false)?;
-        self.reads[AccessSize::Size16].insert_range(begin, end, mem.hwio_r::<u16>(), false)?;
-        self.reads[AccessSize::Size32].insert_range(begin, end, mem.hwio_r::<u32>(), false)?;
-        self.reads[AccessSize::Size64].insert_range(begin, end, mem.hwio_r::<u64>(), false)?;
+    /// Map a [`Mem`](struct.Mem.html) object into the bus. `begin`/`end` is the
+    /// **inclusive** virtual address range onto which the memory will be
+    /// mapped. `fill` specifies how to behave when the specified virtual
+    /// address is longer than the physical size of `mem` (see
+    /// [`BusFill`](enum.BusFill.html) documentation for more information),
+    ///
+    /// ```
+    /// use emu::bus::le::{Bus, Mem, MemFlags, BusFill};
+    /// use slog;
+    ///
+    /// fn main() {
+    ///     let logger = slog::Logger::root(slog::Discard, slog::o!());
+    ///     let mut bus = Bus::new(logger);
+    ///
+    ///     // Create a 1Kb RAM object
+    ///     let ram1 = Mem::new("mem", 1024, MemFlags::default());
+    ///
+    ///     // Map the memory over a 32Mb range of virtual address starting at
+    ///     // 0x0400_0000, using mirroring.
+    ///     bus.map_mem(0x0400_0000, 0x05FF_FFFF, &ram1, BusFill::Mirror).unwrap();
+    ///
+    ///     // Write a 32-bit value within the RAM
+    ///     bus.write::<u32>(0x0400_0123, 0xaabbccdd);
+    ///
+    ///     // Verify that it can be read back from the same virtual address
+    ///     // and from other mirrors, with different access sizes.
+    ///     assert_eq!(bus.read::<u32>(0x0400_0123), 0xaabbccdd);
+    ///     assert_eq!(bus.read::<u32>(0x05B8_A123), 0xaabbccdd);
+    ///     assert_eq!(bus.read::<u8>(0x04BB_B125), 0xbb);
+    /// }
+    /// ```
+    pub fn map_mem(
+        &'b mut self,
+        begin: u32,
+        mut end: u32,
+        mem: &'b Mem,
+        fill: BusFill,
+    ) -> Result<(), &'s str> {
+        use self::AccessSize::*;
+        use self::BusFill::*;
 
-        self.writes[AccessSize::Size8].insert_range(begin, end, mem.hwio_w::<u8>(), false)?;
-        self.writes[AccessSize::Size16].insert_range(begin, end, mem.hwio_w::<u16>(), false)?;
-        self.writes[AccessSize::Size32].insert_range(begin, end, mem.hwio_w::<u32>(), false)?;
-        self.writes[AccessSize::Size64].insert_range(begin, end, mem.hwio_w::<u64>(), false)?;
+        if end < begin {
+            return Err("Bus::map_mem: invalid arguments: end must be bigger than begin");
+        }
+
+        let vsize = end - begin + 1;
+        let psize = mem.len() as u32;
+
+        match fill {
+            None => {
+                if vsize > psize {
+                    return Err("BusFill::None requires virtual size not to exceed physical size");
+                }
+            }
+            Mirror => {
+                if vsize % psize != 0 {
+                    return Err(
+                        "BusFill::Mirror requires virtual size to be a multiple of physical size",
+                    );
+                }
+            }
+            Fixed(val) => {
+                // If there's virtual size beyond the physical size, map the
+                // fixed-value filler in it.
+                let pend = begin.saturating_add(psize - 1).min(end);
+                if pend < end {
+                    let fstart = pend.saturating_add(1);
+                    let mask = self.fillers[val as usize].len().next_power_of_two() - 1;
+                    let hwr =
+                        unsafe { HwIoR::Mem(self.fillers[val as usize].clone(), mask as u32) };
+                    self.reads[Size8].insert_range(fstart, end, hwr.clone(), false)?;
+                    self.reads[Size16].insert_range(fstart, end, hwr.clone(), false)?;
+                    self.reads[Size32].insert_range(fstart, end, hwr.clone(), false)?;
+                    self.reads[Size64].insert_range(fstart, end, hwr.clone(), false)?;
+
+                    let hww = unmapped_area_w();
+                    self.writes[Size8].insert_range(fstart, end, hww.clone(), false)?;
+                    self.writes[Size16].insert_range(fstart, end, hww.clone(), false)?;
+                    self.writes[Size32].insert_range(fstart, end, hww.clone(), false)?;
+                    self.writes[Size64].insert_range(fstart, end, hww.clone(), false)?;
+                }
+
+                // Fallthrough to normal mapping of Mem, but stops after
+                // physical size finishes.
+                end = pend;
+            }
+        }
+
+        self.reads[Size8].insert_range(begin, end, mem.hwio_r::<u8>(), false)?;
+        self.reads[Size16].insert_range(begin, end, mem.hwio_r::<u16>(), false)?;
+        self.reads[Size32].insert_range(begin, end, mem.hwio_r::<u32>(), false)?;
+        self.reads[Size64].insert_range(begin, end, mem.hwio_r::<u64>(), false)?;
+
+        self.writes[Size8].insert_range(begin, end, mem.hwio_w::<u8>(), false)?;
+        self.writes[Size16].insert_range(begin, end, mem.hwio_w::<u16>(), false)?;
+        self.writes[Size32].insert_range(begin, end, mem.hwio_w::<u32>(), false)?;
+        self.writes[Size64].insert_range(begin, end, mem.hwio_w::<u64>(), false)?;
 
         return Ok(());
     }
@@ -476,15 +597,93 @@ mod tests {
     }
 
     #[test]
-    fn basic_mem() {
+    fn basic_mem_mirror() {
         let ram1 = Mem::new("mem", 1024, MemFlags::default());
         let mut bus = Bus::<LittleEndian>::new(logger());
 
-        assert_eq!(bus.map_mem(0x04000000, 0x06000000, &ram1).is_ok(), true);
+        // Mapping a vsize which is not a multiple of psize returns an error
+        assert_eq!(
+            bus.map_mem(0x0400_0000, 0x0600_0000, &ram1, BusFill::Mirror)
+                .is_ok(),
+            false
+        );
+
+        // Correct mirror mapping
+        assert_eq!(
+            bus.map_mem(0x0400_0000, 0x05FF_FFFF, &ram1, BusFill::Mirror)
+                .is_ok(),
+            true
+        );
         bus.write::<u32>(0x04000123, 0xaabbccdd);
         assert_eq!(bus.read::<u32>(0x04000123), 0xaabbccdd);
         assert_eq!(bus.read::<u32>(0x05aaa123), 0xaabbccdd);
         assert_eq!(bus.read::<u8>(0x04bbb125), 0xbb);
+    }
+
+    #[test]
+    fn basic_mem_fillnone() {
+        let ram1 = Mem::new("mem", 1024, MemFlags::default());
+        let mut bus = Bus::<LittleEndian>::new(logger());
+
+        assert_eq!(
+            bus.map_mem(0x0400_0000, 0x0600_0000, &ram1, BusFill::None)
+                .is_ok(),
+            false
+        );
+
+        // Smaller size is OK
+        assert_eq!(
+            bus.map_mem(0x0400_0000, 0x0400_00FF, &ram1, BusFill::None)
+                .is_ok(),
+            true
+        );
+
+        bus.write::<u32>(0x0400_0020, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0x0400_0020), 0xaabb_ccdd);
+        bus.write::<u32>(0x0400_0100, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0x0400_0100), 0xffff_ffff); // open bus
+
+        // Correct size
+        assert_eq!(
+            bus.map_mem(0x0500_0000, 0x0500_03FF, &ram1, BusFill::None)
+                .is_ok(),
+            true
+        );
+
+        bus.write::<u32>(0x0500_0300, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0x05000300), 0xaabbccdd);
+    }
+
+    #[test]
+    fn basic_mem_fillfixed() {
+        let ram1 = Mem::new("mem", 1024, MemFlags::default());
+        let mut bus = Bus::<LittleEndian>::new(logger());
+
+        // Shorter mapping
+        assert_eq!(
+            bus.map_mem(0x0400_0000, 0x0400_000F, &ram1, BusFill::None)
+                .is_ok(),
+            true
+        );
+
+        bus.write::<u32>(0x0400_0008, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0x0400_0008), 0xaabb_ccdd);
+        assert_eq!(bus.read::<u32>(0x0400_0010), 0xffff_ffff);
+        bus.write::<u32>(0x0400_0010, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0x0400_0010), 0xffff_ffff);
+
+        // Longer mapping
+        assert_eq!(
+            bus.map_mem(0x0500_0000, 0x05ff_ffff, &ram1, BusFill::Fixed(0x6C))
+                .is_ok(),
+            true
+        );
+
+        bus.write::<u32>(0x0500_0100, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0x0500_0100), 0xaabb_ccdd);
+        assert_eq!(bus.read::<u32>(0x0500_1000), 0x6c6c_6c6c);
+        bus.write::<u32>(0x0500_1000, 0xaabbccdd);
+        assert_eq!(bus.read::<u32>(0x0500_1000), 0x6c6c_6c6c);
     }
 
     #[test]

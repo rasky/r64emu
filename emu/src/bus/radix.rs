@@ -137,7 +137,7 @@ impl<T: Clone> RadixTree<T> {
     {
         for n in self.iter_range(begin, end, RADIX_FIRST_SHIFT) {
             *n = match n {
-                Node::Internal(_) => unreachable!(),
+                Node::Internal(_) => unimplemented!(),
                 Node::Leaf(ot) => {
                     if !force && ot.is_some() {
                         return Err("insert_range over non-empty range");

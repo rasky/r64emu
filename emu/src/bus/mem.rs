@@ -37,7 +37,7 @@ impl Default for MemFlags {
 pub struct Mem {
     name: &'static str,
     buf: ArrayField<u8>,
-    mask: usize,
+    mask: u32,
     flags: MemFlags,
 }
 
@@ -53,9 +53,9 @@ impl Mem {
         let serialized = flags.contains(MemFlags::WRITEACCESS);
         Self {
             name,
-            buf: ArrayField::new(name, 0, psize, serialized),
+            buf: ArrayField::internal_new(name, 0, psize, serialized),
             flags: flags,
-            mask: psize.next_power_of_two() - 1,
+            mask: psize.next_power_of_two() as u32 - 1,
         }
     }
 
@@ -71,7 +71,7 @@ impl Mem {
             return unmapped_area_r();
         }
 
-        HwIoR::Mem(unsafe { self.buf.clone() }, self.mask as u32)
+        HwIoR::Mem(unsafe { self.buf.clone() }, self.mask)
     }
 
     pub(crate) fn hwio_w<S: MemInt>(&self) -> HwIoW {
@@ -82,7 +82,7 @@ impl Mem {
             return unmapped_area_w();
         }
 
-        HwIoW::Mem(unsafe { self.buf.clone() }, self.mask as u32)
+        HwIoW::Mem(unsafe { self.buf.clone() }, self.mask)
     }
 
     pub fn write<O: ByteOrder, S: MemInt>(&self, addr: u32, val: S) {
