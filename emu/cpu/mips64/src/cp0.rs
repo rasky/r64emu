@@ -85,6 +85,9 @@ struct Cp0Context {
     reg_entryhi: u64,
     reg_entrylo0: u64,
     reg_entrylo1: u64,
+    reg_compare: u32,
+    last_count: u32,
+    last_count_clock: i64,
 }
 
 pub struct Cp0 {
@@ -101,6 +104,17 @@ impl Cp0 {
             name,
         }
     }
+
+    // Calc the current count register.
+    fn get_count(&self, cpu: &CpuContext) -> u32 {
+        self.ctx.last_count + ((cpu.clock - self.ctx.last_count_clock) >> 1) as u32
+    }
+
+    // Update the count
+    fn set_count(&mut self, cpu: &CpuContext, val: u32) {
+        self.ctx.last_count = val;
+        self.ctx.last_count_clock = cpu.clock;
+    }
 }
 
 impl Cop0 for Cp0 {
@@ -114,12 +128,15 @@ impl Cop0 for Cp0 {
     }
 
     #[inline(always)]
-    fn pending_int(&self) -> bool {
+    fn poll_interrupts(&mut self, cpu: &mut CpuContext) {
         let ctx = unsafe { self.ctx.as_ref() };
-        ctx.reg_status.ie()
+        if ctx.reg_status.ie()
             && !ctx.reg_status.erl()
             && !ctx.reg_status.exl()
             && ctx.reg_cause.ip() & ctx.reg_status.im() != 0
+        {
+            self.exception(cpu, Exception::Interrupt);
+        }
     }
 
     fn exception(&mut self, cpu: &mut CpuContext, exc: Exception) {
@@ -197,33 +214,56 @@ impl Cop0 for Cp0 {
 }
 
 impl Cop for Cp0 {
-    fn reg(&self, idx: usize) -> u128 {
+    fn reg(&self, cpu: &CpuContext, idx: usize) -> u128 {
         match idx {
             0 => self.ctx.reg_index as u128,
             2 => self.ctx.reg_entrylo0 as u128,
             3 => self.ctx.reg_entrylo1 as u128,
             5 => self.ctx.reg_pagemask as u128,
+            9 => self.get_count(cpu) as u128,
             10 => self.ctx.reg_entryhi as u128,
+            11 => self.ctx.reg_compare as u128,
             12 => self.ctx.reg_status.0 as u128,
             13 => self.ctx.reg_cause.0 as u128,
             14 => self.ctx.reg_epc as u128,
             30 => self.ctx.reg_errorepc as u128,
-            _ => 0,
+            _ => {
+                error!(
+                    self.logger,
+                    "unimplemented COP0 reg read";
+                    "reg" => COP0_REG_NAMES[idx],
+                );
+                0
+            }
         }
     }
 
-    fn set_reg(&mut self, idx: usize, val: u128) {
+    fn set_reg(&mut self, cpu: &mut CpuContext, idx: usize, val: u128) {
         match idx {
             0 => self.ctx.reg_index = val as u32 & 0x1F,
             2 => self.ctx.reg_entrylo0 = val as u64,
             3 => self.ctx.reg_entrylo1 = val as u64,
             5 => self.ctx.reg_pagemask = val as u32,
+            9 => self.set_count(cpu, val as u32),
             10 => self.ctx.reg_entryhi = val as u64,
-            12 => self.ctx.reg_status.0 = val as u32,
-            13 => self.ctx.reg_cause.0 = val as u32,
+            11 => self.ctx.reg_compare = val as u32,
+            12 => {
+                self.ctx.reg_status.0 = val as u32;
+                cpu.tight_exit = true;
+            }
+            13 => {
+                self.ctx.reg_cause.0 = val as u32;
+                cpu.tight_exit = true;
+            }
             14 => self.ctx.reg_epc = val as u64,
             30 => self.ctx.reg_errorepc = val as u64,
-            _ => {}
+            _ => {
+                error!(
+                    self.logger,
+                    "unimplemented COP0 reg write";
+                    "reg" => COP0_REG_NAMES[idx], "val" => val,
+                );
+            }
         }
     }
 
@@ -238,34 +278,12 @@ impl Cop for Cp0 {
             0x00 => {
                 // MFC0
                 let _sel = opcode & 7;
-                cpu.regs[rt] = self.reg(rd) as u64;
-                match rd {
-                    0 | 2 | 3 | 5 | 10 => {}                                   // TLB regs
-                    9 => cpu.regs[rt] = (cpu.clock as u64 >> 1) & 0xFFFF_FFFF, // Count
-                    12 | 13 => {}                                              // Status / Cause
-                    14 | 30 => {}                                              // EPC / ErrorEPC
-                    _ => warn!(
-                        self.logger,
-                        "unimplemented COP0 read32";
-                        "reg" => COP0_REG_NAMES[rd],
-                        "val" => cpu.regs[rt].hex(),
-                    ),
-                }
+                cpu.regs[rt] = self.reg(cpu, rd) as u64;
             }
             0x04 => {
-                // MTC0 - write32
+                // MTC0
                 let _sel = opcode & 7;
-                self.set_reg(rd, cpu.regs[rt] as u128);
-                match rd {
-                    0 | 2 | 3 | 5 | 10 => {}          // TLB regs
-                    12 | 13 => cpu.tight_exit = true, // Status / Cause
-                    14 | 30 => {}                     // EPC / ErrorEPC
-                    _ => warn!(
-                        self.logger,
-                        "unimplemented COP0 write32";
-                        "reg" => COP0_REG_NAMES[rd], "val" => cpu.regs[rt].hex(),
-                    ),
-                }
+                self.set_reg(cpu, rd, cpu.regs[rt] as u128);
             }
             0x10..=0x1F => match func {
                 0x01 => {
@@ -405,6 +423,8 @@ impl RegisterView for Cp0 {
                 visit("EntryHi", Reg64(&mut ctx.reg_entryhi), None);
                 visit("EntryLo0", Reg64(&mut ctx.reg_entrylo0), None);
                 visit("EntryLo1", Reg64(&mut ctx.reg_entrylo1), None);
+
+                visit("Compare", Reg32(&mut ctx.reg_compare), None);
             }
             _ => unreachable!(),
         }

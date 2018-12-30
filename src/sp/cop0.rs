@@ -96,13 +96,12 @@ impl<'a> C0op<'a> {
 }
 
 impl mips64::Cop0 for SpCop0 {
-    fn set_hwint_line(&mut self, _line: usize, _status: bool) {
-        return; // RSP has no interrupts
-    }
+    // RSP has no interrupts
+    fn set_hwint_line(&mut self, _line: usize, _status: bool) {}
 
-    fn pending_int(&self) -> bool {
-        false // RSP has no interrupts
-    }
+    // RSP has no interrupts
+    #[inline(always)]
+    fn poll_interrupts(&mut self, _cpu: &mut mips64::CpuContext) {}
 
     fn exception(&mut self, ctx: &mut mips64::CpuContext, exc: mips64::Exception) {
         use mips64::Exception::*;
@@ -114,6 +113,7 @@ impl mips64::Cop0 for SpCop0 {
 
             // Breakpoint exception is used by RSP to halt itself
             Breakpoint => {
+                info!(self._logger, "RSP break");
                 let sp = Sp::get_mut();
                 let mut status = sp.get_status();
                 status.insert(StatusFlags::HALT | StatusFlags::BROKE);
@@ -128,10 +128,10 @@ impl mips64::Cop0 for SpCop0 {
 }
 
 impl mips64::Cop for SpCop0 {
-    fn set_reg(&mut self, _idx: usize, _val: u128) {
+    fn set_reg(&mut self, _cpu: &mut mips64::CpuContext, _idx: usize, _val: u128) {
         panic!("unsupported COP0 reg access in RSP")
     }
-    fn reg(&self, _idx: usize) -> u128 {
+    fn reg(&self, _cpu: &mips64::CpuContext, _idx: usize) -> u128 {
         panic!("unsupported COP0 reg access in RSP")
     }
 

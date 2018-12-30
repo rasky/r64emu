@@ -42,39 +42,39 @@ pub trait Config {
 
 /// Cop is a MIPS64 coprocessor that can be installed within the core.
 pub trait Cop {
-    fn reg(&self, idx: usize) -> u128;
-    fn set_reg(&mut self, idx: usize, val: u128);
+    fn reg(&self, cpu: &CpuContext, idx: usize) -> u128;
+    fn set_reg(&mut self, cpu: &mut CpuContext, idx: usize, val: u128);
 
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()>;
     fn decode(&self, _opcode: u32, _pc: u64) -> DecodedInsn {
         DecodedInsn::new0("unkcop")
     }
 
-    fn lwc(&mut self, op: u32, ctx: &CpuContext, bus: &Bus) {
+    fn lwc(&mut self, op: u32, ctx: &mut CpuContext, bus: &Bus) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
         let val = bus.read::<u32>(ea & 0x1FFF_FFFC) as u64;
-        self.set_reg(rt, val as u128);
+        self.set_reg(ctx, rt, val as u128);
     }
 
-    fn ldc(&mut self, op: u32, ctx: &CpuContext, bus: &Bus) {
+    fn ldc(&mut self, op: u32, ctx: &mut CpuContext, bus: &Bus) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
         let val = bus.read::<u64>(ea & 0x1FFF_FFFC) as u64;
-        self.set_reg(rt, val as u128);
+        self.set_reg(ctx, rt, val as u128);
     }
 
     fn swc(&mut self, op: u32, ctx: &CpuContext, bus: &mut Bus) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
-        let val = self.reg(rt) as u32;
+        let val = self.reg(ctx, rt) as u32;
         bus.write::<u32>(ea & 0x1FFF_FFFC, val);
     }
 
     fn sdc(&mut self, op: u32, ctx: &CpuContext, bus: &mut Bus) {
         let rt = ((op >> 16) & 0x1f) as usize;
         let ea = ctx.regs[((op >> 21) & 0x1f) as usize] as u32 + (op & 0xffff) as i16 as i32 as u32;
-        let val = self.reg(rt) as u64;
+        let val = self.reg(ctx, rt) as u64;
         bus.write::<u64>(ea & 0x1FFF_FFFC, val);
     }
 
@@ -100,10 +100,12 @@ pub trait Cop0: Cop {
     // (because IP0/IP1 are used for software interrupts).
     fn set_hwint_line(&mut self, line: usize, status: bool);
 
-    /// Check if there's a pending interrupt. It is expected that if this
-    /// function returns true, Cop0::exception() is immediately called with
-    /// exc == Exception::Int.
-    fn pending_int(&self) -> bool;
+    /// Poll pending interrupts. This function is called in the main interpreter
+    /// loop very often, so that Cop0 has a chance of triggering interrupts
+    /// when they are raised.
+    /// NOTE: remember to mark this function as #[inline(always)] for maximum
+    /// performance.
+    fn poll_interrupts(&mut self, ctx: &mut CpuContext);
 
     /// Trigger the specified excepion.
     fn exception(&mut self, ctx: &mut CpuContext, exc: Exception);
@@ -112,10 +114,10 @@ pub trait Cop0: Cop {
 pub struct CopNull {}
 
 impl Cop for CopNull {
-    fn reg(&self, _idx: usize) -> u128 {
+    fn reg(&self, _ctx: &CpuContext, _idx: usize) -> u128 {
         0
     }
-    fn set_reg(&mut self, _idx: usize, _val: u128) {}
+    fn set_reg(&mut self, _ctx: &mut CpuContext, _idx: usize, _val: u128) {}
 
     fn op(&mut self, _cpu: &mut CpuContext, _opcode: u32, _t: &Tracer) -> Result<()> {
         Ok(())

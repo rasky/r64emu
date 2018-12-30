@@ -796,7 +796,7 @@ fn sxv<T: MemInt>(dmem: &mut [u8], base: u32, offset: u32, reg: &VectorReg, elem
 }
 
 impl Cop for SpCop2 {
-    fn reg(&self, idx: usize) -> u128 {
+    fn reg(&self, _cpu: &CpuContext, idx: usize) -> u128 {
         match idx {
             SpCop2::REG_VCO => self.ctx.vco() as u128,
             SpCop2::REG_VCC => self.ctx.vcc() as u128,
@@ -807,7 +807,7 @@ impl Cop for SpCop2 {
             _ => self.ctx.vregs[idx].u128(),
         }
     }
-    fn set_reg(&mut self, idx: usize, val: u128) {
+    fn set_reg(&mut self, _cpu: &mut CpuContext, idx: usize, val: u128) {
         match idx {
             SpCop2::REG_VCO => self.ctx.set_vco(val as u16),
             SpCop2::REG_VCC => self.ctx.set_vcc(val as u16),
@@ -823,7 +823,7 @@ impl Cop for SpCop2 {
         unsafe { self.uop(cpu, op, t) }
     }
 
-    fn lwc(&mut self, op: u32, ctx: &CpuContext, _bus: &Bus) {
+    fn lwc(&mut self, op: u32, ctx: &mut CpuContext, _bus: &Bus) {
         let sp = Sp::get_mut();
         let dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
@@ -941,7 +941,7 @@ impl Cop for SpCop2 {
         }
     }
 
-    fn ldc(&mut self, _op: u32, _ctx: &CpuContext, _bus: &Bus) {
+    fn ldc(&mut self, _op: u32, _ctx: &mut CpuContext, _bus: &Bus) {
         unimplemented!()
     }
     fn sdc(&mut self, _op: u32, _ctx: &CpuContext, _bus: &mut Bus) {
