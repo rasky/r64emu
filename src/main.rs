@@ -30,7 +30,7 @@ quick_main!(run);
 fn create_n64(romfn: &str) -> Result<N64> {
     let logger = log_build_sync();
     let mut n64 = N64::new(logger, romfn).unwrap();
-    n64.setup_cic()?;
+    n64.setup_cic(true)?;
     Ok(n64)
 }
 

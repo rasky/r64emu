@@ -165,17 +165,36 @@ impl N64 {
     }
 
     // Setup the CIC (copy protection) emulation.
-    pub fn setup_cic(&mut self) -> Result<()> {
+    pub fn setup_cic(&mut self, hard_reset: bool) -> Result<()> {
+        // The 32-bit word at offset 0x24 in PIF RAM (bus addr: 0x1FC0_07E4)
+        // is filled by PIF during boot. It contains the encryption seed
+        // (that PIF got after negotiation with CIC), and some other information
+        // that the CPU can use.
+
+        // bits     | reg | description
+        // 00080000 | S3  | osRomType (0=GamePack, 1=DD)
+        // 00040000 | S7  | osVersion
+        // 00020000 | S5  | osResetType (1 = NMI, 0 = cold reset)
+        // 0000FF00 | S6  | CIC IPL3 seed value
+        // 000000FF | --  | CIC IPL2 seed value
+        // -------- | S4  | TV Type (0=PAL, 1=NTSC, 2=MPAL)
+
         // Setup the encryption seed, given the CIC model that we detect
         // by checksumming the ROM header.
-        let seed: u32 = match Cartridge::get().detect_cic_model()? {
+        let mut seed: u32 = match Cartridge::get().detect_cic_model()? {
             CicModel::Cic6101 => 0x3F, // starfox
             CicModel::Cic6102 => 0x3F, // mario
             CicModel::Cic6103 => 0x78, // banjo
             CicModel::Cic6105 => 0x91, // zelda
             CicModel::Cic6106 => 0x85, // f-zero x
-        };
-        R4300::get_mut().bus.write::<u32>(0x1FC0_07E4, seed << 8);
+        } << 8;
+
+        // Set the NMI/reset bit
+        if !hard_reset {
+            seed |= 0x0002_0000;
+        }
+
+        R4300::get_mut().bus.write::<u32>(0x1FC0_07E4, seed);
         Ok(())
     }
 }
@@ -244,12 +263,13 @@ impl DebuggerModel for N64 {
         if hard {
             // Hard reset: restore initial emulator status
             self.initial_state.clone().make_current();
-            self.setup_cic().unwrap(); // FIXME: move this elsewhere?
+            self.setup_cic(true).unwrap();
             self.sync.reset();
         } else {
             // Soft reset: just trigger a reset on CPUs and hope for the best
             R4300::get_mut().reset();
             RSPCPU::get_mut().reset();
+            self.setup_cic(false).unwrap();
         }
     }
 }
