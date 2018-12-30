@@ -113,7 +113,8 @@ impl Pi {
         }
     }
 
-    fn cb_write_dma_status(&mut self, _old: u32, new: u32) {
+    fn cb_write_dma_status(&mut self, old: u32, new: u32) {
+        self.dma_status.set(old); // write bits are not related to read bits
         info!(self.logger, "write dma status"; o!("val" => format!("{:x}", new)));
         Mi::get_mut().set_irq_line(IrqMask::PI, false);
     }
