@@ -9,7 +9,7 @@ use std::io::Read;
 
 #[derive(DeviceBE)]
 pub struct Cartridge {
-    #[mem(offset = 0, vsize = 0x07C0_0000)]
+    #[mem(offset = 0, vsize = 0x07C0_0000, fill = "Fixed(0x00)")]
     rom: Mem,
 
     #[reg(bank = 1, offset = 0x200)]
