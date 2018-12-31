@@ -135,7 +135,7 @@ impl<U: MemInt, N: Unsigned, S: Unsigned> Component for Value<U, N, S> {
     }
 }
 
-pub trait ColorFormat: Copy {
+pub trait ColorFormat: Sized + Copy {
     /// unsigned integer word (eg: u16)
     type U: MemInt;
     /// actually used bits in word

@@ -10,7 +10,7 @@ use crate::memint::MemInt;
 
 use std::marker::PhantomData;
 
-pub struct GfxBuffer<'a, CF: ColorFormat + Sized, O: ByteOrder> {
+pub struct GfxBuffer<'a, CF: ColorFormat, O: ByteOrder> {
     mem: &'a [u8],
     width: usize,
     height: usize,
@@ -18,7 +18,7 @@ pub struct GfxBuffer<'a, CF: ColorFormat + Sized, O: ByteOrder> {
     phantom: PhantomData<(CF, O)>,
 }
 
-pub struct GfxBufferMut<'a, CF: ColorFormat + Sized, O: ByteOrder> {
+pub struct GfxBufferMut<'a, CF: ColorFormat, O: ByteOrder> {
     mem: &'a mut [u8],
     width: usize,
     height: usize,
@@ -26,24 +26,24 @@ pub struct GfxBufferMut<'a, CF: ColorFormat + Sized, O: ByteOrder> {
     phantom: PhantomData<(CF, O)>,
 }
 
-pub struct GfxLine<'a, CF: ColorFormat + Sized, O: ByteOrder> {
+pub struct GfxLine<'a, CF: ColorFormat, O: ByteOrder> {
     mem: &'a [u8],
     phantom: PhantomData<(CF, O)>,
 }
 
-pub struct GfxLineMut<'a, CF: ColorFormat + Sized, O: ByteOrder> {
+pub struct GfxLineMut<'a, CF: ColorFormat, O: ByteOrder> {
     mem: &'a mut [u8],
     phantom: PhantomData<(CF, O)>,
 }
 
-pub struct OwnedGfxBuffer<CF: ColorFormat + Sized, O: ByteOrder> {
+pub struct OwnedGfxBuffer<CF: ColorFormat, O: ByteOrder> {
     mem: Vec<u8>,
     width: usize,
     height: usize,
     phantom: PhantomData<(CF, O)>,
 }
 
-impl<'a: 's, 's, CF: ColorFormat + Sized, O: ByteOrder> GfxBuffer<'a, CF, O> {
+impl<'a: 's, 's, CF: ColorFormat, O: ByteOrder> GfxBuffer<'a, CF, O> {
     pub fn new(
         mem: &'a [u8],
         width: usize,
@@ -95,7 +95,7 @@ impl<'a: 's, 's, CF: ColorFormat + Sized, O: ByteOrder> GfxBuffer<'a, CF, O> {
     }
 }
 
-impl<'a: 's, 's, CF: ColorFormat + Sized, O: ByteOrder> GfxBufferMut<'a, CF, O> {
+impl<'a: 's, 's, CF: ColorFormat, O: ByteOrder> GfxBufferMut<'a, CF, O> {
     pub fn new(
         mem: &'a mut [u8],
         width: usize,
@@ -200,7 +200,7 @@ pub trait BufferLineSetter<CF: ColorFormat> {
 
 impl<'a, CF, O> BufferLineGetter<CF> for GfxLine<'a, CF, O>
 where
-    CF: ColorFormat + Sized,
+    CF: ColorFormat,
     O: ByteOrder,
 {
     #[inline(always)]
@@ -213,7 +213,7 @@ where
 
 impl<'a, CF> BufferLineGetter<CF> for GfxLine<'a, CF, LittleEndian>
 where
-    CF: ColorFormat<BITS = U4> + Sized,
+    CF: ColorFormat<BITS = U4>,
 {
     #[inline(always)]
     fn get(&self, x: usize) -> Color<CF> {
@@ -232,7 +232,7 @@ where
 
 impl<'a, CF> BufferLineGetter<CF> for GfxLine<'a, CF, BigEndian>
 where
-    CF: ColorFormat<BITS = U4> + Sized,
+    CF: ColorFormat<BITS = U4>,
 {
     #[inline(always)]
     fn get(&self, x: usize) -> Color<CF> {
@@ -251,7 +251,7 @@ where
 
 impl<'a, CF, O> BufferLineGetter<CF> for GfxLineMut<'a, CF, O>
 where
-    CF: ColorFormat + Sized,
+    CF: ColorFormat,
     O: ByteOrder,
 {
     #[inline(always)]
@@ -264,7 +264,7 @@ where
 
 impl<'a, CF> BufferLineGetter<CF> for GfxLineMut<'a, CF, LittleEndian>
 where
-    CF: ColorFormat<BITS = U4> + Sized,
+    CF: ColorFormat<BITS = U4>,
 {
     #[inline(always)]
     fn get(&self, x: usize) -> Color<CF> {
@@ -275,7 +275,7 @@ where
 
 impl<'a, CF> BufferLineGetter<CF> for GfxLineMut<'a, CF, BigEndian>
 where
-    CF: ColorFormat<BITS = U4> + Sized,
+    CF: ColorFormat<BITS = U4>,
 {
     #[inline(always)]
     fn get(&self, x: usize) -> Color<CF> {
@@ -286,7 +286,7 @@ where
 
 impl<'a, CF, O> BufferLineSetter<CF> for GfxLineMut<'a, CF, O>
 where
-    CF: ColorFormat + Sized,
+    CF: ColorFormat,
     O: ByteOrder,
 {
     #[inline(always)]
@@ -297,7 +297,7 @@ where
 
 impl<'a, CF> BufferLineSetter<CF> for GfxLineMut<'a, CF, LittleEndian>
 where
-    CF: ColorFormat<BITS = U4> + Sized,
+    CF: ColorFormat<BITS = U4>,
 {
     #[inline(always)]
     fn set(&mut self, x: usize, c: Color<CF>) {
@@ -315,7 +315,7 @@ where
 
 impl<'a, CF> BufferLineSetter<CF> for GfxLineMut<'a, CF, BigEndian>
 where
-    CF: ColorFormat<BITS = U4> + Sized,
+    CF: ColorFormat<BITS = U4>,
 {
     #[inline(always)]
     fn set(&mut self, x: usize, c: Color<CF>) {
@@ -331,8 +331,8 @@ where
     }
 }
 
-impl<CF: ColorFormat + Sized, O: ByteOrder> OwnedGfxBuffer<CF, O> {
-    pub fn from_buf<CF2: ColorFormat + Sized, O2: ByteOrder>(
+impl<CF: ColorFormat, O: ByteOrder> OwnedGfxBuffer<CF, O> {
+    pub fn from_buf<CF2: ColorFormat, O2: ByteOrder>(
         buf: &GfxBuffer<CF2, O2>,
     ) -> OwnedGfxBuffer<CF, O> {
         let (w, h) = (buf.width, buf.height);
