@@ -6,6 +6,7 @@ use emu::int::Numerics;
 use emu_derive::DeviceBE;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 
 #[derive(DeviceBE)]
 pub struct Pi {
@@ -76,7 +77,7 @@ pub struct Pi {
 }
 
 impl Pi {
-    pub fn new(logger: slog::Logger, pifrom: &str) -> Result<Box<Pi>> {
+    pub fn new(logger: slog::Logger, pifrom: &Path) -> Result<Box<Pi>> {
         let mut contents = vec![];
         File::open(pifrom)?.read_to_end(&mut contents)?;
 

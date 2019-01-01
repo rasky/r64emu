@@ -1,11 +1,10 @@
-extern crate crc;
-extern crate emu;
-
-use self::crc::crc32;
 use crate::errors::*;
 use emu::bus::be::{Mem, MemFlags, Reg32};
+
+use crc::crc32;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 
 #[derive(DeviceBE)]
 pub struct Cartridge {
@@ -44,7 +43,7 @@ pub fn romswap(rom: Vec<u8>) -> Vec<u8> {
 }
 
 impl Cartridge {
-    pub fn new(romfn: &str) -> Result<Box<Cartridge>> {
+    pub fn new(romfn: &Path) -> Result<Box<Cartridge>> {
         let mut file = File::open(romfn)?;
         let mut contents = vec![];
         file.read_to_end(&mut contents)?;

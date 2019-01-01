@@ -10,6 +10,7 @@ use emu_derive::DeviceBE;
 
 use slog;
 use std::ops::{Deref, DerefMut};
+use std::path::Path;
 
 use super::ai::Ai;
 use super::cartridge::{Cartridge, CicModel};
@@ -134,7 +135,7 @@ impl sync::SyncEmu for SyncEmu {
 }
 
 impl N64 {
-    pub fn new(logger: slog::Logger, romfn: &str) -> Result<N64> {
+    pub fn new(logger: slog::Logger, romfn: &Path, biosfn: &Path) -> Result<N64> {
         let sync = sync::Sync::new(logger.new(o!()), SyncEmu);
 
         R4300::new(sync::Sync::new_logger(&sync)).register();
@@ -143,7 +144,7 @@ impl N64 {
             .chain_err(|| "cannot open rom file")?
             .register();
 
-        Pi::new(sync::Sync::new_logger(&sync), "bios/pifdata.bin")
+        Pi::new(sync::Sync::new_logger(&sync), biosfn)
             .chain_err(|| "cannot open BIOS file")?
             .register();
         Dp::new(sync::Sync::new_logger(&sync)).register();
