@@ -6,7 +6,6 @@ extern crate emu;
 extern crate failure;
 extern crate image;
 extern crate r64emu;
-extern crate slog_term;
 
 use emu::gfx::{BufferLineGetter, BufferLineSetter, OwnedGfxBufferLE, Rgb888, Rgba8888};
 use emu::hw::OutputProducer;
@@ -36,7 +35,7 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
 
     // Create N64 object and emulate 5 frames
     let mut n64 = N64::new(logger, romfn).unwrap();
-    n64.setup_cic().unwrap();
+    n64.setup_cic(true).unwrap();
     let mut screen1 = OwnedGfxBufferLE::<Rgb888>::new(640, 480);
 
     let numfps = if flags & FPS30 != 0 {

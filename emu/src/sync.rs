@@ -210,15 +210,8 @@ impl<E: SyncEmu + 'static> Sync<E> {
 
 #[cfg(test)]
 mod tests {
-    extern crate slog;
     use super::*;
-
-    fn logger() -> slog::Logger {
-        use slog::Drain;
-        let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        slog::Logger::root(drain, o!())
-    }
+    use crate::log::new_console_logger;
 
     struct FakeEmu {
         cfg: Config,
@@ -236,7 +229,7 @@ mod tests {
     #[test]
     fn events() {
         let mut sync = Sync::new(
-            logger(),
+            new_console_logger(),
             FakeEmu {
                 cfg: Config {
                     main_clock: 128,

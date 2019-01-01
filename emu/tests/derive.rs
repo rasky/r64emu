@@ -2,20 +2,10 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::log::new_console_logger;
     use byteorder::LittleEndian;
     use emu::bus::{Bus, Device, Mem, Reg};
     use emu_derive::DeviceLE;
-
-    use slog::Drain;
-    use slog::*;
-    use slog_term;
-    use std;
-
-    fn logger() -> slog::Logger {
-        let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        slog::Logger::root(drain, o!())
-    }
 
     #[derive(Default, DeviceLE)]
     struct Gpu {
@@ -49,7 +39,7 @@ mod tests {
     fn basic_device() {
         Box::new(Gpu::default()).register();
 
-        let mut bus = Bus::<LittleEndian>::new(logger());
+        let mut bus = Bus::<LittleEndian>::new(new_console_logger());
         {
             let gpu = Gpu::get();
             bus.map_device(0x04000000, gpu, 0).expect("map error");

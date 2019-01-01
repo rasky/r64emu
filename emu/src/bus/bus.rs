@@ -582,18 +582,14 @@ impl<O: ByteOrderCombiner + 'static> MappedReg for Reg<O, u64> {
 mod tests {
     use super::*;
     use crate::bus::le::{Reg16, Reg32, Reg8, RegFlags};
+    use crate::log::new_console_logger;
 
     extern crate byteorder;
-    extern crate slog_term;
     use self::byteorder::{BigEndian, LittleEndian};
     use super::super::mem::MemFlags;
-    use slog::Drain;
-    use std;
 
     fn logger() -> slog::Logger {
-        let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        slog::Logger::root(drain, o!())
+        new_console_logger()
     }
 
     #[test]

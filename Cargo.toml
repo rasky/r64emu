@@ -19,7 +19,6 @@ mips64 = {path =  "./emu/cpu/mips64"}
 num = "0.1.42"
 error-chain = "0.12.0"
 pretty-hex = "0.1.0"
-slog-term = "2.4.0"
 crc = "^1.0.0"
 lazy_static = "1.0"
 bitflags = "1.0"
@@ -49,7 +48,7 @@ git = "https://github.com/rust-lang-nursery/packed_simd"
 features = ["default", "into_bits", "coresimd"]
 
 [dependencies.slog]
-version = "2.4.1"
+version = "2"
 features = ["nothreads"]
 
 [patch.crates-io]
