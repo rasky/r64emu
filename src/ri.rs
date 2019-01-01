@@ -79,7 +79,7 @@ pub struct Ri {
     #[reg(bank = 2, offset = 0x1C, writeonly)]
     reg_ri_error_write: Reg32,
 
-    logger: slog::Logger,
+    _logger: slog::Logger,
 }
 
 impl Ri {
@@ -107,7 +107,7 @@ impl Ri {
             reg_ri_error: Reg32::default(),
             reg_ri_error_write: Reg32::default(),
 
-            logger,
+            _logger: logger,
         })
     }
 }
