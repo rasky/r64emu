@@ -46,14 +46,17 @@ fn create_n64(romfn: &Path, biosfn: &Path) -> Result<N64> {
 fn run() -> Result<()> {
     let args = Cli::from_args();
 
-    let mut out = hw::Output::new(hw::OutputConfig {
-        window_title: "R64EMU - Nintendo 64 Emulator".into(),
-        width: 640,
-        height: 480,
-        fps: 60,
-        enforce_speed: false,
-    })?;
+    let mut out = hw::Output::new(
+        hw::VideoConfig {
+            window_title: "R64EMU - Nintendo 64 Emulator".into(),
+            width: 640,
+            height: 480,
+            fps: 60,
+        },
+        hw::AudioConfig { frequency: 44100 },
+    )?;
     out.enable_video()?;
+    out.enable_audio()?;
 
     if args.debugger {
         let mut n64 = create_n64(&args.rom, &args.bios).unwrap();

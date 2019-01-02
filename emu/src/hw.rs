@@ -1,27 +1,33 @@
-extern crate byteorder;
-extern crate gl;
-extern crate sdl2;
-
 pub mod glutils;
 
 use self::glutils::SurfaceRenderer;
-use self::sdl2::event::Event;
-use self::sdl2::keyboard::Keycode;
-use self::sdl2::video::{GLContext, GLProfile, Window};
-use self::sdl2::VideoSubsystem;
-use super::dbg::{DebuggerModel, DebuggerUI};
-use super::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
+
+use crate::dbg::{DebuggerModel, DebuggerUI};
+use crate::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
+use crate::snd::{SampleFormat, SampleInt, SndBuffer};
+
+use byteorder::NativeEndian;
+use sdl2::audio::{AudioFormatNum, AudioQueue, AudioSpecDesired};
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::video::{GLContext, GLProfile, Window};
+use sdl2::{AudioSubsystem, VideoSubsystem};
+
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant};
 
-pub struct OutputConfig {
+pub struct VideoConfig {
     pub window_title: String,
     pub width: isize,
     pub height: isize,
     pub fps: isize,
-    pub enforce_speed: bool,
+}
+
+pub struct AudioConfig {
+    pub frequency: isize,
 }
 
 struct Video {
@@ -30,13 +36,13 @@ struct Video {
     renderer: SurfaceRenderer,
     _gl_context: GLContext,
 
-    cfg: Rc<OutputConfig>,
-    fps_clock: SystemTime,
+    cfg: Rc<VideoConfig>,
+    fps_clock: Instant,
     fps_counter: isize,
 }
 
 impl Video {
-    fn new(cfg: Rc<OutputConfig>, context: &sdl2::Sdl) -> Result<Video, String> {
+    fn new(cfg: Rc<VideoConfig>, context: &sdl2::Sdl) -> Result<Video, String> {
         let video = context
             .video()
             .or_else(|e| Err(format!("error creating video subsystem: {:?}", e)))?;
@@ -70,7 +76,7 @@ impl Video {
             window,
             renderer,
             _gl_context: gl_context,
-            fps_clock: SystemTime::now(),
+            fps_clock: Instant::now(),
             fps_counter: 0,
         })
     }
@@ -81,57 +87,146 @@ impl Video {
 
     fn update_fps(&mut self) {
         self.fps_counter += 1;
-        let one_second = Duration::new(1, 0);
-        match self.fps_clock.elapsed() {
-            Ok(elapsed) if elapsed >= one_second => {
-                self.window
-                    .set_title(&format!(
-                        "{} - {} FPS",
-                        &self.cfg.window_title, self.fps_counter
-                    ))
-                    .unwrap();
-                self.fps_counter = 0;
-                self.fps_clock += one_second;
-            }
-            _ => {}
+        if self.fps_clock.elapsed() >= Duration::new(1, 0) {
+            self.window
+                .set_title(&format!(
+                    "{} - {} FPS",
+                    &self.cfg.window_title, self.fps_counter
+                ))
+                .unwrap();
+            self.fps_counter = 0;
+            self.fps_clock += Duration::new(1, 0);
         }
     }
 }
 
+struct Audio<SI: SampleInt + AudioFormatNum, SF: SampleFormat<ORDER = NativeEndian, SAMPLE = SI>> {
+    audio: AudioSubsystem,
+    queue: AudioQueue<SI>,
+    frame_size: usize,
+    phantom: PhantomData<SF>,
+}
+
+impl<SI, SF> Audio<SI, SF>
+where
+    SI: SampleInt + AudioFormatNum,
+    SF: SampleFormat<ORDER = NativeEndian, SAMPLE = SI>,
+{
+    fn new(context: &sdl2::Sdl, fps: isize, acfg: Rc<AudioConfig>) -> Self {
+        let audio = context
+            .audio()
+            .or_else(|e| Err(format!("error creating audio subsystem: {:?}", e)))
+            .unwrap();
+
+        let frame_size = (acfg.frequency / fps) as usize;
+        let spec = AudioSpecDesired {
+            freq: Some(acfg.frequency as i32),
+            channels: Some(SF::CHANNELS as u8),
+            samples: Some(frame_size as u16),
+        };
+        let queue = audio.open_queue(None, &spec).unwrap();
+        queue.resume();
+
+        Self {
+            audio,
+            queue,
+            frame_size,
+            phantom: PhantomData,
+        }
+    }
+
+    fn frame_size(&self) -> usize {
+        self.frame_size
+    }
+
+    fn render_frame(&mut self, buf: &SndBuffer<SF>, throttle: bool) {
+        if throttle {
+            // Wait until the queue is less than one frame small. This
+            // crates one buffer worth of lag, but should keep the audio
+            // playing with no cracks.
+            while self.queue.size() > self.frame_size as u32 * 2 {
+                std::thread::sleep(Duration::from_micros(100));
+            }
+            self.queue.queue(buf.as_ref());
+        } else {
+            // If we're not throttling there are two possibilities:
+            // we're either running too slow (in which case, there would be
+            // audio cracks), or too fast; in the latter case, we want to skip
+            // some audio frames to avoid desyncing audio and video.
+            if self.queue.size() < self.frame_size as u32 {
+                self.queue.queue(buf.as_ref());
+            }
+        }
+    }
+}
+
+/// OutputProducer is a trait that allows an emulator to interface with
+/// [`Output`](struct.Output.html) to produce audio and video on the host
+/// computer.
+///
+/// To use [`Output`](struct.Output.html), the emulator must implement this
+/// trait which exposes the static configuration of the output, and the methods
+/// to run the emulator.
 pub trait OutputProducer {
-    fn render_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>);
-    fn finish(&mut self);
+    /// Sample format of the audio produced by the emulator. Supported types are
+    /// those that implement the
+    /// [`emu::snd::SampleFormat`](../snd/trait.SampleFormat.html) trait, but
+    /// using the host byte order (eg: `LittleEndian` on x86).
+    type AudioSampleFormat: SampleFormat<ORDER = NativeEndian>;
+
+    fn render_frame(
+        &mut self,
+        video: &mut GfxBufferMutLE<Rgb888>,
+        audio: &mut SndBuffer<Self::AudioSampleFormat>,
+    );
 }
 
 pub struct Output {
-    cfg: Rc<OutputConfig>,
+    vcfg: Rc<VideoConfig>,
+    acfg: Rc<AudioConfig>,
     context: sdl2::Sdl,
     video: Option<Video>,
+    audio: bool,
     debug: bool,
     framecount: i64,
 }
 
 impl Output {
-    pub fn new(cfg: OutputConfig) -> Result<Output, String> {
+    pub fn new(vcfg: VideoConfig, acfg: AudioConfig) -> Result<Output, String> {
         Ok(Output {
-            cfg: Rc::new(cfg),
+            vcfg: Rc::new(vcfg),
+            acfg: Rc::new(acfg),
             context: sdl2::init()?,
             video: None,
+            audio: false,
             debug: true,
             framecount: 0,
         })
     }
 
     pub fn enable_video(&mut self) -> Result<(), String> {
-        self.video = Some(Video::new(self.cfg.clone(), &self.context)?);
+        self.video = Some(Video::new(self.vcfg.clone(), &self.context)?);
         Ok(())
     }
 
-    pub fn run_and_debug<P: OutputProducer + DebuggerModel>(&mut self, producer: &mut P) {
-        let width = self.cfg.width as usize;
-        let height = self.cfg.height as usize;
+    pub fn enable_audio(&mut self) -> Result<(), String> {
+        self.audio = true;
+        Ok(())
+    }
+
+    pub fn run_and_debug<SI, SF, P>(&mut self, producer: &mut P)
+    where
+        SI: SampleInt + AudioFormatNum,
+        SF: SampleFormat<SAMPLE = SI, ORDER = NativeEndian>,
+        P: OutputProducer<AudioSampleFormat = SF> + DebuggerModel,
+    {
+        let width = self.vcfg.width as usize;
+        let height = self.vcfg.height as usize;
         assert_eq!(self.video.is_some(), true); // TODO: debugger could work without video as well
         let mut dbg_ui = DebuggerUI::new(self.video.as_ref().unwrap().video.clone(), producer);
+
+        let mut audio = Audio::<SI, SF>::new(&self.context, self.vcfg.fps, self.acfg.clone());
+        let mut audio_buf = SndBuffer::with_capacity(audio.frame_size());
 
         let mut event_pump = self.context.event_pump().unwrap();
         let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
@@ -155,11 +250,12 @@ impl Output {
 
             let v = self.video.as_mut().unwrap();
             if !self.debug {
-                producer.render_frame(&mut screen.buf_mut());
+                producer.render_frame(&mut screen.buf_mut(), &mut audio_buf);
                 v.render_frame(&screen.buf());
+                audio.render_frame(&audio_buf, true);
                 v.update_fps();
             } else {
-                if dbg_ui.trace(producer, &mut screen.buf_mut()) {
+                if dbg_ui.trace(producer, &mut screen.buf_mut(), &mut audio_buf) {
                     v.update_fps();
                 }
                 dbg_ui.render(&v.window, &event_pump, producer);
@@ -179,25 +275,34 @@ impl Output {
     /// create is a FnOnce callback that creates a OutputProducer, and is invoked
     /// in the background thread so that OutputProducer needs not to implement
     /// Send.
-    pub fn run_threaded<F: 'static + Send + FnOnce() -> Result<Box<OutputProducer>, String>>(
-        &mut self,
-        create: F,
-    ) {
-        let width = self.cfg.width as usize;
-        let height = self.cfg.height as usize;
+    pub fn run_threaded<F, P, SI, SF>(&mut self, create: F)
+    where
+        SI: SampleInt + AudioFormatNum,
+        SF: SampleFormat<SAMPLE = SI, ORDER = NativeEndian>,
+        P: OutputProducer<AudioSampleFormat = SF>,
+        F: FnOnce() -> Result<Box<P>, String> + Send + 'static,
+    {
+        let width = self.vcfg.width as usize;
+        let height = self.vcfg.height as usize;
         let (tx, rx) = mpsc::sync_channel(3);
+
+        let mut audio = Audio::new(&self.context, self.vcfg.fps, self.acfg.clone());
+        let audio_frame_size = audio.frame_size();
 
         thread::spawn(move || {
             let mut producer = create().unwrap();
             loop {
+                let mut sound = SndBuffer::with_capacity(audio_frame_size);
                 let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
-                producer.render_frame(&mut screen.buf_mut());
+                producer.render_frame(&mut screen.buf_mut(), &mut sound);
 
-                tx.send(screen).unwrap();
+                if !tx.send((screen, sound)).is_ok() {
+                    return;
+                }
             }
         });
 
-        let polling_interval = Duration::from_millis(5);
+        let polling_interval = Duration::from_millis(20);
         loop {
             for event in self.context.event_pump().unwrap().poll_iter() {
                 match event {
@@ -211,7 +316,10 @@ impl Output {
             }
 
             match rx.recv_timeout(polling_interval) {
-                Ok(ref screen) => self.render_frame(&screen.buf()),
+                Ok((ref screen, ref sound)) => {
+                    self.render_frame(&screen.buf());
+                    audio.render_frame(sound, true);
+                }
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }

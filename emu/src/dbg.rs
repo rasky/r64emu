@@ -1,5 +1,6 @@
-use super::gfx::{GfxBufferMutLE, Rgb888};
-use super::hw::glutils::Texture;
+use crate::gfx::{GfxBufferMutLE, Rgb888};
+use crate::hw::glutils::Texture;
+use crate::snd::{SampleFormat, SndBuffer};
 
 use imgui::*;
 use imgui_opengl_renderer::Renderer;
@@ -46,7 +47,12 @@ pub trait DebuggerModel {
     ///
     /// After a TraceEvent is returned and processed by the debugger, emulation of the
     /// frame will be resumed by calling run_frame with the same screen buffer.
-    fn trace_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>, tracer: &Tracer) -> Result<()>;
+    fn trace_frame<SF: SampleFormat>(
+        &mut self,
+        screen: &mut GfxBufferMutLE<Rgb888>,
+        sound: &mut SndBuffer<SF>,
+        tracer: &Tracer,
+    ) -> Result<()>;
 
     /// Run a single CPU step with a tracer (debugger).
     /// Similar to trace_frame(), but blocks after the specified CPU has performed a single
@@ -116,10 +122,11 @@ impl DebuggerUI {
 
     /// Run an emulator (DebuggerModel) under the debugger for a little while.
     /// Returns true if during this call the emulator completed a frame, or false otherwise.
-    pub(crate) fn trace<T: DebuggerModel>(
+    pub(crate) fn trace<T: DebuggerModel, SF: SampleFormat>(
         &mut self,
         producer: &mut T,
         screen: &mut GfxBufferMutLE<Rgb888>,
+        sound: &mut SndBuffer<SF>,
     ) -> bool {
         // If the emulation core is paused, we can simply wait here to avoid hogging CPU.
         // Refresh every 16ms / 60FPS.
@@ -135,7 +142,7 @@ impl DebuggerUI {
         let trace_until = self.last_render + Duration::from_millis(50);
         self.dbg.set_poll_event(trace_until);
 
-        match producer.trace_frame(screen, &self.dbg.new_tracer()) {
+        match producer.trace_frame(screen, sound, &self.dbg.new_tracer()) {
             Ok(()) => {
                 // A frame is finished. Copy it into the texture so that it's available
                 // starting from next render().

@@ -3,6 +3,7 @@ use emu::dbg;
 use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
+use emu::snd::{SampleFormat, SndBuffer, U16LE_STEREO};
 use emu::state::{CurrentState, State};
 use emu::sync;
 use emu::sync::Subsystem;
@@ -129,6 +130,7 @@ impl sync::SyncEmu for SyncEmu {
             0 => Some((R4300::get_mut().deref_mut(), MAIN_CLOCK + MAIN_CLOCK / 2)), // FIXME: uses DIVMOD),
             1 => Some((RSPCPU::get_mut().deref_mut(), MAIN_CLOCK)),
             2 => Some((Dp::get_mut(), MAIN_CLOCK)),
+            3 => Some((Ai::get_mut(), VCLK)),
             _ => None,
         }
     }
@@ -201,7 +203,13 @@ impl N64 {
 }
 
 impl hw::OutputProducer for N64 {
-    fn render_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>) {
+    type AudioSampleFormat = U16LE_STEREO;
+
+    fn render_frame(
+        &mut self,
+        screen: &mut GfxBufferMutLE<Rgb888>,
+        sound: &mut SndBuffer<Self::AudioSampleFormat>,
+    ) {
         self.sync.run_frame(move |evt| match evt {
             sync::Event::HSync(x, y) if x == 0 => {
                 Vi::get_mut().set_line(y);
@@ -209,17 +217,15 @@ impl hw::OutputProducer for N64 {
             _ => {}
         });
         Vi::get_mut().draw_frame(screen);
-    }
-
-    fn finish(&mut self) {
-        info!(self.logger, "finish"; o!("pc" => format!("{:x}", R4300::get().ctx().get_pc())));
+        Ai::get_mut().play_frame(sound);
     }
 }
 
 impl DebuggerModel for N64 {
-    fn trace_frame(
+    fn trace_frame<SF: SampleFormat>(
         &mut self,
         screen: &mut GfxBufferMutLE<Rgb888>,
+        sound: &mut SndBuffer<SF>,
         tracer: &dbg::Tracer,
     ) -> dbg::Result<()> {
         self.sync.trace_frame(
@@ -232,6 +238,7 @@ impl DebuggerModel for N64 {
             tracer,
         )?;
         Vi::get_mut().draw_frame(screen);
+        Ai::get_mut().play_frame(sound);
         Ok(())
     }
 
