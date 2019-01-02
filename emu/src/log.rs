@@ -112,11 +112,11 @@ impl<W: io::Write> LogRecordPrinter for ColorRecordPrinter<W> {
         // so we use a CountingWriter to avoid an allocation here.
         write!(rd.w, "\x1b[37;1m")?;
         write!(rd, "{}", record.msg())?;
+        write!(rd.w, "\x1b[0m")?;
         let msglen = rd.count();
         if msglen < 80 {
             write!(rd.w, "{:.<1$}", "", 80 - msglen)?;
         }
-        write!(rd.w, "\x1b[0m")?;
         Ok(())
     }
 
@@ -184,7 +184,7 @@ macro_rules! s(
         if $s.reverse {
             $s.stack.push(($k.into(), format!("{}", $v)));
         } else {
-	        $s.printer.print_kv($k, $v)?;
+            $s.printer.print_kv($k, $v)?;
         }
     };
 );
@@ -393,19 +393,4 @@ pub fn new_console_logger() -> slog::Logger {
     let printer = ColorPrinter::new(std::io::stdout());
     let drain = LogDrain::new(printer).build().fuse();
     slog::Logger::root(drain, o!())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn logformat() {
-        let log = new_console_logger();
-
-        info!(log, #"tag1", "test message"; "value1" => 4, "value2" => "ciao");
-        warn!(log, "warning message"; "value1" => 4, "value2" => "ciao");
-        assert_eq!(true, false);
-    }
-
 }
