@@ -2,7 +2,7 @@ use super::mi::{IrqMask, Mi};
 use emu::bus::be::{Device, Reg32};
 use emu::dbg;
 use emu::int::Numerics;
-use emu::snd::{SampleFormat, SndBuffer};
+use emu::snd::{SampleFormat, SndBufferMut};
 use emu::state::{ArrayField, Field};
 use emu::sync;
 use emu_derive::DeviceBE;
@@ -129,7 +129,7 @@ impl Ai {
         info!(self.logger, "IRQ acknowledge");
     }
 
-    pub fn play_frame<SF: SampleFormat>(&mut self, _sound: &SndBuffer<SF>) {}
+    pub fn play_frame<SF: SampleFormat>(&mut self, _sound: &mut SndBufferMut<SF>) {}
 }
 
 impl sync::Subsystem for Ai {

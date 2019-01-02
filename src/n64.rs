@@ -3,7 +3,7 @@ use emu::dbg;
 use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
-use emu::snd::{SampleFormat, SndBuffer, U16LE_STEREO};
+use emu::snd::{SampleFormat, SndBufferMut, U16LE_STEREO};
 use emu::state::{CurrentState, State};
 use emu::sync;
 use emu::sync::Subsystem;
@@ -208,7 +208,7 @@ impl hw::OutputProducer for N64 {
     fn render_frame(
         &mut self,
         screen: &mut GfxBufferMutLE<Rgb888>,
-        sound: &mut SndBuffer<Self::AudioSampleFormat>,
+        sound: &mut SndBufferMut<Self::AudioSampleFormat>,
     ) {
         self.sync.run_frame(move |evt| match evt {
             sync::Event::HSync(x, y) if x == 0 => {
@@ -225,7 +225,7 @@ impl DebuggerModel for N64 {
     fn trace_frame<SF: SampleFormat>(
         &mut self,
         screen: &mut GfxBufferMutLE<Rgb888>,
-        sound: &mut SndBuffer<SF>,
+        sound: &mut SndBufferMut<SF>,
         tracer: &dbg::Tracer,
     ) -> dbg::Result<()> {
         self.sync.trace_frame(

@@ -1,6 +1,6 @@
 use crate::gfx::{GfxBufferMutLE, Rgb888};
 use crate::hw::glutils::Texture;
-use crate::snd::{SampleFormat, SndBuffer};
+use crate::snd::{SampleFormat, SndBufferMut};
 
 use imgui::*;
 use imgui_opengl_renderer::Renderer;
@@ -50,7 +50,7 @@ pub trait DebuggerModel {
     fn trace_frame<SF: SampleFormat>(
         &mut self,
         screen: &mut GfxBufferMutLE<Rgb888>,
-        sound: &mut SndBuffer<SF>,
+        sound: &mut SndBufferMut<SF>,
         tracer: &Tracer,
     ) -> Result<()>;
 
@@ -126,7 +126,7 @@ impl DebuggerUI {
         &mut self,
         producer: &mut T,
         screen: &mut GfxBufferMutLE<Rgb888>,
-        sound: &mut SndBuffer<SF>,
+        sound: &mut SndBufferMut<SF>,
     ) -> bool {
         // If the emulation core is paused, we can simply wait here to avoid hogging CPU.
         // Refresh every 16ms / 60FPS.

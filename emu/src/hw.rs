@@ -4,7 +4,7 @@ use self::glutils::SurfaceRenderer;
 
 use crate::dbg::{DebuggerModel, DebuggerUI};
 use crate::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
-use crate::snd::{SampleFormat, SampleInt, SndBuffer};
+use crate::snd::{OwnedSndBuffer, SampleFormat, SampleInt, SndBuffer, SndBufferMut};
 
 use byteorder::NativeEndian;
 use sdl2::audio::{AudioFormatNum, AudioQueue, AudioSpecDesired};
@@ -177,7 +177,7 @@ pub trait OutputProducer {
     fn render_frame(
         &mut self,
         video: &mut GfxBufferMutLE<Rgb888>,
-        audio: &mut SndBuffer<Self::AudioSampleFormat>,
+        audio: &mut SndBufferMut<Self::AudioSampleFormat>,
     );
 }
 
@@ -226,7 +226,7 @@ impl Output {
         let mut dbg_ui = DebuggerUI::new(self.video.as_ref().unwrap().video.clone(), producer);
 
         let mut audio = Audio::<SI, SF>::new(&self.context, self.vcfg.fps, self.acfg.clone());
-        let mut audio_buf = SndBuffer::with_capacity(audio.frame_size());
+        let mut audio_buf = OwnedSndBuffer::with_capacity(audio.frame_size());
 
         let mut event_pump = self.context.event_pump().unwrap();
         let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
@@ -250,12 +250,12 @@ impl Output {
 
             let v = self.video.as_mut().unwrap();
             if !self.debug {
-                producer.render_frame(&mut screen.buf_mut(), &mut audio_buf);
+                producer.render_frame(&mut screen.buf_mut(), &mut audio_buf.buf_mut());
                 v.render_frame(&screen.buf());
-                audio.render_frame(&audio_buf, true);
+                audio.render_frame(&audio_buf.buf(), true);
                 v.update_fps();
             } else {
-                if dbg_ui.trace(producer, &mut screen.buf_mut(), &mut audio_buf) {
+                if dbg_ui.trace(producer, &mut screen.buf_mut(), &mut audio_buf.buf_mut()) {
                     v.update_fps();
                 }
                 dbg_ui.render(&v.window, &event_pump, producer);
@@ -292,9 +292,9 @@ impl Output {
         thread::spawn(move || {
             let mut producer = create().unwrap();
             loop {
-                let mut sound = SndBuffer::with_capacity(audio_frame_size);
+                let mut sound = OwnedSndBuffer::with_capacity(audio_frame_size);
                 let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
-                producer.render_frame(&mut screen.buf_mut(), &mut sound);
+                producer.render_frame(&mut screen.buf_mut(), &mut sound.buf_mut());
 
                 if !tx.send((screen, sound)).is_ok() {
                     return;
@@ -318,7 +318,7 @@ impl Output {
             match rx.recv_timeout(polling_interval) {
                 Ok((ref screen, ref sound)) => {
                     self.render_frame(&screen.buf());
-                    audio.render_frame(sound, true);
+                    audio.render_frame(&sound.buf(), true);
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}

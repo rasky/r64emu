@@ -28,7 +28,7 @@ pub trait SampleInt: PrimInt + WrappingAdd + WrappingSub + Send {
     fn write<O: ByteOrder>(buf: &mut [u8], v: Self);
 
     /// Convert the sample to u16. This is a helper to simplify writing code
-    /// that is generic over the `SampleInt`: you can simply conver the sample
+    /// that is generic over the `SampleInt`: you can simply convert the sample
     /// to u16, do the required processing, and convert back using
     /// [`SampleInt::from_u16`](trait.SampleInt.html#method.from_u16).
     fn to_u16(self) -> u16;
@@ -156,17 +156,27 @@ pub trait SampleFormat: Sized + Send + 'static {
 }
 
 #[derive(Clone)]
-pub struct SndBuffer<SF: SampleFormat> {
+pub struct OwnedSndBuffer<SF: SampleFormat> {
     buf: Vec<u8>,
     phantom: PhantomData<SF>,
 }
 
-impl<SF: SampleFormat> SndBuffer<SF> {
+pub struct SndBuffer<'a, SF: SampleFormat> {
+    buf: &'a [u8],
+    phantom: PhantomData<SF>,
+}
+
+pub struct SndBufferMut<'a, SF: SampleFormat> {
+    buf: &'a mut [u8],
+    phantom: PhantomData<SF>,
+}
+
+impl<SF: SampleFormat> OwnedSndBuffer<SF> {
     pub fn new(buf: Vec<u8>) -> Result<Self, &'static str> {
         if buf.len() % SF::frame_size() != 0 {
             return Err("invalid sound buffer size (not multiple of frame size");
         }
-        return Ok(SndBuffer {
+        return Ok(Self {
             buf,
             phantom: PhantomData,
         });
@@ -186,19 +196,40 @@ impl<SF: SampleFormat> SndBuffer<SF> {
         self.buf.len() / SF::frame_size()
     }
 
+    /// Convert into a different buffer format
+    pub fn sconv<SF2: SampleFormat>(&self) -> OwnedSndBuffer<SF2> {
+        let mut dst = OwnedSndBuffer::with_capacity(self.count());
+        self.buf().sconv_into(&mut dst.buf_mut()).unwrap();
+        dst
+    }
+
+    pub fn buf<'a>(&'a self) -> SndBuffer<'a, SF> {
+        SndBuffer::new(&self.buf[..])
+    }
+    pub fn buf_mut<'a>(&'a mut self) -> SndBufferMut<'a, SF> {
+        SndBufferMut::new(&mut self.buf[..])
+    }
+}
+
+impl<'a, SF: SampleFormat> SndBuffer<'a, SF> {
+    pub fn new(buf: &'a [u8]) -> Self {
+        Self {
+            buf,
+            phantom: PhantomData,
+        }
+    }
+    pub fn count(&self) -> usize {
+        self.buf.len() / SF::frame_size()
+    }
     pub fn get_sample(&self, nframe: usize, nchan: usize) -> SF::SAMPLE {
         let off = nframe * SF::frame_size() + nchan * SF::SAMPLE::SIZE;
         SF::SAMPLE::read::<SF::ORDER>(&self.buf[off..off + SF::SAMPLE::SIZE])
     }
-    pub fn set_sample(&mut self, nframe: usize, nchan: usize, val: SF::SAMPLE) {
-        let off = nframe * SF::frame_size() + nchan * SF::SAMPLE::SIZE;
-        SF::SAMPLE::write::<SF::ORDER>(&mut self.buf[off..off + SF::SAMPLE::SIZE], val);
-    }
-
-    /// Convert into a different buffer format
-    pub fn sconv<SF2: SampleFormat>(&self) -> SndBuffer<SF2> {
+    pub fn sconv_into<SF2: SampleFormat>(&self, dst: &mut SndBufferMut<SF2>) -> Result<(), String> {
         let nframes = self.count();
-        let mut dst = SndBuffer::<SF2>::with_capacity(nframes);
+        if dst.count() != nframes {
+            return Err("SndBuffer::sconv_into: found buffers of different size".to_string());
+        }
 
         for i in 0..nframes {
             match (SF::CHANNELS, SF2::CHANNELS) {
@@ -227,11 +258,39 @@ impl<SF: SampleFormat> SndBuffer<SF> {
             }
         }
 
-        dst
+        Ok(())
     }
 }
 
-impl<SF> AsRef<[SF::SAMPLE]> for SndBuffer<SF>
+impl<'a, SF: SampleFormat> SndBufferMut<'a, SF> {
+    pub fn new(buf: &'a mut [u8]) -> Self {
+        Self {
+            buf,
+            phantom: PhantomData,
+        }
+    }
+
+    fn buf(&'a self) -> SndBuffer<'a, SF> {
+        SndBuffer::new(self.buf)
+    }
+
+    pub fn count(&self) -> usize {
+        self.buf().count()
+    }
+    pub fn get_sample(&self, nframe: usize, nchan: usize) -> SF::SAMPLE {
+        self.buf().get_sample(nframe, nchan)
+    }
+    pub fn sconv_into<SF2: SampleFormat>(&self, dst: &mut SndBufferMut<SF2>) -> Result<(), String> {
+        self.buf().sconv_into(dst)
+    }
+
+    pub fn set_sample(&mut self, nframe: usize, nchan: usize, val: SF::SAMPLE) {
+        let off = nframe * SF::frame_size() + nchan * SF::SAMPLE::SIZE;
+        SF::SAMPLE::write::<SF::ORDER>(&mut self.buf[off..off + SF::SAMPLE::SIZE], val);
+    }
+}
+
+impl<'a, SF> AsRef<[SF::SAMPLE]> for SndBuffer<'a, SF>
 where
     SF: SampleFormat<ORDER = NativeEndian>,
 {
@@ -244,11 +303,11 @@ where
     // ([`get_sample`](struct.SndBuffer.html#method.get_sample) and
     // [`set_sample`](struct.SndBuffer.html#method.set_sample)).
     fn as_ref(&self) -> &[SF::SAMPLE] {
-        unsafe { ::std::mem::transmute(&self.buf[..]) }
+        unsafe { ::std::mem::transmute(&*self.buf) }
     }
 }
 
-impl<SF> AsMut<[SF::SAMPLE]> for SndBuffer<SF>
+impl<'a, SF> AsMut<[SF::SAMPLE]> for SndBufferMut<'a, SF>
 where
     SF: SampleFormat<ORDER = NativeEndian>,
 {
@@ -257,7 +316,7 @@ where
     //
     // See [`as_ref`](struct.SndBuffer.html#method.as_ref) for more information.
     fn as_mut(&mut self) -> &mut [SF::SAMPLE] {
-        unsafe { ::std::mem::transmute(&mut self.buf[..]) }
+        unsafe { ::std::mem::transmute(&mut *self.buf) }
     }
 }
 
@@ -308,13 +367,16 @@ mod tests {
 
     #[test]
     fn basic() {
-        let mut buf = SndBuffer::<U8_MONO>::with_capacity(4);
+        let mut obuf = OwnedSndBuffer::<U8_MONO>::with_capacity(4);
+
+        let mut buf = obuf.buf_mut();
         buf.set_sample(0, 0, 0x11);
         buf.set_sample(1, 0, 0x88);
         buf.set_sample(2, 0, 0xCC);
         buf.set_sample(3, 0, 0xFF);
 
-        let dst = buf.sconv::<S16BE_STEREO>();
+        let odst = obuf.sconv::<S16BE_STEREO>();
+        let dst = odst.buf();
         assert_eq!(dst.count(), 4);
         assert_eq!(dst.get_sample(0, 0) as u16, 0x9100);
         assert_eq!(dst.get_sample(0, 1) as u16, 0x9100);
