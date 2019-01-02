@@ -2,9 +2,9 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::log::new_console_logger;
     use byteorder::LittleEndian;
     use emu::bus::{Bus, Device, Mem, Reg};
+    use emu::log::new_console_logger;
     use emu_derive::DeviceLE;
 
     #[derive(Default, DeviceLE)]
