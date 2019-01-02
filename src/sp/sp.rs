@@ -325,6 +325,14 @@ impl Sp {
         for _ in 0..count {
             let src_hwio = bus.fetch_read::<u8>(src);
             let mut dst_hwio = bus.fetch_write::<u8>(dst);
+            if !src_hwio.is_mem() {
+                error!(self.logger, "DMA src address not in linear memory!");
+                break;
+            }
+            if !dst_hwio.is_mem() {
+                error!(self.logger, "DMA dst address not in linear memory!");
+                break;
+            }
             let src_mem = src_hwio.mem().unwrap();
             let dst_mem = dst_hwio.mem().unwrap();
             dst_mem[0..width].copy_from_slice(&src_mem[0..width]);
