@@ -14,5 +14,6 @@ pub mod hw;
 pub mod int;
 pub mod log;
 pub mod memint;
+pub mod snd;
 pub mod state;
 pub mod sync;
