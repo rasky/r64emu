@@ -129,6 +129,9 @@ impl SampleInt for i16 {
 /// sound buffer. It is used as generic parameter for instantiating a
 /// [`SndBuffer`](struct.SndBuffer.html).
 ///
+/// Implementations of this trait are used purely as a type, they are never
+/// instantiated.
+///
 /// There are several implementations of this trait for common
 /// sample formats, see [`SndBuffer documentation`](struct.SndBuffer.html).
 /// User code should not implement this trait, and only use provided
@@ -228,7 +231,7 @@ impl<SF: SampleFormat> SndBuffer<SF> {
     }
 }
 
-impl<SF> SndBuffer<SF>
+impl<SF> AsRef<[SF::SAMPLE]> for SndBuffer<SF>
 where
     SF: SampleFormat<ORDER = NativeEndian>,
 {
@@ -240,15 +243,20 @@ where
     // accessors instead
     // ([`get_sample`](struct.SndBuffer.html#method.get_sample) and
     // [`set_sample`](struct.SndBuffer.html#method.set_sample)).
-    pub fn as_ref(&self) -> &[SF::SAMPLE] {
+    fn as_ref(&self) -> &[SF::SAMPLE] {
         unsafe { ::std::mem::transmute(&self.buf[..]) }
     }
+}
 
+impl<SF> AsMut<[SF::SAMPLE]> for SndBuffer<SF>
+where
+    SF: SampleFormat<ORDER = NativeEndian>,
+{
     // Return the raw memory buffer, as a mutable slice of the correct sample
     // type.
     //
     // See [`as_ref`](struct.SndBuffer.html#method.as_ref) for more information.
-    pub fn as_mut(&mut self) -> &mut [SF::SAMPLE] {
+    fn as_mut(&mut self) -> &mut [SF::SAMPLE] {
         unsafe { ::std::mem::transmute(&mut self.buf[..]) }
     }
 }
