@@ -53,7 +53,9 @@ fn run() -> Result<()> {
             height: 480,
             fps: 60,
         },
-        hw::AudioConfig { frequency: 44100 },
+        hw::AudioConfig {
+            frequency: N64::AUDIO_OUTPUT_FREQUENCY as isize,
+        },
     )?;
     out.enable_video()?;
     out.enable_audio()?;

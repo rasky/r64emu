@@ -2,7 +2,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian, NativeEndian};
 use num::PrimInt;
 use num_traits::{WrappingAdd, WrappingSub};
 use std::marker::PhantomData;
-use std::ops::Shr;
+use std::ops::{Range, Shr};
 use typenum;
 
 /// A trait for a type that can be used to represent a single sample.
@@ -20,6 +20,9 @@ pub trait SampleInt: PrimInt + WrappingAdd + WrappingSub + Send {
 
     /// Signedness of the type
     const SIGNED: bool;
+
+    /// Value for mute (no sound). This is the center of the amplitude range.
+    const MUTE: Self;
 
     /// Read the sample from the specified memory slice, in the specified byte order
     fn read<O: ByteOrder>(buf: &[u8]) -> Self;
@@ -59,6 +62,7 @@ pub trait SampleInt: PrimInt + WrappingAdd + WrappingSub + Send {
 impl SampleInt for u8 {
     const SIZE: usize = 1;
     const SIGNED: bool = false;
+    const MUTE: Self = 0x80;
     fn read<O: ByteOrder>(buf: &[u8]) -> Self {
         buf[0]
     }
@@ -75,6 +79,7 @@ impl SampleInt for u8 {
 impl SampleInt for i8 {
     const SIZE: usize = 1;
     const SIGNED: bool = true;
+    const MUTE: Self = 0;
     fn read<O: ByteOrder>(buf: &[u8]) -> Self {
         buf[0] as i8
     }
@@ -93,6 +98,7 @@ impl SampleInt for i8 {
 impl SampleInt for u16 {
     const SIZE: usize = 2;
     const SIGNED: bool = false;
+    const MUTE: Self = 0x8000;
     fn read<O: ByteOrder>(buf: &[u8]) -> Self {
         O::read_u16(buf)
     }
@@ -109,6 +115,7 @@ impl SampleInt for u16 {
 impl SampleInt for i16 {
     const SIZE: usize = 2;
     const SIGNED: bool = true;
+    const MUTE: Self = 0;
     fn read<O: ByteOrder>(buf: &[u8]) -> Self {
         O::read_i16(buf)
     }
@@ -199,20 +206,20 @@ impl<SF: SampleFormat> OwnedSndBuffer<SF> {
     /// Convert into a different buffer format
     pub fn sconv<SF2: SampleFormat>(&self) -> OwnedSndBuffer<SF2> {
         let mut dst = OwnedSndBuffer::with_capacity(self.count());
-        self.buf().sconv_into(&mut dst.buf_mut()).unwrap();
+        self.buf().sconv_into(&mut dst.buf_mut());
         dst
     }
 
     pub fn buf<'a>(&'a self) -> SndBuffer<'a, SF> {
-        SndBuffer::new(&self.buf[..])
+        SndBuffer::new_raw(&self.buf[..])
     }
     pub fn buf_mut<'a>(&'a mut self) -> SndBufferMut<'a, SF> {
-        SndBufferMut::new(&mut self.buf[..])
+        SndBufferMut::new_raw(&mut self.buf[..])
     }
 }
 
 impl<'a, SF: SampleFormat> SndBuffer<'a, SF> {
-    pub fn new(buf: &'a [u8]) -> Self {
+    pub fn new_raw(buf: &'a [u8]) -> Self {
         Self {
             buf,
             phantom: PhantomData,
@@ -225,45 +232,78 @@ impl<'a, SF: SampleFormat> SndBuffer<'a, SF> {
         let off = nframe * SF::frame_size() + nchan * SF::SAMPLE::SIZE;
         SF::SAMPLE::read::<SF::ORDER>(&self.buf[off..off + SF::SAMPLE::SIZE])
     }
-    pub fn sconv_into<SF2: SampleFormat>(&self, dst: &mut SndBufferMut<SF2>) -> Result<(), String> {
-        let nframes = self.count();
-        if dst.count() != nframes {
-            return Err("SndBuffer::sconv_into: found buffers of different size".to_string());
-        }
 
-        for i in 0..nframes {
-            match (SF::CHANNELS, SF2::CHANNELS) {
-                (1, 1) => {
-                    let s = self.get_sample(i, 0).sconv();
-                    dst.set_sample(i, 0, s);
+    #[inline(always)]
+    fn sconv_one<SF2: SampleFormat>(
+        &self,
+        sidx: usize,
+        dst: &mut SndBufferMut<SF2>,
+        didx: Range<usize>,
+    ) {
+        match (SF::CHANNELS, SF2::CHANNELS) {
+            (1, 1) => {
+                let s = self.get_sample(sidx, 0).sconv();
+                for d in didx {
+                    dst.set_sample(d, 0, s);
                 }
-                (2, 2) => {
-                    let s1 = self.get_sample(i, 0).sconv();
-                    let s2 = self.get_sample(i, 1).sconv();
-                    dst.set_sample(i, 0, s1);
-                    dst.set_sample(i, 1, s2);
+            }
+            (2, 2) => {
+                let s1 = self.get_sample(sidx, 0).sconv();
+                let s2 = self.get_sample(sidx, 1).sconv();
+                for d in didx {
+                    dst.set_sample(d, 0, s1);
+                    dst.set_sample(d, 1, s2);
                 }
-                (1, 2) => {
-                    let s = self.get_sample(i, 0).sconv();
-                    dst.set_sample(i, 0, s);
-                    dst.set_sample(i, 1, s);
+            }
+            (1, 2) => {
+                let s = self.get_sample(sidx, 0).sconv();
+                for d in didx {
+                    dst.set_sample(d, 0, s);
+                    dst.set_sample(d, 1, s);
                 }
-                (2, 1) => {
-                    let s1 = self.get_sample(i, 0);
-                    let s2 = self.get_sample(i, 1);
-                    let s = (s1.shr(1)).wrapping_add(&s2.shr(1));
-                    dst.set_sample(i, 0, s.sconv());
+            }
+            (2, 1) => {
+                let s1 = self.get_sample(sidx, 0);
+                let s2 = self.get_sample(sidx, 1);
+                let s = (s1.shr(1)).wrapping_add(&s2.shr(1));
+                for d in didx {
+                    dst.set_sample(d, 0, s.sconv());
                 }
-                _ => unimplemented!(),
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn sconv_into<SF2: SampleFormat>(&self, dst: &mut SndBufferMut<SF2>) {
+        let nsrc = self.count();
+        let ndst = dst.count();
+
+        if nsrc == ndst {
+            for i in 0..nsrc {
+                self.sconv_one(i, dst, i..i + 1);
+            }
+        } else if nsrc < ndst {
+            let step = (ndst << 16) / nsrc;
+            let mut j = 0;
+            for i in 0..nsrc {
+                let j2 = j + step;
+                self.sconv_one(i, dst, j >> 16..j2 >> 16);
+                j = j2;
+            }
+        } else {
+            // nsrc > ndst
+            let step = (nsrc << 16) / ndst;
+            let mut j = 0;
+            for i in 0..ndst {
+                self.sconv_one(j >> 16, dst, i..i + 1);
+                j += step;
             }
         }
-
-        Ok(())
     }
 }
 
 impl<'a, SF: SampleFormat> SndBufferMut<'a, SF> {
-    pub fn new(buf: &'a mut [u8]) -> Self {
+    pub fn new_raw(buf: &'a mut [u8]) -> Self {
         Self {
             buf,
             phantom: PhantomData,
@@ -271,7 +311,7 @@ impl<'a, SF: SampleFormat> SndBufferMut<'a, SF> {
     }
 
     fn buf(&'a self) -> SndBuffer<'a, SF> {
-        SndBuffer::new(self.buf)
+        SndBuffer::new_raw(self.buf)
     }
 
     pub fn count(&self) -> usize {
@@ -280,7 +320,7 @@ impl<'a, SF: SampleFormat> SndBufferMut<'a, SF> {
     pub fn get_sample(&self, nframe: usize, nchan: usize) -> SF::SAMPLE {
         self.buf().get_sample(nframe, nchan)
     }
-    pub fn sconv_into<SF2: SampleFormat>(&self, dst: &mut SndBufferMut<SF2>) -> Result<(), String> {
+    pub fn sconv_into<SF2: SampleFormat>(&self, dst: &mut SndBufferMut<SF2>) {
         self.buf().sconv_into(dst)
     }
 
@@ -303,7 +343,12 @@ where
     // ([`get_sample`](struct.SndBuffer.html#method.get_sample) and
     // [`set_sample`](struct.SndBuffer.html#method.set_sample)).
     fn as_ref(&self) -> &[SF::SAMPLE] {
-        unsafe { ::std::mem::transmute(&*self.buf) }
+        unsafe {
+            ::std::slice::from_raw_parts(
+                ::std::mem::transmute(&self.buf[0]),
+                self.count() * SF::CHANNELS,
+            )
+        }
     }
 }
 
@@ -316,7 +361,40 @@ where
     //
     // See [`as_ref`](struct.SndBuffer.html#method.as_ref) for more information.
     fn as_mut(&mut self) -> &mut [SF::SAMPLE] {
-        unsafe { ::std::mem::transmute(&mut *self.buf) }
+        unsafe {
+            ::std::slice::from_raw_parts_mut(
+                ::std::mem::transmute(&mut self.buf[0]),
+                self.count() * SF::CHANNELS,
+            )
+        }
+    }
+}
+
+impl<'a, SF: SampleFormat<ORDER = NativeEndian>> SndBuffer<'a, SF> {
+    pub fn new_typed(buf: &'a [SF::SAMPLE]) -> Self {
+        Self {
+            buf: unsafe {
+                ::std::slice::from_raw_parts(
+                    ::std::mem::transmute(&buf[0]),
+                    buf.len() * SF::SAMPLE::SIZE,
+                )
+            },
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'a, SF: SampleFormat<ORDER = NativeEndian>> SndBufferMut<'a, SF> {
+    pub fn new_typed(buf: &'a mut [SF::SAMPLE]) -> Self {
+        Self {
+            buf: unsafe {
+                ::std::slice::from_raw_parts_mut(
+                    ::std::mem::transmute(&mut buf[0]),
+                    buf.len() * SF::SAMPLE::SIZE,
+                )
+            },
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -340,22 +418,37 @@ where
 pub type U8_MONO = sf<u8, LittleEndian, typenum::U1>;
 #[allow(non_camel_case_types)]
 pub type U8_STEREO = sf<u8, LittleEndian, typenum::U2>;
+
 #[allow(non_camel_case_types)]
 pub type S8_MONO = sf<i8, LittleEndian, typenum::U1>;
 #[allow(non_camel_case_types)]
 pub type S8_STEREO = sf<i8, LittleEndian, typenum::U2>;
+
+#[allow(non_camel_case_types)]
+pub type U16_MONO = sf<u16, NativeEndian, typenum::U1>;
+#[allow(non_camel_case_types)]
+pub type U16_STEREO = sf<u16, NativeEndian, typenum::U2>;
+
 #[allow(non_camel_case_types)]
 pub type U16LE_MONO = sf<u16, LittleEndian, typenum::U1>;
 #[allow(non_camel_case_types)]
 pub type U16LE_STEREO = sf<u16, LittleEndian, typenum::U2>;
+
 #[allow(non_camel_case_types)]
 pub type U16BE_MONO = sf<u16, BigEndian, typenum::U1>;
 #[allow(non_camel_case_types)]
 pub type U16BE_STEREO = sf<u16, BigEndian, typenum::U2>;
+
+#[allow(non_camel_case_types)]
+pub type S16_MONO = sf<i16, NativeEndian, typenum::U1>;
+#[allow(non_camel_case_types)]
+pub type S16_STEREO = sf<i16, NativeEndian, typenum::U2>;
+
 #[allow(non_camel_case_types)]
 pub type S16LE_MONO = sf<i16, LittleEndian, typenum::U1>;
 #[allow(non_camel_case_types)]
 pub type S16LE_STEREO = sf<i16, LittleEndian, typenum::U2>;
+
 #[allow(non_camel_case_types)]
 pub type S16BE_MONO = sf<i16, BigEndian, typenum::U1>;
 #[allow(non_camel_case_types)]
@@ -386,5 +479,80 @@ mod tests {
         assert_eq!(dst.get_sample(2, 1) as u16, 0x4C00);
         assert_eq!(dst.get_sample(3, 0) as u16, 0x7F00);
         assert_eq!(dst.get_sample(3, 1) as u16, 0x7F00);
+    }
+
+    #[test]
+    fn resample() {
+        let mut sbuf = OwnedSndBuffer::<U8_MONO>::with_capacity(4);
+
+        let mut buf = sbuf.buf_mut();
+        buf.set_sample(0, 0, 0x11);
+        buf.set_sample(1, 0, 0x88);
+        buf.set_sample(2, 0, 0xCC);
+        buf.set_sample(3, 0, 0xFF);
+
+        let mut dbuf = OwnedSndBuffer::<S16BE_STEREO>::with_capacity(2);
+        let mut dst = dbuf.buf_mut();
+        buf.sconv_into(&mut dst);
+
+        assert_eq!(dst.count(), 2);
+        assert_eq!(dst.get_sample(0, 0) as u16, 0x9100);
+        assert_eq!(dst.get_sample(0, 1) as u16, 0x9100);
+        assert_eq!(dst.get_sample(1, 0) as u16, 0x4C00);
+        assert_eq!(dst.get_sample(1, 1) as u16, 0x4C00);
+
+        let mut dbuf = OwnedSndBuffer::<S16BE_STEREO>::with_capacity(8);
+        let mut dst = dbuf.buf_mut();
+        buf.sconv_into(&mut dst);
+
+        assert_eq!(dst.count(), 8);
+        assert_eq!(dst.get_sample(0, 0) as u16, 0x9100);
+        assert_eq!(dst.get_sample(0, 1) as u16, 0x9100);
+        assert_eq!(dst.get_sample(1, 0) as u16, 0x9100);
+        assert_eq!(dst.get_sample(1, 1) as u16, 0x9100);
+        assert_eq!(dst.get_sample(2, 0) as u16, 0x0800);
+        assert_eq!(dst.get_sample(2, 1) as u16, 0x0800);
+        assert_eq!(dst.get_sample(3, 0) as u16, 0x0800);
+        assert_eq!(dst.get_sample(3, 1) as u16, 0x0800);
+        assert_eq!(dst.get_sample(4, 0) as u16, 0x4C00);
+        assert_eq!(dst.get_sample(4, 1) as u16, 0x4C00);
+        assert_eq!(dst.get_sample(5, 0) as u16, 0x4C00);
+        assert_eq!(dst.get_sample(5, 1) as u16, 0x4C00);
+        assert_eq!(dst.get_sample(6, 0) as u16, 0x7F00);
+        assert_eq!(dst.get_sample(6, 1) as u16, 0x7F00);
+        assert_eq!(dst.get_sample(7, 0) as u16, 0x7F00);
+        assert_eq!(dst.get_sample(7, 1) as u16, 0x7F00);
+    }
+
+    #[test]
+    fn refcasting() {
+        let mut sbuf = OwnedSndBuffer::<U16LE_STEREO>::with_capacity(4);
+
+        let mut buf = sbuf.buf_mut();
+        buf.set_sample(0, 0, 0x1234);
+        buf.set_sample(0, 1, 0x5678);
+        buf.set_sample(1, 0, 0x9ABC);
+        buf.set_sample(1, 1, 0xDEF0);
+        buf.set_sample(2, 0, 0x1122);
+        buf.set_sample(2, 1, 0x3344);
+        buf.set_sample(3, 0, 0x5566);
+        buf.set_sample(3, 1, 0x7788);
+
+        let raw = buf.as_mut();
+        assert_eq!(
+            raw,
+            &vec![0x1234, 0x5678, 0x9ABC, 0xDEF0, 0x1122, 0x3344, 0x5566, 0x7788][..]
+        );
+
+        let buf2 = SndBuffer::<U16LE_STEREO>::new_typed(raw);
+
+        assert_eq!(0x1234, buf2.get_sample(0, 0));
+        assert_eq!(0x5678, buf2.get_sample(0, 1));
+        assert_eq!(0x9ABC, buf2.get_sample(1, 0));
+        assert_eq!(0xDEF0, buf2.get_sample(1, 1));
+        assert_eq!(0x1122, buf2.get_sample(2, 0));
+        assert_eq!(0x3344, buf2.get_sample(2, 1));
+        assert_eq!(0x5566, buf2.get_sample(3, 0));
+        assert_eq!(0x7788, buf2.get_sample(3, 1));
     }
 }

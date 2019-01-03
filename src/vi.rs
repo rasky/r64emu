@@ -144,7 +144,9 @@ impl Vi {
         info!(self.logger, "change VI interrupt"; "line" => new);
     }
 
-    pub fn draw_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>) {
+    pub fn begin_frame(&mut self, _screen: &mut GfxBufferMutLE<Rgb888>) {}
+
+    pub fn end_frame(&mut self, screen: &mut GfxBufferMutLE<Rgb888>) {
         self.framecount += 1;
 
         let bpp = self.status.get() & 3;

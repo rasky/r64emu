@@ -118,11 +118,19 @@ where
             .or_else(|e| Err(format!("error creating audio subsystem: {:?}", e)))
             .unwrap();
 
-        let frame_size = (acfg.frequency / fps) as usize;
+        if acfg.frequency % fps != 0 {
+            // We need to generate the exact number of samples per frame, so for
+            // now only allows exact multiples. This is not impossible to make it
+            // work more generally (we should request a possible different amount
+            // of samples each frame), but let's punt for now.
+            panic!("audio frequency not a perfect multiple of framerate");
+        }
+
+        let nsamples_per_frame = (acfg.frequency / fps) as usize;
         let spec = AudioSpecDesired {
             freq: Some(acfg.frequency as i32),
             channels: Some(SF::CHANNELS as u8),
-            samples: Some(frame_size as u16),
+            samples: Some(nsamples_per_frame as u16),
         };
         let queue = audio.open_queue(None, &spec).unwrap();
         queue.resume();
@@ -130,13 +138,13 @@ where
         Self {
             audio,
             queue,
-            frame_size,
+            frame_size: nsamples_per_frame * SF::frame_size(),
             phantom: PhantomData,
         }
     }
 
-    fn frame_size(&self) -> usize {
-        self.frame_size
+    fn samples_per_frame(&self) -> usize {
+        self.frame_size / SF::frame_size()
     }
 
     fn render_frame(&mut self, buf: &SndBuffer<SF>, throttle: bool) {
@@ -226,7 +234,7 @@ impl Output {
         let mut dbg_ui = DebuggerUI::new(self.video.as_ref().unwrap().video.clone(), producer);
 
         let mut audio = Audio::<SI, SF>::new(&self.context, self.vcfg.fps, self.acfg.clone());
-        let mut audio_buf = OwnedSndBuffer::with_capacity(audio.frame_size());
+        let mut audio_buf = OwnedSndBuffer::with_capacity(audio.samples_per_frame());
 
         let mut event_pump = self.context.event_pump().unwrap();
         let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
@@ -287,7 +295,7 @@ impl Output {
         let (tx, rx) = mpsc::sync_channel(3);
 
         let mut audio = Audio::new(&self.context, self.vcfg.fps, self.acfg.clone());
-        let audio_frame_size = audio.frame_size();
+        let audio_frame_size = audio.samples_per_frame();
 
         thread::spawn(move || {
             let mut producer = create().unwrap();

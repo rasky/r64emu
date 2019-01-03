@@ -3,7 +3,7 @@ use emu::dbg;
 use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
-use emu::snd::{SampleFormat, SndBufferMut, U16LE_STEREO};
+use emu::snd::{SampleFormat, SndBufferMut, S16_STEREO};
 use emu::state::{CurrentState, State};
 use emu::sync;
 use emu::sync::Subsystem;
@@ -111,14 +111,14 @@ const RDRAM_CLOCK: i64 = X1 * 17;
 const MAIN_CLOCK: i64 = RDRAM_CLOCK / 4;
 const _PIF_CLOCK: i64 = MAIN_CLOCK / 4;
 const _CARTRIDGE_CLOCK: i64 = _PIF_CLOCK / 8; // 1.953 MHZ
-const VCLK: i64 = X2 * 17 / 5; // 48.6812 MHZ
+pub(crate) const VCLK: i64 = X2 * 17 / 5; // 48.6812 MHZ
 
 struct SyncEmu;
 impl sync::SyncEmu for SyncEmu {
     fn config(&self) -> sync::Config {
         sync::Config {
             main_clock: VCLK,
-            dot_clock_divider: 4,
+            dot_clock_divider: 2,
             hdots: 773, // 773.5...
             vdots: 525,
             hsyncs: vec![0, 773 / 2], // sync two times per line
@@ -137,6 +137,8 @@ impl sync::SyncEmu for SyncEmu {
 }
 
 impl N64 {
+    pub const AUDIO_OUTPUT_FREQUENCY: i64 = Ai::OUTPUT_FREQUENCY;
+
     pub fn new(logger: slog::Logger, romfn: &Path, biosfn: &Path) -> Result<N64> {
         let sync = sync::Sync::new(logger.new(o!()), SyncEmu);
 
@@ -203,21 +205,27 @@ impl N64 {
 }
 
 impl hw::OutputProducer for N64 {
-    type AudioSampleFormat = U16LE_STEREO;
+    type AudioSampleFormat = S16_STEREO;
 
     fn render_frame(
         &mut self,
         screen: &mut GfxBufferMutLE<Rgb888>,
         sound: &mut SndBufferMut<Self::AudioSampleFormat>,
     ) {
-        self.sync.run_frame(move |evt| match evt {
+        self.sync.run_frame(|evt| match evt {
+            sync::Event::BeginFrame => {
+                Vi::get_mut().begin_frame(screen);
+                Ai::get_mut().begin_frame(sound);
+            }
             sync::Event::HSync(x, y) if x == 0 => {
                 Vi::get_mut().set_line(y);
             }
+            sync::Event::EndFrame => {
+                Vi::get_mut().end_frame(screen);
+                Ai::get_mut().end_frame(sound);
+            }
             _ => {}
         });
-        Vi::get_mut().draw_frame(screen);
-        Ai::get_mut().play_frame(sound);
     }
 }
 
@@ -229,7 +237,15 @@ impl DebuggerModel for N64 {
         tracer: &dbg::Tracer,
     ) -> dbg::Result<()> {
         self.sync.trace_frame(
-            move |evt| match evt {
+            |evt| match evt {
+                sync::Event::BeginFrame => {
+                    Vi::get_mut().begin_frame(screen);
+                    Ai::get_mut().begin_frame(sound);
+                }
+                sync::Event::EndFrame => {
+                    Vi::get_mut().end_frame(screen);
+                    Ai::get_mut().end_frame(sound);
+                }
                 sync::Event::HSync(x, y) if x == 0 => {
                     Vi::get_mut().set_line(y);
                 }
@@ -237,8 +253,6 @@ impl DebuggerModel for N64 {
             },
             tracer,
         )?;
-        Vi::get_mut().draw_frame(screen);
-        Ai::get_mut().play_frame(sound);
         Ok(())
     }
 

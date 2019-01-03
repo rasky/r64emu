@@ -1,8 +1,9 @@
 use super::mi::{IrqMask, Mi};
+use super::n64::R4300;
 use emu::bus::be::{Device, Reg32};
 use emu::dbg;
 use emu::int::Numerics;
-use emu::snd::{SampleFormat, SndBufferMut};
+use emu::snd::{SampleFormat, SampleInt, SndBuffer, SndBufferMut, S16_STEREO};
 use emu::state::{ArrayField, Field};
 use emu::sync;
 use emu_derive::DeviceBE;
@@ -53,10 +54,16 @@ pub struct Ai {
     fifo_cur: Field<usize>,
     cycles: Field<i64>,
 
+    // Internal sound buffer for the current frame. We're not storing this in
+    // the state right now, so after reload there might be some missing samples.
+    sndbuffer: Vec<i16>,
+
     logger: slog::Logger,
 }
 
 impl Ai {
+    pub const OUTPUT_FREQUENCY: i64 = 44100;
+
     pub fn new(logger: slog::Logger) -> Box<Ai> {
         Box::new(Ai {
             reg_dram_address: Reg32::default(),
@@ -68,6 +75,7 @@ impl Ai {
             fifo: ArrayField::new("Ai::fifo", AudioFifo::default(), 2),
             fifo_cur: Field::new("Ai::fifo_cur", 0),
             cycles: Field::new("Ai::cycles", 0),
+            sndbuffer: Vec::new(),
             logger,
         })
     }
@@ -87,8 +95,10 @@ impl Ai {
         if self.fifo[0].full || self.fifo[1].full {
             *status |= 1 << 30;
         } else {
+            if (*status & (1 << 30)) != 0 {
+                info!(self.logger, "DMA finished");
+            }
             *status &= !(1 << 30);
-            info!(self.logger, "DMA finished");
         }
     }
 
@@ -129,7 +139,20 @@ impl Ai {
         info!(self.logger, "IRQ acknowledge");
     }
 
-    pub fn play_frame<SF: SampleFormat>(&mut self, _sound: &mut SndBufferMut<SF>) {}
+    pub fn begin_frame<SF: SampleFormat>(&mut self, _output: &mut SndBufferMut<SF>) {
+        // Unfortunately, we can't store the mutable reference to output (also,
+        // it's generic). So we'll have to live with an internal buffer and a
+        // copy at the end of the frame.
+        self.sndbuffer.resize(0, 0);
+    }
+
+    pub fn end_frame<SF: SampleFormat>(&mut self, output: &mut SndBufferMut<SF>) {
+        // Copy the sound buffer into the output (doing any sample format
+        // conversion).
+        let buf = SndBuffer::<S16_STEREO>::new_typed(&self.sndbuffer[..]);
+        buf.sconv_into(output);
+        info!(self.logger, "end frame"; "src" => buf.count(), "dst" => output.count());
+    }
 }
 
 impl sync::Subsystem for Ai {
@@ -141,18 +164,37 @@ impl sync::Subsystem for Ai {
         debug!(self.logger, "AI run";
             "fifo" => ?self.fifo[*self.fifo_cur],
             "other" => ?self.fifo[*self.fifo_cur^1],
-            "cur" => *self.fifo_cur);
-        let audioframe_size = (self.reg_bit_rate.get() + 1) / 8 * 2;
+            "cur" => *self.fifo_cur,
+            "period" => self.reg_dac_sample_period.get());
+        let audioframe_bitsize = self.reg_bit_rate.get() + 1;
+
         while *self.cycles < target_cycles {
             let fifo = &mut self.fifo[*self.fifo_cur];
             if fifo.full {
-                fifo.src += audioframe_size;
-                fifo.len = fifo.len.checked_sub(audioframe_size).unwrap();
+                // One DMA step: consume one frame of audio
+                match audioframe_bitsize {
+                    16 => {
+                        let sample = R4300::get().bus.read::<u32>(fifo.src);
+                        let left = (sample >> 16) as i16;
+                        let right = (sample & 0xFFFF) as i16;
+                        self.sndbuffer.push(left.sconv());
+                        self.sndbuffer.push(right.sconv());
+                    }
+                    _ => unimplemented!(),
+                }
 
+                // Update DMA source and length
+                fifo.src += (audioframe_bitsize / 8) * 2;
+                fifo.len = fifo.len.checked_sub((audioframe_bitsize / 8) * 2).unwrap();
+
+                // End of buffer? If so, switch to other buffer.
                 if fifo.len == 0 {
                     fifo.full = false;
                     *self.fifo_cur ^= 1;
                 }
+            } else {
+                self.sndbuffer.push(i16::MUTE);
+                self.sndbuffer.push(i16::MUTE);
             }
             *self.cycles += self.reg_dac_sample_period.get() as i64 + 1;
         }
