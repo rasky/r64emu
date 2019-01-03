@@ -5,6 +5,8 @@ use crate::int::Numerics;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Event {
+    BeginFrame,
+    EndFrame,
     HSync(usize, usize),
     VSync(usize, usize),
 }
@@ -157,6 +159,9 @@ impl<E: SyncEmu + 'static> Sync<E> {
     }
 
     fn do_frame<F: FnMut(Event)>(&mut self, mut cb: F, tracer: &dbg::Tracer) -> dbg::Result<()> {
+        if self.curr_frame.is_none() {
+            cb(Event::BeginFrame);
+        }
         let (frame_start, idx) = self.curr_frame.unwrap_or((self.cycles, 0));
         let frame_end = frame_start + self.frame_cycles;
         assert_eq!(frame_start % self.frame_cycles, 0);
@@ -180,6 +185,7 @@ impl<E: SyncEmu + 'static> Sync<E> {
         self.run_until(frame_end, tracer)?;
         self.frames = self.frames + 1;
         self.curr_frame = None;
+        cb(Event::EndFrame);
         Ok(())
     }
 
@@ -188,6 +194,8 @@ impl<E: SyncEmu + 'static> Sync<E> {
     }
 
     pub fn run_frame<F: FnMut(Event)>(&mut self, cb: F) {
+        // When using a null tracer, do_frame() should only exit at the end of
+        // the frame, as there's no reason to block execution.
         self.do_frame(cb, &dbg::Tracer::null()).unwrap();
     }
 
@@ -243,6 +251,7 @@ mod tests {
         );
 
         let events = vec![
+            (0, Event::BeginFrame),
             (0, Event::HSync(0, 0)),
             (4, Event::HSync(2, 0)),
             (8, Event::HSync(0, 1)),
@@ -252,8 +261,9 @@ mod tests {
             (20, Event::HSync(2, 2)),
             (24, Event::HSync(0, 3)),
             (28, Event::HSync(2, 3)),
+            (28, Event::EndFrame),
         ];
-        assert_eq!(sync.frame_syncs, events);
+        assert_eq!(&sync.frame_syncs[..], &events[1..events.len() - 1]);
 
         let mut record = Vec::new();
         sync.run_frame(|evt| {
