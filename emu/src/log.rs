@@ -1,4 +1,5 @@
 //! A module that implements common utilities for logging, using slog.
+use atty;
 use slog;
 use slog::*;
 use std::fmt;
@@ -48,11 +49,13 @@ pub trait LogRecordPrinter {
 
 pub struct ColorPrinter<W: io::Write> {
     w: sync::Arc<sync::Mutex<W>>,
+    color: bool,
 }
 
 impl<W: io::Write> ColorPrinter<W> {
-    pub fn new(io: W) -> Self {
+    pub fn new(io: W, color: bool) -> Self {
         Self {
+            color,
             w: sync::Arc::new(sync::Mutex::new(io)),
         }
     }
@@ -68,6 +71,7 @@ impl<W: io::Write> LogPrinter for ColorPrinter<W> {
         f(ColorRecordPrinter {
             io: self.w.clone(),
             buf: Vec::with_capacity(128),
+            color: self.color,
         })
     }
 }
@@ -75,6 +79,7 @@ impl<W: io::Write> LogPrinter for ColorPrinter<W> {
 pub struct ColorRecordPrinter<W: io::Write> {
     io: sync::Arc<sync::Mutex<W>>,
     buf: Vec<u8>,
+    color: bool,
 }
 
 impl<W: io::Write> LogRecordPrinter for ColorRecordPrinter<W> {
@@ -85,22 +90,28 @@ impl<W: io::Write> LogRecordPrinter for ColorRecordPrinter<W> {
     ) -> io::Result<()> {
         let mut rd = CountingWriter::new(&mut self.buf);
 
-        write!(rd.w, "\x1b[34m")?;
+        if self.color {
+            write!(rd.w, "\x1b[34m")?;
+        }
         fn_timestamp(&mut rd)?;
         write!(rd, " ")?;
 
         let level = record.level();
-        match level {
-            Level::Critical => write!(rd.w, "\x1b[31m")?,
-            Level::Error => write!(rd.w, "\x1b[31m")?,
-            Level::Warning => write!(rd.w, "\x1b[33m")?,
-            Level::Info => write!(rd.w, "\x1b[32m")?,
-            Level::Debug => write!(rd.w, "\x1b[37m")?,
-            Level::Trace => write!(rd.w, "\x1b[37m")?,
-        };
+        if self.color {
+            match level {
+                Level::Critical => write!(rd.w, "\x1b[31m")?,
+                Level::Error => write!(rd.w, "\x1b[31m")?,
+                Level::Warning => write!(rd.w, "\x1b[33m")?,
+                Level::Info => write!(rd.w, "\x1b[32m")?,
+                Level::Debug => write!(rd.w, "\x1b[37m")?,
+                Level::Trace => write!(rd.w, "\x1b[37m")?,
+            };
+        }
         write!(rd, "{} ", level.as_short_str())?;
 
-        write!(rd.w, "\x1b[35;1m")?;
+        if self.color {
+            write!(rd.w, "\x1b[35;1m")?;
+        }
         let tag = record.tag();
         if tag.is_empty() {
             write!(rd, "|{}| ", record.module())?;
@@ -110,9 +121,13 @@ impl<W: io::Write> LogRecordPrinter for ColorRecordPrinter<W> {
 
         // Write the actual log message. We need to record the size of the message
         // so we use a CountingWriter to avoid an allocation here.
-        write!(rd.w, "\x1b[37;1m")?;
+        if self.color {
+            write!(rd.w, "\x1b[37;1m")?;
+        }
         write!(rd, "{}", record.msg())?;
-        write!(rd.w, "\x1b[0m")?;
+        if self.color {
+            write!(rd.w, "\x1b[0m")?;
+        }
         let msglen = rd.count();
         if msglen < 80 {
             write!(rd.w, "{:.<1$}", "", 80 - msglen)?;
@@ -122,9 +137,13 @@ impl<W: io::Write> LogRecordPrinter for ColorRecordPrinter<W> {
 
     fn print_kv<K: fmt::Display, V: fmt::Display>(&mut self, k: K, v: V) -> io::Result<()> {
         write!(&mut self.buf, " {}=", k)?;
-        write!(&mut self.buf, "\x1b[37;1m")?;
+        if self.color {
+            write!(&mut self.buf, "\x1b[37;1m")?;
+        }
         write!(&mut self.buf, "{}", v)?;
-        write!(&mut self.buf, "\x1b[0m")?;
+        if self.color {
+            write!(&mut self.buf, "\x1b[0m")?;
+        }
         Ok(())
     }
 
@@ -390,7 +409,7 @@ impl<RP: LogPrinter> LogDrain<RP> {
 }
 
 pub fn new_console_logger() -> slog::Logger {
-    let printer = ColorPrinter::new(std::io::stdout());
+    let printer = ColorPrinter::new(std::io::stdout(), atty::is(atty::Stream::Stdout));
     let drain = LogDrain::new(printer).build().fuse();
     slog::Logger::root(drain, o!())
 }
