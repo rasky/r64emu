@@ -180,3 +180,14 @@ impl Numerics for u128 {
         format!("0x{:016x}", self)
     }
 }
+
+pub struct HexSlice<'a>(&'a [u8]);
+
+impl<'a> std::fmt::LowerHex for HexSlice<'a> {
+    fn fmt(&self, fmtr: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        for byte in self.0 {
+            fmtr.write_fmt(format_args!("{:02x}", byte))?;
+        }
+        Ok(())
+    }
+}
