@@ -2,6 +2,7 @@ extern crate bit_field;
 extern crate byteorder;
 extern crate emu;
 extern crate slog;
+use super::mi::{IrqMask, Mi};
 use super::n64::R4300;
 use super::rdp::Rdp;
 use emu::bus::be::{Device, MemIoR, Reg32, RegDeref, RegRef};
@@ -140,12 +141,11 @@ impl sync::Subsystem for Dp {
     }
 
     fn run(&mut self, until: i64, _: &dbg::Tracer) -> dbg::Result<()> {
+        if !self.running {
+            self.cycles = until;
+            return Ok(());
+        }
         loop {
-            if !self.running {
-                self.cycles = until;
-                return Ok(());
-            }
-
             let mut curr_addr = self.cmd_current_ref();
             for cmd in self
                 .fetched_mem
@@ -166,7 +166,11 @@ impl sync::Subsystem for Dp {
             // check if there's a new buffer pending
             self.running = false;
             self.check_start();
-            return Ok(());
+            if !self.running {
+                self.cycles = until;
+                Mi::get_mut().set_irq_line(IrqMask::DP, true);
+                return Ok(());
+            }
         }
     }
 
