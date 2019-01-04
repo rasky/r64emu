@@ -54,6 +54,7 @@ pub struct CpuContext {
     pub tight_exit: bool,
     pub delay_slot: bool,
     pub mmu: Mmu,
+    pub fpu64: bool,      // True if the FPU (if any) is in 64-bit mode
     lines: Lines,
 }
 

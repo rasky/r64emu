@@ -31,6 +31,31 @@ struct FpuContext {
     _fexr: u64,
     _fenr: u64,
     fcsr: u64,
+    fpu64: bool,
+}
+
+impl FpuContext {
+    fn get_fgr(&self, idx: usize) -> u64 {
+        if self.fpu64 {
+            self.regs[idx]
+        } else {
+            (self.regs[idx + 0] & 0xFFFF_FFFF) | (self.regs[idx + 1] << 32)
+        }
+    }
+    fn set_fgr(&mut self, idx: usize, val: u64) {
+        if self.fpu64 {
+            self.regs[idx] = val;
+        } else {
+            self.regs[idx + 0] = val & 0xFFFF_FFFF;
+            self.regs[idx + 1] = val >> 32;
+        }
+    }
+    fn get_fpr<F: FloatRawConvert>(&self, idx: usize) -> F {
+        F::from_u64bits(self.get_fgr(idx))
+    }
+    fn set_fpr<F: FloatRawConvert>(&mut self, idx: usize, val: F) {
+        self.set_fgr(idx, val.to_u64bits());
+    }
 }
 
 pub struct Fpu {
@@ -104,7 +129,7 @@ struct Fop<'a, F: Float + FloatRawConvert> {
     opcode: u32,
     fpu: &'a mut Fpu,
     ctx: &'a mut FpuContext,
-    _cpu: &'a mut CpuContext,
+    cpu: &'a mut CpuContext,
     phantom: PhantomData<F>,
 }
 
@@ -125,24 +150,30 @@ impl<'a, F: Float + FloatRawConvert> Fop<'a, F> {
         ((self.opcode >> 6) & 0x1f) as usize
     }
     fn fs(&self) -> F {
-        F::from_u64bits(self.ctx.regs[self.rs()])
+        self.ctx.get_fpr(self.rs())
+    }
+    fn fgs(&self) -> u64 {
+        self.ctx.get_fgr(self.rs())
     }
     fn ft(&self) -> F {
-        F::from_u64bits(self.ctx.regs[self.rt()])
+        self.ctx.get_fpr(self.rt())
+    }
+    fn fgt(&self) -> u64 {
+        self.ctx.get_fgr(self.rt())
     }
     fn set_fd(&mut self, v: F) {
-        self.ctx.regs[self.rd()] = v.to_u64bits();
+        self.ctx.set_fpr(self.rd(), v);
     }
-    fn mfd64(&'a mut self) -> &'a mut u64 {
-        &mut self.ctx.regs[self.rd()]
+    fn set_fgd(&mut self, v: u64) {
+        self.ctx.set_fgr(self.rd(), v);
     }
 }
 
 macro_rules! approx {
-    ($op:ident, $round:ident, $size:ident) => {{
+    ($op:ident, $t:expr, $round:ident, $size:ident, $fallback:expr) => {{
         match $op.fs().$round().$size() {
-            Some(v) => *$op.mfd64() = v as u64,
-            None => panic!("approx out of range"),
+            Some(v) => $op.set_fgd(v as u64),
+            None => $op.set_fgd($fallback as u64),
         }
     }};
 }
@@ -215,7 +246,7 @@ impl Fpu {
             opcode,
             ctx: unsafe { self.ctx.as_mut() },
             fpu: self,
-            _cpu: cpu,
+            cpu: cpu,
             phantom: PhantomData,
         };
         match op.func() {
@@ -230,7 +261,7 @@ impl Fpu {
                 op.set_fd(v)
             }
             0x02 => {
-                // MUL.fmt
+                // MUL.with_fmtt
                 let v = op.fs() * op.ft();
                 op.set_fd(v)
             }
@@ -259,36 +290,36 @@ impl Fpu {
                 let v = op.fs().neg();
                 op.set_fd(v)
             }
-            0x08 => approx!(op, bankers_round, to_i64), // ROUND.L.fmt
-            0x09 => approx!(op, trunc, to_i64),         // TRUNC.L.fmt
-            0x0A => approx!(op, ceil, to_i64),          // CEIL.L.fmt
-            0x0B => approx!(op, floor, to_i64),         // FLOOR.L.fmt
-            0x0C => approx!(op, bankers_round, to_i32), // ROUND.W.fmt
-            0x0D => approx!(op, trunc, to_i32),         // TRUNC.W.fmt
-            0x0E => approx!(op, ceil, to_i32),          // CEIL.W.fmt
-            0x0F => approx!(op, floor, to_i32),         // FLOOR.W.fmt
+            0x08 => approx!(op, t, bankers_round, to_i64, i64::max_value()), // ROUND.L.fmt
+            0x09 => approx!(op, t, trunc, to_i64, i64::max_value()),         // TRUNC.L.fmt
+            0x0A => approx!(op, t, ceil, to_i64, i64::max_value()),          // CEIL.L.fmt
+            0x0B => approx!(op, t, floor, to_i64, i64::max_value()),         // FLOOR.L.fmt
+            0x0C => approx!(op, t, bankers_round, to_i32, i32::max_value()), // ROUND.W.fmt
+            0x0D => approx!(op, t, trunc, to_i32, i32::max_value()),         // TRUNC.W.fmt
+            0x0E => approx!(op, t, ceil, to_i32, i32::max_value()),          // CEIL.W.fmt
+            0x0F => approx!(op, t, floor, to_i32, i32::max_value()),         // FLOOR.W.fmt
 
-            0x20 => *op.mfd64() = op.fs().to_f32().to_u64bits(), // CVT.S.fmt
-            0x21 => *op.mfd64() = op.fs().to_f64().to_u64bits(), // CVT.D.fmt
-            0x24 => *op.mfd64() = op.fs().to_u64() as u32 as u64, // CVT.W.fmt
-            0x25 => *op.mfd64() = op.fs().to_u64(),              // CVT.L.fmt
+            0x20 => op.set_fgd(op.fs().to_f32().to_u64bits()), // CVT.S.fmt
+            0x21 => op.set_fgd(op.fs().to_f64().to_u64bits()), // CVT.D.fmt
+            0x24 => op.set_fgd(op.fs().to_u64() as u32 as u64), // CVT.W.fmt
+            0x25 => op.set_fgd(op.fs().to_u64()),              // CVT.L.fmt
 
-            0x30 => cond!(op, 0x30),
-            0x31 => cond!(op, 0x31),
-            0x32 => cond!(op, 0x32),
-            0x33 => cond!(op, 0x33),
-            0x34 => cond!(op, 0x34),
-            0x35 => cond!(op, 0x35),
-            0x36 => cond!(op, 0x36),
-            0x37 => cond!(op, 0x37),
-            0x38 => cond!(op, 0x38),
-            0x39 => cond!(op, 0x39),
-            0x3A => cond!(op, 0x3A),
-            0x3B => cond!(op, 0x3B),
-            0x3C => cond!(op, 0x3C),
-            0x3D => cond!(op, 0x3D),
-            0x3E => cond!(op, 0x3E),
-            0x3F => cond!(op, 0x3F),
+            0x30 => cond!(op, 0x30), // C.T.fmt
+            0x31 => cond!(op, 0x31), // C.UN.fmt
+            0x32 => cond!(op, 0x32), // C.EQ.fmt
+            0x33 => cond!(op, 0x33), // C.UEQ.fmt
+            0x34 => cond!(op, 0x34), // C.OLT.fmt
+            0x35 => cond!(op, 0x35), // C.ULT.fmt
+            0x36 => cond!(op, 0x36), // C.OLE.fmt
+            0x37 => cond!(op, 0x37), // C.ULT.fmt
+            0x38 => cond!(op, 0x38), // C.SF.fmt
+            0x39 => cond!(op, 0x39), // C.NGLE.fmt
+            0x3A => cond!(op, 0x3A), // C.SEQ.fmt
+            0x3B => cond!(op, 0x3B), // C.NGL.fmt
+            0x3C => cond!(op, 0x3C), // C.LT.fmt
+            0x3D => cond!(op, 0x3D), // C.NGE.fmt
+            0x3E => cond!(op, 0x3E), // C.LE.fmt
+            0x3F => cond!(op, 0x3F), // C.NGT.fmt
 
             _ => {
                 error!(
@@ -312,6 +343,7 @@ impl Cop for Fpu {
     }
 
     fn op(&mut self, cpu: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()> {
+        self.ctx.fpu64 = cpu.fpu64; // copy current fpu64 mode bit (from COP0)
         let func = opcode & 0x3f;
         let fmt = (opcode >> 21) & 0x1F;
         let rt = ((opcode >> 16) & 0x1F) as usize;
@@ -348,16 +380,32 @@ impl Cop for Fpu {
             0x11 => return self.fop::<f64>(cpu, opcode, t),
 
             0x14 => match func {
-                0x20 => self.ctx.regs[rd] = (self.ctx.regs[rs] as i32 as f32).to_u64bits(), // CVT.S.W
-                0x21 => self.ctx.regs[rd] = (self.ctx.regs[rs] as i32 as f64).to_u64bits(), // CVT.D.W
+                0x20 => {
+                    // CVT.S.W
+                    let fgs = self.ctx.get_fgr(rs);
+                    self.ctx.set_fpr(rd, fgs as i32 as f32);
+                }
+                0x21 => {
+                    // CVT.D.W
+                    let fgs = self.ctx.get_fgr(rs);
+                    self.ctx.set_fpr(rd, fgs as i32 as f64);
+                }
                 _ => {
                     error!(self.logger, "unimplemented COP1 W: func={:x?}", func);
                     return t.break_here("unimplemented COP1 W opcode");
                 }
             },
             0x15 => match func {
-                0x20 => self.ctx.regs[rd] = (self.ctx.regs[rs] as i64 as f32).to_u64bits(), // CVT.S.L
-                0x21 => self.ctx.regs[rd] = (self.ctx.regs[rs] as i64 as f64).to_u64bits(), // CVT.D.L
+                0x20 => {
+                    // CVT.S.L
+                    let fgs = self.ctx.get_fgr(rs);
+                    self.ctx.set_fpr(rd, fgs as i64 as f32);
+                }
+                0x21 => {
+                    // CVT.D.L
+                    let fgs = self.ctx.get_fgr(rs);
+                    self.ctx.set_fpr(rd, fgs as i64 as f64);
+                }
                 _ => {
                     error!(self.logger, "unimplemented COP1 L: func={:x?}", func);
                     return t.break_here("unimplemented COP1 L opcode");
@@ -551,20 +599,38 @@ impl RegisterView for Fpu {
     {
         use self::RegisterSize::*;
 
-        for idx in 0..16 {
-            let idx = idx + col * 8;
+        if self.ctx.fpu64 {
+            for idx in 0..16 {
+                let idx = idx + col * 8;
 
-            let val = self.ctx.regs[idx];
-            let desc = if val >> 32 == 0 {
-                format!("S:{:.5}", f32::from_u64bits(val))
-            } else {
-                format!("D:{:.5}", f64::from_u64bits(val))
-            };
-            visit(
-                FPU_REG_NAMES[idx],
-                Reg64(&mut self.ctx.regs[idx]),
-                Some(&desc),
-            );
+                let val = self.ctx.regs[idx];
+                let desc = if val >> 32 == 0 {
+                    format!("S:{:.5}", f32::from_u64bits(val))
+                } else {
+                    format!("D:{:.5}", f64::from_u64bits(val))
+                };
+                visit(
+                    FPU_REG_NAMES[idx],
+                    Reg64(&mut self.ctx.regs[idx]),
+                    Some(&desc),
+                );
+            }
+        } else {
+            for idx in 0..8 {
+                let idx = idx * 2 + col * 8;
+
+                let val = self.ctx.get_fgr(idx);
+                let desc = if val >> 32 == 0 {
+                    format!("S:{:.5}", f32::from_u64bits(val))
+                } else {
+                    format!("D:{:.5}", f64::from_u64bits(val))
+                };
+
+                let mut reg0 = self.ctx.regs[idx + 0] as u32;
+                let mut reg1 = self.ctx.regs[idx + 1] as u32;
+                visit(FPU_REG_NAMES[idx + 0], Reg32(&mut reg0), None);
+                visit(FPU_REG_NAMES[idx + 1], Reg32(&mut reg1), Some(&desc));
+            }
         }
     }
 }

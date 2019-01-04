@@ -56,6 +56,7 @@ bitfield! {
     pub ts, set_ts: 21;   // Multiple TLB match
     pub bev, set_bev: 22; // Exception vector location (normal/bootstrap)
     pub rp, set_rp: 21;   // Reduced power
+    pub fr, set_fr: 26;   // Is FPU in 64-bit mode?
     pub cu0, set_cu0: 28; // Is COP0 active?
     pub cu1, set_cu1: 29; // Is COP1 active?
     pub cu2, set_cu2: 30; // Is COP2 active?
@@ -281,6 +282,7 @@ impl Cop for Cp0 {
             11 => self.set_compare(cpu, val as u32),
             12 => {
                 self.ctx.reg_status.0 = val as u32;
+                cpu.fpu64 = self.ctx.reg_status.fr();
                 cpu.tight_exit = true;
             }
             13 => {
