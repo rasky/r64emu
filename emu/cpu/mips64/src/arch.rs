@@ -41,6 +41,10 @@ impl Arch for ArchII {
             "sd" => false,
             "sdc1" => false,
             "sdc2" => false,
+            "ldl" => false,
+            "ldr" => false,
+            "sdl" => false,
+            "sdr" => false,
             _ => true,
         }
     }

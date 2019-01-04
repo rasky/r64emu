@@ -458,15 +458,27 @@ impl<C: Config> Cpu<C> {
             0x28 if h("sb") => op.cpu.write::<u8>(op.ea(), op.rt32() as u8, t)?,      // SB
             0x29 if h("sh") => op.cpu.write::<u16>(op.ea(), op.rt32() as u16, t)?,    // SH
             0x2A if h("swl") => {
+                // SWL
                 op.cpu
                     .write::<u32>(op.ea(), op.cpu.swl(op.ea(), op.rt32(), t)?, t)?
-            } // SWL
-            0x2B if h("sw") => op.cpu.write::<u32>(op.ea(), op.rt32(), t)?,           // SW
+            }
+            0x2B if h("sw") => op.cpu.write::<u32>(op.ea(), op.rt32(), t)?, // SW
+            0x2C if h("sdl") => {
+                // SDL
+                op.cpu
+                    .write::<u64>(op.ea(), op.cpu.swl(op.ea(), op.rt64(), t)?, t)?
+            }
+            0x2D if h("sdr") => {
+                // SDR
+                op.cpu
+                    .write::<u64>(op.ea(), op.cpu.swr(op.ea(), op.rt64(), t)?, t)?
+            }
             0x2E if h("swr") => {
+                // SWR
                 op.cpu
                     .write::<u32>(op.ea(), op.cpu.swr(op.ea(), op.rt32(), t)?, t)?
-            } // SWR
-            0x2F => {}                                                                // CACHE
+            }
+            0x2F => {} // CACHE
 
             0x31 if h("lwc1") => if_cop!(op, cop1, cop1.lwc(op.opcode, &mut op.ctx, &op.cpu.bus)), // LWC1
             0x32 if h("lwc2") => if_cop!(op, cop2, cop2.lwc(op.opcode, &mut op.ctx, &op.cpu.bus)), // LWC2
@@ -500,21 +512,21 @@ impl<C: Config> Cpu<C> {
     fn lwr<S: MemInt>(&self, addr: u32, reg: S, t: &Tracer) -> Result<S> {
         let mem = self.read::<S>(addr, t)?;
         let shift = (!addr as usize & (S::SIZE - 1)) << (S::SIZE_LOG + 1);
-        let mask = S::truncate_from((1u64 << (32 - shift)) - 1);
+        let mask = S::max_value() >> shift;
         Ok((reg & !mask) | ((mem >> shift) & mask))
     }
 
-    fn swl(&self, addr: u32, reg: u32, t: &Tracer) -> Result<u32> {
-        let mem = self.read::<u32>(addr, t)?;
-        let shift = (addr & 3) * 8;
-        let mask = ((1u64 << (32 - shift)) - 1) as u32;
+    fn swl<S: MemInt>(&self, addr: u32, reg: S, t: &Tracer) -> Result<S> {
+        let mem = self.read::<S>(addr, t)?;
+        let shift = (addr as usize & (S::SIZE - 1)) << (S::SIZE_LOG + 1);
+        let mask = S::max_value() >> shift;
         Ok((mem & !mask) | ((reg >> shift) & mask))
     }
 
-    fn swr(&self, addr: u32, reg: u32, t: &Tracer) -> Result<u32> {
-        let mem = self.read::<u32>(addr, t)?;
-        let shift = (!addr & 3) * 8;
-        let mask = (1 << shift) - 1;
+    fn swr<S: MemInt>(&self, addr: u32, reg: S, t: &Tracer) -> Result<S> {
+        let mem = self.read::<S>(addr, t)?;
+        let shift = (!addr as usize & (S::SIZE - 1)) << (S::SIZE_LOG + 1);
+        let mask = S::truncate_from((1 << shift) - 1);
         Ok((mem & mask) | ((reg << shift) & !mask))
     }
 
