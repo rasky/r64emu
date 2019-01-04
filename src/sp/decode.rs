@@ -29,9 +29,12 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
     let vrt = VREG_NAMES[((opcode >> 16) & 0x1f) as usize].into();
     let vrd = VREG_NAMES[((opcode >> 6) & 0x1f) as usize].into();
 
+    let vreg2insn_new =
+        |name| DecodedInsn::new3(name, IOReg(vrd), IReg(vrt), Imm8(e)).with_fmt(VREG2_FMT);
+
     let vreg3insn_new = |name| {
         if vrd == vrs {
-            DecodedInsn::new3(name, IOReg(vrd), IReg(vrt), Imm8(e)).with_fmt(VREG2_FMT)
+            vreg2insn_new(name)
         } else {
             DecodedInsn::new4(name, OReg(vrd), IReg(vrs), IReg(vrt), Imm8(e)).with_fmt(VREG3_FMT)
         }
@@ -79,6 +82,15 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                     0x2B => vreg3insn_new("vnor"),
                     0x2C => vreg3insn_new("vxor"),
                     0x2D => vreg3insn_new("vnxor"),
+
+                    0x30 => vreg2insn_new("vrcp"),
+                    0x31 => vreg2insn_new("vrcpl"),
+                    0x32 => vreg2insn_new("vrcph"),
+                    0x33 => vreg2insn_new("vmov"),
+                    0x34 => vreg2insn_new("vsqr"),
+                    0x35 => vreg2insn_new("vsqrl"),
+                    0x36 => vreg2insn_new("vsqrh"),
+                    0x37 => vreg2insn_new("vnop"),
                     _ => DecodedInsn::new1("cop2", Imm32(func)),
                 }
             } else {
