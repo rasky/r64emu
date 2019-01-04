@@ -12,7 +12,7 @@ matrix:
 addons:
   apt:
     packages:
-      - libsdnio-dev
+      - libroar-dev
 script:
   - cargo build --verbose --release
   - cargo test --verbose --release
