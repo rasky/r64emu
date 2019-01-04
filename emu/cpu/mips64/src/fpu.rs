@@ -390,7 +390,7 @@ impl Cop for Fpu {
                     0x4 => DecodedInsn::new2("mtc1", IReg(rt), OReg(fs)),
                     0x6 => DecodedInsn::new2("ctc1", IReg(rt), OReg(cfs)),
                     0x8 => {
-                        let tgt = pc + (opcode as u16).sx64() * 4;
+                        let tgt = pc + 4 + (opcode as u16).sx64() * 4;
                         let cc = ((opcode >> 18) & 3) as usize;
                         let nd = opcode & (1 << 17) != 0;
                         let tf = opcode & (1 << 16) != 0;
@@ -419,35 +419,31 @@ impl Cop for Fpu {
                         let fd = FPU_REG_NAMES[((opcode >> 6) & 0x1f) as usize].into();
                         match func {
                             0x00 => DecodedInsn::new3(
-                                fp_suffix!("add", op),
+                                fp_suffix!("add", fmt),
                                 OReg(fd),
                                 IReg(fs),
                                 IReg(ft),
                             ),
                             0x01 => DecodedInsn::new3(
-                                fp_suffix!("sub", op),
+                                fp_suffix!("sub", fmt),
                                 OReg(fd),
                                 IReg(fs),
                                 IReg(ft),
                             ),
                             0x02 => DecodedInsn::new3(
-                                fp_suffix!("mul", op),
+                                fp_suffix!("mul", fmt),
                                 OReg(fd),
                                 IReg(fs),
                                 IReg(ft),
                             ),
                             0x03 => DecodedInsn::new3(
-                                fp_suffix!("div", op),
+                                fp_suffix!("div", fmt),
                                 OReg(fd),
                                 IReg(fs),
                                 IReg(ft),
                             ),
-                            0x06 => DecodedInsn::new3(
-                                fp_suffix!("mov", op),
-                                OReg(fd),
-                                IReg(fs),
-                                IReg(ft),
-                            ),
+                            0x06 => DecodedInsn::new2(fp_suffix!("mov", fmt), OReg(fd), IReg(fs)),
+                            0x07 => DecodedInsn::new2(fp_suffix!("neg", fmt), OReg(fd), IReg(fs)),
                             0x08 => {
                                 DecodedInsn::new2(fp_suffix!("round.l", fmt), OReg(fd), IReg(fs))
                             }
@@ -477,8 +473,25 @@ impl Cop for Fpu {
                             0x21 => DecodedInsn::new2(fp_suffix!("cvt.d", fmt), OReg(fd), IReg(fs)),
                             0x24 => DecodedInsn::new2(fp_suffix!("cvt.w", fmt), OReg(fd), IReg(fs)),
                             0x25 => DecodedInsn::new2(fp_suffix!("cvt.l", fmt), OReg(fd), IReg(fs)),
+
+                            0x30 => DecodedInsn::new2(fp_suffix!("c.t", fmt), IReg(fs), IReg(ft)),
+                            0x31 => DecodedInsn::new2(fp_suffix!("c.un", fmt), IReg(fs), IReg(ft)),
                             0x32 => DecodedInsn::new2(fp_suffix!("c.eq", fmt), IReg(fs), IReg(ft)),
+                            0x33 => DecodedInsn::new2(fp_suffix!("c.ueq", fmt), IReg(fs), IReg(ft)),
+                            0x34 => DecodedInsn::new2(fp_suffix!("c.olt", fmt), IReg(fs), IReg(ft)),
+                            0x35 => DecodedInsn::new2(fp_suffix!("c.ult", fmt), IReg(fs), IReg(ft)),
+                            0x36 => DecodedInsn::new2(fp_suffix!("c.ole", fmt), IReg(fs), IReg(ft)),
+                            0x37 => DecodedInsn::new2(fp_suffix!("c.ult", fmt), IReg(fs), IReg(ft)),
+                            0x38 => DecodedInsn::new2(fp_suffix!("c.sf", fmt), IReg(fs), IReg(ft)),
+                            0x39 => {
+                                DecodedInsn::new2(fp_suffix!("c.ngle", fmt), IReg(fs), IReg(ft))
+                            }
+                            0x3A => DecodedInsn::new2(fp_suffix!("c.seq", fmt), IReg(fs), IReg(ft)),
+                            0x3B => DecodedInsn::new2(fp_suffix!("c.ngl", fmt), IReg(fs), IReg(ft)),
+                            0x3C => DecodedInsn::new2(fp_suffix!("c.lt", fmt), IReg(fs), IReg(ft)),
+                            0x3D => DecodedInsn::new2(fp_suffix!("c.nge", fmt), IReg(fs), IReg(ft)),
                             0x3E => DecodedInsn::new2(fp_suffix!("c.le", fmt), IReg(fs), IReg(ft)),
+                            0x3F => DecodedInsn::new2(fp_suffix!("c.ngt", fmt), IReg(fs), IReg(ft)),
                             _ => DecodedInsn::new1("cop1op?", Imm32(func)),
                         }
                     }
