@@ -26,6 +26,8 @@ const FPS10: u32 = 0x10;
 const RES_320: u32 = 0x20;
 const APPROX: u32 = 0x40;
 const FPS30: u32 = 0x80;
+const FPS60: u32 = 0x100;
+const FPS120: u32 = 0x200;
 
 fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let logger = slog::Logger::root(Discard, o!());
@@ -41,7 +43,11 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     let mut screen1 = OwnedGfxBufferLE::<Rgb888>::new(640, 480);
     let mut sound1 = OwnedSndBuffer::<S16_STEREO>::with_capacity(512);
 
-    let numfps = if flags & FPS30 != 0 {
+    let numfps = if flags & FPS120 != 0 {
+        120
+    } else if flags & FPS60 != 0 {
+        60
+    } else if flags & FPS30 != 0 {
         30
     } else if flags & FPS10 != 0 {
         10
@@ -434,15 +440,15 @@ krom!(
 krom!(
     cmp_fastquantmulti8,
     "Compress/DCT/FastQuantizationMultiBlockGFX8BIT/FastQuantizationMultiBlockGFX8BIT.N64",
-    RES_320
+    RES_320 | FPS60
 );
 krom!(
     cmp_fastquantmulti16,
     "Compress/DCT/FastQuantizationMultiBlockGFX16BIT/FastQuantizationMultiBlockGFX16BIT.N64",
-    RES_320
+    RES_320 | FPS60
 );
 krom!(
     cmp_huff,
     "Compress/HUFFMAN/HUFFMANGFX/HUFFMANGFX.N64",
-    FPS30
+    FPS60
 );
