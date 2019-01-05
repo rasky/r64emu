@@ -1,9 +1,6 @@
 #[macro_use]
 extern crate error_chain;
 
-extern crate emu;
-extern crate r64emu;
-
 use emu::hw;
 use emu::log;
 use r64emu::errors::*;
