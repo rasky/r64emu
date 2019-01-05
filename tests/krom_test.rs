@@ -9,6 +9,7 @@ extern crate r64emu;
 
 use emu::gfx::{BufferLineGetter, BufferLineSetter, OwnedGfxBufferLE, Rgb888, Rgba8888};
 use emu::hw::OutputProducer;
+use emu::snd::{OwnedSndBuffer, S16_STEREO};
 use failure::Error;
 use image::png::PNGEncoder;
 use image::{ColorType, Pixel, RgbaImage};
@@ -17,6 +18,7 @@ use slog::Discard;
 use std::env;
 use std::fs;
 use std::io;
+use std::path::Path;
 
 static KROM_PATH: &'static str = "roms/tests";
 
@@ -34,9 +36,10 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
     };
 
     // Create N64 object and emulate 5 frames
-    let mut n64 = N64::new(logger, romfn).unwrap();
+    let mut n64 = N64::new(logger, Path::new(romfn), Path::new("bios/pifdata.bin")).unwrap();
     n64.setup_cic(true).unwrap();
     let mut screen1 = OwnedGfxBufferLE::<Rgb888>::new(640, 480);
+    let mut sound1 = OwnedSndBuffer::<S16_STEREO>::with_capacity(512);
 
     let numfps = if flags & FPS30 != 0 {
         30
@@ -46,7 +49,7 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
         5
     };
     for _ in 0..numfps {
-        n64.render_frame(&mut screen1.buf_mut());
+        n64.render_frame(&mut screen1.buf_mut(), &mut sound1.buf_mut());
     }
 
     // Insert artifacts as present in krom's reference files
