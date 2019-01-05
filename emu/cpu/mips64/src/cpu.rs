@@ -45,15 +45,15 @@ struct Lines {
 
 #[derive(Default, Copy, Clone, Serialize, Deserialize)]
 pub struct CpuContext {
-    pub regs: [u64; 32],
-    pub hi: u64,
-    pub lo: u64,
-    pub pc: u64,
-    pub next_pc: u64,
-    pub clock: i64,
-    pub tight_exit: bool,
-    pub delay_slot: bool,
-    pub mmu: Mmu,
+    pub regs: [u64; 32],  // 32 64-bit GPR
+    pub hi: u64,          // HI mul register
+    pub lo: u64,          // LO mul register
+    pub pc: u64,          // Program counter
+    pub next_pc: u64,     // Next program counter (for jumps)
+    pub clock: i64,       // Current clock
+    pub tight_exit: bool, // True if we need to exit the tight loop
+    pub delay_slot: bool, // True if the current insn is a delay slot
+    pub mmu: Mmu,         // The MMU
     pub fpu64: bool,      // True if the FPU (if any) is in 64-bit mode
     lines: Lines,
 }
@@ -70,7 +70,8 @@ pub struct Cpu<C: Config> {
     name: String,
     logger: slog::Logger,
     until: i64,
-    last_busycheck: u64,
+
+    last_busy_check: u64,
 }
 
 struct Mipsop<'a, C: Config> {
@@ -199,11 +200,15 @@ macro_rules! branch {
         }
         let (cond, tgt) = ($cond, $tgt);
         $op.ctx.branch(cond, tgt, $lkl);
-        if cond {
-            if tgt == $op.ctx.pc - 4 {
-                $op.cpu.detect_busywait_2insn($op.ctx.pc - 4);
-            } else if tgt == $op.ctx.pc - 8 {
-                $op.cpu.detect_busywait_3insn($op.ctx.pc - 4);
+
+        // See if this is a short loop (less than 5 instructions). Short loops
+        // go through the busy-wait detector.
+        if cond && tgt != $op.cpu.last_busy_check {
+            let dist = $op.ctx.pc.wrapping_sub(tgt);
+            if dist <= 16 {
+                if !$op.cpu.detect_busy_wait(tgt, (dist as usize >> 2) + 1) {
+                    $op.cpu.last_busy_check = tgt;
+                }
             }
         }
     }};
@@ -258,7 +263,7 @@ impl<C: Config> Cpu<C> {
             cop3: cops.3,
             logger: logger,
             until: 0,
-            last_busycheck: 0,
+            last_busy_check: 0,
         };
         cpu.exception(Exception::ColdReset); // Trigger a reset exception at startup
         cpu
@@ -284,7 +289,7 @@ impl<C: Config> Cpu<C> {
         unimplemented!();
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn op(&mut self, ctx: &mut CpuContext, opcode: u32, t: &Tracer) -> Result<()> {
         ctx.clock += 1;
         let mut op = Mipsop {
@@ -530,69 +535,61 @@ impl<C: Config> Cpu<C> {
         Ok((mem & mask) | ((reg << shift) & !mask))
     }
 
-    // Check if the opcode has a visible effect on the CPU state, eg:
-    // if it modifies any register. This is part of busy-wait detection.
-    fn op_has_side_effects(&mut self, opcode: u32) -> bool {
+    // Check if an opcode, when used as part of a loop, can produce different
+    // results in different iterations. For instance, ADD RN,RN,RT changes
+    // RN at each loop; AND RN,RN,RT doesn't.
+    // This is used as part of busy-wait detection.
+    fn op_is_stable_in_loop(&mut self, opcode: u32) -> bool {
         if opcode == 0 {
             // NOP
-            return false;
+            return true;
         }
         match opcode >> 26 {
+            0x01 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 => {
+                // Branch instructions are stable (they don't even modify
+                // registers)
+                return true;
+            }
+            0x0C | 0x0D | 0x0F => {
+                // ANDI/ORI/LUI cannot generate new register values over
+                // different loop iterations, so they are stable.
+                return true;
+            }
             0x20 | 0x21 | 0x22 | 0x23 | 0x24 | 0x25 | 0x26 | 0x27 => {
-                // Load opcode. Check if the address is raw memory.
+                // Load opcode. Check if the address is raw memory, in which
+                // case we consider it stable.
                 let sximm32 = (opcode & 0xffff) as i16 as i32;
                 let rs = ((opcode >> 21) & 0x1f) as usize;
                 let ea = self.ctx.regs[rs] as u32 + sximm32 as u32;
                 let mem = self.bus.fetch_read_nolog::<u32>(C::addr_mask(ea));
-                return !mem.is_mem();
+                return mem.is_mem();
             }
             0x28 | 0x29 | 0x2A | 0x2B | 0x2E => {
-                // Store opcode. Check if the address is raw memory.
+                // Store opcode. Check if the address is raw memory, in which
+                // case we consider it stable.
                 let sximm32 = (opcode & 0xffff) as i16 as i32;
                 let rs = ((opcode >> 21) & 0x1f) as usize;
                 let ea = self.ctx.regs[rs] as u32 + sximm32 as u32;
                 let mem = self.bus.fetch_write_nolog::<u32>(C::addr_mask(ea));
-                return !mem.is_mem();
+                return mem.is_mem();
             }
-            _ => return true,
+            // All other opcodes by default are unstable
+            _ => return false,
         }
     }
 
-    // Check if a 2-insn loop is a busy wait. If the delay slot has no visible
-    // effect on the CPU state, then it is a busy-wait and can be skipped.
-    fn detect_busywait_2insn(&mut self, branch_pc: u64) {
-        if self.last_busycheck == branch_pc {
-            return;
-        }
-        self.last_busycheck = branch_pc;
-        let opcode_after = self.fetch(branch_pc + 4).read();
-        let busywait = !self.op_has_side_effects(opcode_after);
-        if busywait {
-            // Skip busy-wait by short-circuiting the interpret loop until
-            // the end of our timeslice.
-            self.ctx.clock = self.until;
-            self.last_busycheck = 0;
-        }
-    }
+    fn detect_busy_wait(&mut self, pc: u64, loop_len: usize) -> bool {
+        let mem = self.fetch(pc);
+        let iter = mem.iter().unwrap();
 
-    // Check if a 3-insn loop is a busy wait. If the delay slot and the
-    // instruction before the branch have no visible effect on the CPU state,
-    // then it is a busy-wait and can be skipped.
-    fn detect_busywait_3insn(&mut self, branch_pc: u64) {
-        if self.last_busycheck == branch_pc {
-            return;
+        // FIXME: this is buggy if the memory area is shorter than the loop
+        for op in iter.take(loop_len) {
+            if !self.op_is_stable_in_loop(op) {
+                return false;
+            }
         }
-        self.last_busycheck = branch_pc;
-        let opcode_before = self.fetch(branch_pc - 4).read();
-        let opcode_after = self.fetch(branch_pc + 4).read();
-        let busywait =
-            !self.op_has_side_effects(opcode_before) && !self.op_has_side_effects(opcode_after);
-        if busywait {
-            // Skip busy-wait by short-circuiting the interpret loop until
-            // the end of our timeslice.
-            self.ctx.clock = self.until;
-            self.last_busycheck = 0;
-        }
+        self.ctx.clock = self.until;
+        return true;
     }
 
     fn fetch(&mut self, addr: u64) -> MemIoR<u32> {
