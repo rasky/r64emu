@@ -47,32 +47,32 @@ bitfield! {
     #[derive(Default, Copy, Clone, Serialize, Deserialize)]
     struct RegStatus(u32);
     impl Debug;
-    pub ie, set_ie: 0;    // Interrupt enable
-    pub exl, set_exl: 1;  // Is within standard exception
-    pub erl, set_erl: 2;  // Is within special exception (reset/nmi)
-    pub im, set_im: 15,8; // Interrupt mask (8 lines)
-    pub nmi, set_nmi: 19; // Are we under NMI?
-    pub sr, set_sr: 20;   // Is this a soft reset?
-    pub ts, set_ts: 21;   // Multiple TLB match
-    pub bev, set_bev: 22; // Exception vector location (normal/bootstrap)
-    pub rp, set_rp: 21;   // Reduced power
-    pub fr, set_fr: 26;   // Is FPU in 64-bit mode?
-    pub cu0, set_cu0: 28; // Is COP0 active?
-    pub cu1, set_cu1: 29; // Is COP1 active?
-    pub cu2, set_cu2: 30; // Is COP2 active?
-    pub cu3, set_cu3: 31; // Is COP3 active?
+    #[inline] pub ie, set_ie: 0;    // Interrupt enable
+    #[inline] pub exl, set_exl: 1;  // Is within standard exception
+    #[inline] pub erl, set_erl: 2;  // Is within special exception (reset/nmi)
+    #[inline] pub im, set_im: 15,8; // Interrupt mask (8 lines)
+    #[inline] pub nmi, set_nmi: 19; // Are we under NMI?
+    #[inline] pub sr, set_sr: 20;   // Is this a soft reset?
+    #[inline] pub ts, set_ts: 21;   // Multiple TLB match
+    #[inline] pub bev, set_bev: 22; // Exception vector location (normal/bootstrap)
+    #[inline] pub rp, set_rp: 21;   // Reduced power
+    #[inline] pub fr, set_fr: 26;   // Is FPU in 64-bit mode?
+    #[inline] pub cu0, set_cu0: 28; // Is COP0 active?
+    #[inline] pub cu1, set_cu1: 29; // Is COP1 active?
+    #[inline] pub cu2, set_cu2: 30; // Is COP2 active?
+    #[inline] pub cu3, set_cu3: 31; // Is COP3 active?
 }
 
 bitfield! {
     #[derive(Default, Copy, Clone, Serialize, Deserialize)]
     struct RegCause(u32);
     impl Debug;
-    pub exc, set_exc: 6,2; // Current exception code
-    pub ip, set_ip: 15,8;  // Interrupt pending (8 lines)
-    pub wp, set_wp: 22;    // Watch exception
-    pub iv, set_iv: 23;    // General/Special exception vector
-    pub ce, set_ce: 29,28; // COP enabled exception
-    pub bd, set_bd: 31;    // Exception taken from delay slot
+    #[inline] pub exc, set_exc: 6,2; // Current exception code
+    #[inline] pub ip, set_ip: 15,8;  // Interrupt pending (8 lines)
+    #[inline] pub wp, set_wp: 22;    // Watch exception
+    #[inline] pub iv, set_iv: 23;    // General/Special exception vector
+    #[inline] pub ce, set_ce: 29,28; // COP enabled exception
+    #[inline] pub bd, set_bd: 31;    // Exception taken from delay slot
 }
 
 #[derive(Default, Copy, Clone, Serialize, Deserialize)]
@@ -273,7 +273,7 @@ impl Cop for Cp0 {
 
     fn set_reg(&mut self, cpu: &mut CpuContext, idx: usize, val: u128) {
         match idx {
-            0 => self.ctx.reg_index = val as u32 & 0x1F,
+            0 => self.ctx.reg_index = val as u32 & 0x3F,
             2 => self.ctx.reg_entrylo0 = val as u64,
             3 => self.ctx.reg_entrylo1 = val as u64,
             5 => self.ctx.reg_pagemask = val as u32,
@@ -322,7 +322,7 @@ impl Cop for Cp0 {
             0x10..=0x1F => match func {
                 0x01 => {
                     // TLBR
-                    let entry = cpu.mmu.read(ctx.reg_index as usize);
+                    let entry = cpu.mmu.read((ctx.reg_index & 0x1F) as usize);
                     ctx.reg_entryhi = entry.hi();
                     ctx.reg_entrylo0 = entry.lo0;
                     ctx.reg_entrylo1 = entry.lo1;
@@ -334,7 +334,7 @@ impl Cop for Cp0 {
                 0x02 => {
                     // TLBWI
                     cpu.mmu.write(
-                        ctx.reg_index as usize,
+                        (ctx.reg_index & 0x1F) as usize,
                         ctx.reg_pagemask,
                         ctx.reg_entryhi,
                         ctx.reg_entrylo0,
@@ -343,22 +343,22 @@ impl Cop for Cp0 {
 
                     info!(self.logger, "wrote TLB entry";
                         "idx" => ctx.reg_index,
-                        "tlb" => ?cpu.mmu.read(ctx.reg_index as usize));
+                        "tlb" => ?cpu.mmu.read((ctx.reg_index & 0x1F) as usize));
                 }
                 0x08 => {
                     // TLBP
                     match cpu.mmu.probe(ctx.reg_entryhi, ctx.reg_entryhi as u8) {
                         Some(idx) => {
+                            ctx.reg_index = idx as u32;
                             info!(self.logger, "probe TLB entry: found";
                                 "entry_hi" => ctx.reg_entryhi.hex(),
                                 "found_idx" => idx,
                                 "found_tlb" => ?cpu.mmu.read(ctx.reg_index as usize));
-                            ctx.reg_index = idx as u32;
                         }
                         None => {
                             info!(self.logger, "probe TLB entry: not found";
                                 "entry_hi" => ctx.reg_entryhi.hex());
-                            ctx.reg_index = 0x8000_0000;
+                            ctx.reg_index |= 0x8000_0000;
                         }
                     };
                 }
