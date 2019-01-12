@@ -26,10 +26,10 @@ struct VectorReg([u8; 16]);
 
 impl VectorReg {
     fn _byte(&self, idx: usize) -> u8 {
-        self.0[7 - idx]
+        self.0[15 - idx]
     }
-    fn _setbyte(&mut self, idx: usize, val: u8) {
-        self.0[7 - idx] = val;
+    fn setbyte(&mut self, idx: usize, val: u8) {
+        self.0[15 - idx] = val;
     }
 
     fn lane(&self, idx: usize) -> u16 {
@@ -247,6 +247,10 @@ impl<'a> Vectorop<'a> {
     }
     fn setvs_lane(&mut self, idx: usize, val: u16) {
         self.ctx.vregs[self.rs()].setlane(idx, val);
+    }
+
+    fn setvs_byte(&mut self, idx: usize, val: u8) {
+        self.ctx.vregs[self.rs()].setbyte(idx, val);
     }
 }
 
@@ -630,10 +634,12 @@ impl SpCop2 {
                     _ => panic!("unimplement COP2 CFC2 reg:{}", op.rs()),
                 },
                 0x4 => {
-                    if op.rd() >> 1 >= 8 {
-                        return t.break_here("invalid COP2 MTC2");
+                    // MTC2
+                    let e = op.rd() >> 1;
+                    op.setvs_byte(e, (cpu.regs[op.rt()] >> 8) as u8);
+                    if e != 15 {
+                        op.setvs_byte(e + 1, cpu.regs[op.rt()] as u8);
                     }
-                    op.setvs_lane(op.rd() >> 1, cpu.regs[op.rt()] as u16); // MTC2
                 }
                 0x6 => match op.rs() {
                     // CTC2
