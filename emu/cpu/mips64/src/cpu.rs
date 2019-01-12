@@ -545,7 +545,7 @@ impl<C: Config> Cpu<C> {
             return true;
         }
         match opcode >> 26 {
-            0x01 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 => {
+            0x01 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 | 0x14 | 0x15 | 0x16 | 0x17 => {
                 // Branch instructions are stable (they don't even modify
                 // registers)
                 return true;
