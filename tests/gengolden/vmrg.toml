@@ -4,7 +4,7 @@ input_desc = [
   "u32:vco",
   "u32:vcc",
   "u32:vce",
-  "u32:dummy",
+  "u32:padding",
 ]
 
 output_desc = [
@@ -32,7 +32,7 @@ rsp_code = """
   lqv v1[e0],$10(a0)
 
   vxor v2,v2,v2
-  vadd v2,v0,v1[e0]  // V0+V1
+  vmrg v2,v0,v1[e0]
 
   sqv v2[e0],$00(a1)
 
@@ -74,7 +74,7 @@ name = "overflow1"
 input = [
   0x7FFF_8000, 0x8000_8000, 0x8000_8000, 0x7FFF_7FFF,  # v0
   0x7FFF_7FFF, 0x8000_8001, 0xFFFF_FFFF, 0xFFFF_FFFF,  # v1
-  0x0000, # VCO
+  0xAAF2, # VCO
   0xAAF2, # VCC
   0xAAF2, # VCE
   0, # dummy
@@ -85,7 +85,7 @@ name = "overflow2"
 input = [
   0x7FFF_8000, 0x8000_8000, 0x8000_8000, 0x7FFF_7FFF,  # v0
   0x7FFF_7FFF, 0x8000_8001, 0xFFFF_FFFF, 0xFFFF_FFFF,  # v1
-  0xFFFF, # VCO
+  0x5555, # VCO
   0x5555, # VCC
   0x5555, # VCE
   0, # dummy

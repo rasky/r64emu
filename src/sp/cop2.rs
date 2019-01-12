@@ -514,6 +514,18 @@ impl SpCop2 {
                     op.setcarry(carry); // always zero
                     op.setne(ne); // always zero
                 }
+                0x27 => {
+                    // VMRG
+                    let vs = op.vs();
+                    let vt = op.vte();
+                    let vcc = op.vccnormal();
+
+                    let res = _mm_or_si128(_mm_and_si128(vcc, vs), _mm_andnot_si128(vcc, vt));
+                    op.setvd(res);
+                    op.setaccum(0, res);
+                    op.setne(vzero);
+                    op.setcarry(vzero);
+                }
                 0x28 => {
                     // VAND
                     let res = _mm_and_si128(op.vs(), op.vte());
