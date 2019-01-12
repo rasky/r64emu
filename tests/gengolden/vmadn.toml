@@ -40,7 +40,10 @@ output_desc = [
   "u32:4_vce",
   "u32:4_padding",
 
-  "v128:sat",
+  "v128:sat1",
+  "v128:sat2",
+  "v128:sat3",
+  "v128:sat4",
 ]
 
 
@@ -53,9 +56,9 @@ rsp_code = """
 Loop:
   lqv v0[e0],$00(a0) // $00: V0
   lqv v1[e0],$10(a0) // $10: V1
-  vmadn v0,v1[e0]
+  vmadn v2,v1,v1[e0]
 
-  sqv v0[e0],$00(a1)
+  sqv v2[e0],$00(a1)
 
   vsar v0,v0[e10]
   sqv v0[e0],$10(a1)
@@ -85,10 +88,23 @@ Loop:
   lqv v1[e0],$10(a0)
   vmudh v0,v1[e0]
   vmadn v0,v1[e0]
-  sqv v0[e0],$0(a1)
+  sqv v0[e0],$00(a1)
+  vmadn v0,v1[e0]
+  sqv v0[e0],$10(a1)
+  vmadn v0,v1[e0]
+  sqv v0[e0],$20(a1)
+  vmadn v0,v1[e0]
+  sqv v0[e0],$30(a1)
 
   break // Set SP Status Halt, Broke & Check For Interrupt, Set SP Program Counter To $0000
 """
+
+[[test]]
+name = "crash"
+input = [
+  0x0011_8000, 0x8000_8000, 0x8000_8000, 0x7FFF_7FFF,  # v0
+  0xFFEE_7FFF, 0x8000_8001, 0xFFFF_FFFF, 0xFFFF_FFFF,  # v1
+]
 
 [[test]]
 name = "basic"
@@ -112,4 +128,3 @@ input = [
   0x7FFF_8000, 0x8000_8000, 0x8000_8000, 0x7FFF_7FFF,  # v0
   0x7FFF_7FFF, 0x8000_8001, 0xFFFF_FFFF, 0xFFFF_FFFF,  # v1
 ]
-
