@@ -509,28 +509,28 @@ impl<C: Config> Cpu<C> {
 
     fn lwl<S: MemInt>(&self, addr: u32, reg: S, t: &Tracer) -> Result<S> {
         let mem = self.read::<S>(addr, t)?;
-        let shift = (addr as usize & (S::SIZE - 1)) << (S::SIZE_LOG + 1);
+        let shift = (addr as usize & (S::SIZE - 1)) * 8;
         let mask = S::truncate_from((1u64 << shift) - 1u64);
         Ok((reg & mask) | ((mem << shift) & !mask))
     }
 
     fn lwr<S: MemInt>(&self, addr: u32, reg: S, t: &Tracer) -> Result<S> {
         let mem = self.read::<S>(addr, t)?;
-        let shift = (!addr as usize & (S::SIZE - 1)) << (S::SIZE_LOG + 1);
+        let shift = (!addr as usize & (S::SIZE - 1)) * 8;
         let mask = S::max_value() >> shift;
         Ok((reg & !mask) | ((mem >> shift) & mask))
     }
 
     fn swl<S: MemInt>(&self, addr: u32, reg: S, t: &Tracer) -> Result<S> {
         let mem = self.read::<S>(addr, t)?;
-        let shift = (addr as usize & (S::SIZE - 1)) << (S::SIZE_LOG + 1);
+        let shift = (addr as usize & (S::SIZE - 1)) * 8;
         let mask = S::max_value() >> shift;
         Ok((mem & !mask) | ((reg >> shift) & mask))
     }
 
     fn swr<S: MemInt>(&self, addr: u32, reg: S, t: &Tracer) -> Result<S> {
         let mem = self.read::<S>(addr, t)?;
-        let shift = (!addr as usize & (S::SIZE - 1)) << (S::SIZE_LOG + 1);
+        let shift = (!addr as usize & (S::SIZE - 1)) * 8;
         let mask = S::truncate_from((1 << shift) - 1);
         Ok((mem & mask) | ((reg << shift) & !mask))
     }
