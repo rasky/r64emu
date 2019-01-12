@@ -8,5 +8,6 @@ mod decode;
 mod accumulator;
 mod cop0;
 mod cop2;
+mod vclip;
 mod vmul;
 mod vrcp;
