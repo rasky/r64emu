@@ -76,6 +76,7 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                     0x24 => vreg3insn_new("vcl"),
                     0x25 => vreg3insn_new("vch"),
                     0x26 => vreg3insn_new("vcr"),
+                    0x27 => vreg3insn_new("vmrg"),
                     0x28 => vreg3insn_new("vand"),
                     0x29 => vreg3insn_new("vnand"),
                     0x2A => vreg3insn_new("vor"),
@@ -95,6 +96,8 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                 }
             } else {
                 match e {
+                    0x0 => DecodedInsn::new3("mfc2", IReg(grt), OReg(vrs), Imm8(rdx as u8 >> 1))
+                        .with_fmt(VREG2_FMT),
                     0x2 => match rsx {
                         0 => DecodedInsn::new2("cfc2", OReg(grt), IReg("vco")),
                         1 => DecodedInsn::new2("cfc2", OReg(grt), IReg("vcc")),

@@ -199,6 +199,7 @@ define_golden_test!(golden_vlt, "vlt.toml");
 define_golden_test!(golden_vcl, "vcl.toml");
 define_golden_test!(golden_vch, "vch.toml");
 define_golden_test!(golden_vcr, "vcr.toml");
+define_golden_test!(golden_mfc2, "mfc2.toml");
 define_golden_test!(golden_mtc2, "mtc2.toml");
 define_golden_test!(golden_vmrg, "vmrg.toml");
 

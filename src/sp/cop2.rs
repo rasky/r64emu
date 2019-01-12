@@ -25,7 +25,7 @@ use std::arch::x86_64::*;
 struct VectorReg([u8; 16]);
 
 impl VectorReg {
-    fn _byte(&self, idx: usize) -> u8 {
+    fn byte(&self, idx: usize) -> u8 {
         self.0[15 - idx]
     }
     fn setbyte(&mut self, idx: usize, val: u8) {
@@ -249,6 +249,9 @@ impl<'a> Vectorop<'a> {
         self.ctx.vregs[self.rs()].setlane(idx, val);
     }
 
+    fn vs_byte(&mut self, idx: usize) -> u8 {
+        self.ctx.vregs[self.rs()].byte(idx)
+    }
     fn setvs_byte(&mut self, idx: usize, val: u8) {
         self.ctx.vregs[self.rs()].setbyte(idx, val);
     }
@@ -638,6 +641,14 @@ impl SpCop2 {
             }
         } else {
             match op.e() {
+                0x0 => {
+                    // MFC2
+                    let e = op.rd() >> 1;
+
+                    let mut val = (op.vs_byte(e) as u16) << 8;
+                    val |= op.vs_byte((e + 1) & 15) as u16;
+                    cpu.regs[op.rt()] = val.sx64();
+                }
                 0x2 => match op.rs() {
                     // CFC2
                     0 => cpu.regs[op.rt()] = op.ctx.vco().sx64(),
