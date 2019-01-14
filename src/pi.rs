@@ -1,23 +1,29 @@
 use super::mi::{IrqMask, Mi};
-use super::n64::R4300;
+use super::n64::{JOY_NAMES, R4300};
+use super::si::Si;
 use crate::errors::*;
+use bitfield::Bit;
+use byteorder::{BigEndian, ByteOrder};
 use emu::bus::be::{Device, Mem, MemFlags, Reg32};
+use emu::dbg;
+use emu::input::{InputManager, InputValue};
 use emu::int::Numerics;
+use emu::state::Field;
+use emu::sync;
 use emu_derive::DeviceBE;
 use std::fs::File;
 use std::io::Read;
+use std::ops::Range;
 use std::path::Path;
+use std::result;
 
 #[derive(DeviceBE)]
 pub struct Pi {
     #[mem(bank = 1, offset = 0x0, vsize = 0x7C0)]
     rom: Mem,
 
-    #[mem(bank = 1, offset = 0x7C0, size = 0x40, vsize = 0x3C)]
+    #[mem(bank = 1, offset = 0x7C0, size = 0x40)]
     ram: Mem,
-
-    #[reg(bank = 1, offset = 0x7FC, wcb, rcb)]
-    magic: Reg32,
 
     // [23:0] starting RDRAM address
     #[reg(bank = 0, offset = 0x00, rwmask = 0x00FF_FFFF)]
@@ -74,10 +80,12 @@ pub struct Pi {
     dom2_release: Reg32,
 
     logger: slog::Logger,
+    cycles: Field<i64>,
+    pub(crate) input: InputManager,
 }
 
 impl Pi {
-    pub fn new(logger: slog::Logger, pifrom: &Path) -> Result<Box<Pi>> {
+    pub fn new(logger: slog::Logger, pifrom: &Path, input: InputManager) -> Result<Box<Pi>> {
         let mut contents = vec![];
         File::open(pifrom)?.read_to_end(&mut contents)?;
 
@@ -85,7 +93,8 @@ impl Pi {
             logger,
             rom: Mem::from_buffer("pif_rom", contents, MemFlags::READACCESS),
             ram: Mem::default(),
-            magic: Reg32::default(),
+            cycles: Field::new("Pi::cycles", 0),
+            input: input,
             dma_ram_addr: Reg32::default(),
             dma_rom_addr: Reg32::default(),
             dma_rd_len: Reg32::default(),
@@ -100,18 +109,6 @@ impl Pi {
             dom2_page_size: Reg32::default(),
             dom2_release: Reg32::default(),
         }))
-    }
-
-    fn cb_read_magic(&self, val: u32) -> u32 {
-        info!(self.logger, "read magic"; o!("val" => format!("{:x}", val)));
-        val
-    }
-
-    fn cb_write_magic(&mut self, _old: u32, new: u32) {
-        if new & 0x20 != 0 {
-            info!(self.logger, "magic: unlock boot");
-            self.magic.set(self.magic.get() | 0x80);
-        }
     }
 
     fn cb_write_dma_status(&mut self, old: u32, new: u32) {
@@ -163,5 +160,149 @@ impl Pi {
         Mi::get_mut().set_irq_line(IrqMask::PI, true);
 
         unimplemented!();
+    }
+
+    pub fn begin_frame(&mut self) {
+        self.input.begin_frame();
+    }
+    pub fn end_frame(&mut self) {
+        self.input.end_frame();
+    }
+
+    fn joybus_cmd(
+        &mut self,
+        ch: usize,
+        cmd: Range<usize>,
+        out: Range<usize>,
+    ) -> result::Result<(), &'static str> {
+        if cmd.len() == 0 {
+            return Err("joybus: 0-len command");
+        }
+
+        match self.ram[cmd.start] {
+            0 => {
+                // Read controller status
+                if ch == 0 {
+                    self.ram[out.start + 0] = 0x05;
+                    self.ram[out.start + 1] = 0x00;
+                    self.ram[out.start + 2] = 0x02;
+                }
+            }
+            1 => {
+                // Read input data
+                if ch < 4 {
+                    let mut value: u32 = 0;
+                    self.input
+                        .device(JOY_NAMES[ch])
+                        .unwrap()
+                        .visit(|i| match i.value() {
+                            InputValue::Digital(val) => {
+                                if val {
+                                    value.set_bit(i.custom_id(), true);
+                                }
+                            }
+                            InputValue::Analog(val) => {
+                                value |= ((val >> 8) as u8 as u32) << i.custom_id()
+                            }
+                            _ => unreachable!(),
+                        });
+
+                    // S+Left+Right => Reset.
+                    if value.bit(21) && value.bit(20) && value.bit(18) {
+                        value.set_bit(23, true);
+                    }
+
+                    BigEndian::write_u32(&mut self.ram[out.start..], value);
+                }
+            }
+            _ => {
+                return Err("invalid command");
+            }
+        };
+
+        return Ok(());
+    }
+
+    fn joybus_exec(&mut self) -> result::Result<(), &'static str> {
+        let mut ch = 0;
+        let mut idx = 0;
+        while idx < 0x3F {
+            let t = self.ram[idx];
+            idx += 1;
+            if t == 0xFE {
+                // Special marker: end of joybus
+                return Ok(());
+            }
+            if t < 0x80 {
+                let r = *self.ram.get(idx).ok_or("joybus: premature end of RAM")?;
+                idx += 1;
+
+                if ch >= 1 {
+                    self.ram[idx - 1] |= 0x80;
+                }
+
+                let mid = idx + t as usize;
+                let end = mid + r as usize;
+                self.joybus_cmd(ch, idx..mid, mid..end)?;
+                idx = end;
+                ch += 1;
+            }
+        }
+        return Err("joybus: no PIFRAM marker found");
+    }
+}
+
+impl sync::Subsystem for Pi {
+    fn name(&self) -> &str {
+        "Pi"
+    }
+
+    fn run(&mut self, target_cycles: i64, _tracer: &dbg::Tracer) -> dbg::Result<()> {
+        // FIXME: we have no timing info at the moment. Let's just do everything
+        // we can when we are called.
+        *self.cycles = target_cycles;
+
+        let status = self.ram[0x3F];
+        if status & 0x20 != 0 {
+            info!(self.logger, "unlock boot");
+            self.ram[0x3F] |= 0x80;
+            self.ram[0x3F] &= !0x20;
+        }
+
+        if status & 0x01 != 0 {
+            info!(self.logger, "joybus triggered");
+            self.joybus_exec();
+            self.ram[0x3F] &= !1;
+
+            let mut mem = self.ram.iter();
+            for i in 0..8 {
+                println!(
+                    "JOY: {:03x}: {:02x} {:02x} {:02x} {:02x} -- {:02x} {:02x} {:02x} {:02x}",
+                    i * 8,
+                    mem.next().unwrap(),
+                    mem.next().unwrap(),
+                    mem.next().unwrap(),
+                    mem.next().unwrap(),
+                    mem.next().unwrap(),
+                    mem.next().unwrap(),
+                    mem.next().unwrap(),
+                    mem.next().unwrap()
+                );
+            }
+
+            Si::get_mut().set_busy(false);
+        }
+
+        Ok(())
+    }
+
+    fn step(&mut self, _tracer: &dbg::Tracer) -> dbg::Result<()> {
+        panic!("Pi::step() should never be called");
+    }
+    fn cycles(&self) -> i64 {
+        *self.cycles
+    }
+    fn pc(&self) -> Option<u64> {
+        None // No program counter
     }
 }

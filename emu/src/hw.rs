@@ -1,9 +1,12 @@
-pub mod glutils;
+pub(crate) mod glutils;
+mod input_mapping;
 
 use self::glutils::SurfaceRenderer;
+use self::input_mapping::{InputConfig, InputMapping};
 
 use crate::dbg::{DebuggerModel, DebuggerUI};
 use crate::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
+use crate::input::{InputEvent, InputManager};
 use crate::snd::{OwnedSndBuffer, SampleFormat, SampleInt, SndBuffer, SndBufferMut};
 
 use byteorder::NativeEndian;
@@ -182,6 +185,11 @@ pub trait OutputProducer {
     /// using the host byte order (eg: `LittleEndian` on x86).
     type AudioSampleFormat: SampleFormat<ORDER = NativeEndian>;
 
+    /// Return a mutable reference to an InputManager instance. If None,
+    /// input events are not generated. Returning None can also be useful in case
+    /// input events come from another source (gg: while playbacking).
+    fn input_manager(&mut self) -> Option<&mut InputManager>;
+
     fn render_frame(
         &mut self,
         video: &mut GfxBufferMutLE<Rgb888>,
@@ -196,6 +204,7 @@ pub struct Output {
     video: Option<Video>,
     audio: bool,
     debug: bool,
+    quit: bool,
     framecount: i64,
 }
 
@@ -208,6 +217,7 @@ impl Output {
             video: None,
             audio: false,
             debug: true,
+            quit: false,
             framecount: 0,
         })
     }
@@ -220,6 +230,22 @@ impl Output {
     pub fn enable_audio(&mut self) -> Result<(), String> {
         self.audio = true;
         Ok(())
+    }
+
+    fn process_event(&mut self, event: &Event) {
+        match event {
+            Event::KeyDown {
+                keycode: Some(Keycode::Escape),
+                ..
+            } => {
+                // Toggle debugger activation
+                self.debug = !self.debug
+            }
+            Event::Quit { .. } => {
+                self.quit = true;
+            }
+            _ => {}
+        }
     }
 
     pub fn run_and_debug<SI, SF, P>(&mut self, producer: &mut P)
@@ -239,20 +265,25 @@ impl Output {
         let mut event_pump = self.context.event_pump().unwrap();
         let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
 
-        loop {
+        let mut input = match producer.input_manager() {
+            Some(im) => Some(InputMapping::new(InputConfig::default(im))),
+            None => None,
+        };
+
+        while !self.quit {
             for event in event_pump.poll_iter() {
                 dbg_ui.handle_event(&event);
+                self.process_event(&event);
 
-                match event {
-                    Event::KeyDown {
-                        keycode: Some(Keycode::Escape),
-                        ..
-                    } => {
-                        // Toggle debugger activation
-                        self.debug = !self.debug
+                if let Some(map) = input.as_ref() {
+                    if let Some(im) = producer.input_manager() {
+                        match map.map_event(&event) {
+                            Some(evt) => {
+                                im.process_event(evt);
+                            }
+                            None => {}
+                        };
                     }
-                    Event::Quit { .. } => return,
-                    _ => {}
                 }
             }
 
@@ -292,38 +323,71 @@ impl Output {
     {
         let width = self.vcfg.width as usize;
         let height = self.vcfg.height as usize;
-        let (tx, rx) = mpsc::sync_channel(3);
+        let (tx_frame, rx_frame) = mpsc::sync_channel(3);
+        let (tx_event, rx_event) = mpsc::sync_channel::<Vec<InputEvent>>(3);
+        let (tx_input, rx_input) = mpsc::sync_channel(1);
 
         let mut audio = Audio::new(&self.context, self.vcfg.fps, self.acfg.clone());
         let audio_frame_size = audio.samples_per_frame();
 
+        let mut event_pump = self.context.event_pump().unwrap();
+
         thread::spawn(move || {
             let mut producer = create().unwrap();
+
+            // Send a clone of the input manager to the main thread,
+            // for input mapping initialization.
+            tx_input.send(producer.input_manager().map(|im| im.clone()));
+
             loop {
                 let mut sound = OwnedSndBuffer::with_capacity(audio_frame_size);
                 let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
                 producer.render_frame(&mut screen.buf_mut(), &mut sound.buf_mut());
 
-                if !tx.send((screen, sound)).is_ok() {
+                if !tx_frame.send((screen, sound)).is_ok() {
                     return;
+                }
+
+                // If we received any input event from the main thread, process
+                // them through the input manager.
+                if let Ok(evts) = rx_event.try_recv() {
+                    if let Some(im) = producer.input_manager() {
+                        for e in evts.iter() {
+                            im.process_event(e.clone());
+                        }
+                    }
                 }
             }
         });
 
+        // Initialize input mapping, using the default config for the
+        // current input manager. TODO: add load/save of input mapping.
+        let input = match rx_input.recv() {
+            Ok(Some(im)) => Some(InputMapping::new(InputConfig::default(&im))),
+            Ok(None) => None,
+            Err(_) => panic!("error while receiving input manager?"),
+        };
+
         let polling_interval = Duration::from_millis(20);
-        loop {
-            for event in self.context.event_pump().unwrap().poll_iter() {
-                match event {
-                    Event::KeyDown {
-                        keycode: Some(Keycode::Escape),
-                        ..
+        while !self.quit {
+            let mut events = Vec::new();
+            for event in event_pump.poll_iter() {
+                self.process_event(&event);
+
+                // Try to pass the even through the input mapping.
+                // If it's mapped to an emulator input, accumulate
+                // to send it
+                if let Some(map) = input.as_ref() {
+                    if let Some(evt) = map.map_event(&event) {
+                        events.push(evt);
                     }
-                    | Event::Quit { .. } => return,
-                    _ => {}
                 }
             }
+            if events.len() > 0 {
+                tx_event.send(events);
+            }
 
-            match rx.recv_timeout(polling_interval) {
+            match rx_frame.recv_timeout(polling_interval) {
                 Ok((ref screen, ref sound)) => {
                     self.render_frame(&screen.buf());
                     audio.render_frame(&sound.buf(), true);

@@ -11,6 +11,7 @@ pub mod dbg;
 pub mod fp;
 pub mod gfx;
 pub mod hw;
+pub mod input;
 pub mod int;
 pub mod log;
 pub mod memint;

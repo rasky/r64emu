@@ -3,6 +3,7 @@ use emu::dbg;
 use emu::dbg::{DebuggerModel, DebuggerRenderer};
 use emu::gfx::{GfxBufferMutLE, Rgb888};
 use emu::hw;
+use emu::input::*;
 use emu::snd::{SampleFormat, SndBufferMut, S16_STEREO};
 use emu::state::{CurrentState, State};
 use emu::sync;
@@ -131,9 +132,49 @@ impl sync::SyncEmu for SyncEmu {
             1 => Some((RSPCPU::get_mut().deref_mut(), MAIN_CLOCK)),
             2 => Some((Dp::get_mut(), MAIN_CLOCK)),
             3 => Some((Ai::get_mut(), VCLK)),
+            4 => Some((Pi::get_mut(), MAIN_CLOCK)),
             _ => None,
         }
     }
+}
+
+pub(crate) const JOY_NAMES: [&'static str; 4] = ["joy1", "joy2", "joy3", "joy4"];
+
+fn create_input_manager() -> InputManager {
+    let joy = InputDevice::new(
+        "joy-template",
+        InputDeviceKind::Joystick,
+        vec![
+            Input::new_digital("up", InputKind::Up, 27),
+            Input::new_digital("down", InputKind::Down, 26),
+            Input::new_digital("left", InputKind::Left, 25),
+            Input::new_digital("right", InputKind::Right, 24),
+            Input::new_digital("A", InputKind::Button1, 31),
+            Input::new_digital("B", InputKind::Button2, 30),
+            Input::new_digital("Z", InputKind::Button3, 29),
+            Input::new_digital("S", InputKind::Start, 28),
+            Input::new_digital("c-up", InputKind::Up, 19),
+            Input::new_digital("c-down", InputKind::Down, 18),
+            Input::new_digital("c-left", InputKind::Left, 17),
+            Input::new_digital("c-right", InputKind::Right, 16),
+            Input::new_digital("L", InputKind::Other, 21),
+            Input::new_digital("R", InputKind::Other, 20),
+            Input::new_analog("X", InputKind::Horizontal, 8),
+            Input::new_analog("Y", InputKind::Vertical, 0),
+        ],
+    );
+
+    InputManager::new(vec![
+        joy.dup(JOY_NAMES[0]),
+        joy.dup(JOY_NAMES[1]),
+        joy.dup(JOY_NAMES[2]),
+        joy.dup(JOY_NAMES[3]),
+        InputDevice::new(
+            "console",
+            InputDeviceKind::Other,
+            vec![Input::new_digital("reset", InputKind::Other, 0)],
+        ),
+    ])
 }
 
 impl N64 {
@@ -148,9 +189,13 @@ impl N64 {
             .chain_err(|| "cannot open rom file")?
             .register();
 
-        Pi::new(sync::Sync::new_logger(&sync), biosfn)
-            .chain_err(|| "cannot open BIOS file")?
-            .register();
+        Pi::new(
+            sync::Sync::new_logger(&sync),
+            biosfn,
+            create_input_manager(),
+        )
+        .chain_err(|| "cannot open BIOS file")?
+        .register();
         Dp::new(sync::Sync::new_logger(&sync)).register();
         Sp::new(sync::Sync::new_logger(&sync))?.register();
         Si::new(sync::Sync::new_logger(&sync)).register();
@@ -216,6 +261,7 @@ impl hw::OutputProducer for N64 {
             sync::Event::BeginFrame => {
                 Vi::get_mut().begin_frame(screen);
                 Ai::get_mut().begin_frame(sound);
+                Pi::get_mut().begin_frame();
             }
             sync::Event::HSync(x, y) if x == 0 => {
                 Vi::get_mut().set_line(y);
@@ -223,9 +269,14 @@ impl hw::OutputProducer for N64 {
             sync::Event::EndFrame => {
                 Vi::get_mut().end_frame(screen);
                 Ai::get_mut().end_frame(sound);
+                Pi::get_mut().end_frame();
             }
             _ => {}
         });
+    }
+
+    fn input_manager(&mut self) -> Option<&mut InputManager> {
+        Some(&mut Pi::get_mut().input)
     }
 }
 
@@ -241,10 +292,12 @@ impl DebuggerModel for N64 {
                 sync::Event::BeginFrame => {
                     Vi::get_mut().begin_frame(screen);
                     Ai::get_mut().begin_frame(sound);
+                    Pi::get_mut().begin_frame();
                 }
                 sync::Event::EndFrame => {
                     Vi::get_mut().end_frame(screen);
                     Ai::get_mut().end_frame(sound);
+                    Pi::get_mut().end_frame();
                 }
                 sync::Event::HSync(x, y) if x == 0 => {
                     Vi::get_mut().set_line(y);
