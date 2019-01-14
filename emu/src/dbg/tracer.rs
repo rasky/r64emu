@@ -20,7 +20,7 @@ pub enum TraceEvent {
     BreakpointOneShot(String, u64), // A one-shot breakpoint was hit (cpu_idx, pc)
     WatchpointWrite(String, usize), // A watchpoint was hit during a write (cpu_idx, wp_idx)
     WatchpointRead(String, usize), // A watchpoint was hit during a read (cpu_idx, wp_idx)
-    GenericBreak(&'static str), // Another kind of condition was hit, and we want to stop the tracing.
+    GenericBreak(String), // Another kind of condition was hit, and we want to stop the tracing.
 }
 
 pub type Result<T> = std::result::Result<T, Box<TraceEvent>>;
@@ -61,11 +61,19 @@ impl Tracer<'_> {
     }
 
     #[inline(always)]
-    pub fn break_here(&self, msg: &'static str) -> Result<()> {
+    pub fn break_here(&self, msg: &str) -> Result<()> {
         if self.dbg.is_none() {
             return Ok(());
         }
-        Err(box TraceEvent::GenericBreak(msg))
+        Err(box TraceEvent::GenericBreak(msg.to_owned()))
+    }
+
+    #[inline(always)]
+    pub fn panic(&self, msg: &str) -> Result<()> {
+        if self.dbg.is_none() {
+            panic!("{}", msg);
+        }
+        Err(box TraceEvent::GenericBreak(msg.to_owned()))
     }
 
     #[inline(always)]
