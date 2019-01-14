@@ -726,7 +726,7 @@ impl<C: Config> RegisterView for Cpu<C> {
 
                 let mut pcdesc = format!("DelaySlot:{}", self.ctx.delay_slot);
                 if self.ctx.delay_slot {
-                    pcdesc += &format!("\nJumpTo:{:x}", self.ctx.next_pc);
+                    pcdesc += &format!("\nJumpTo:{:x}", C::pc_mask(self.ctx.next_pc as u32));
                 }
                 visit("pc", Reg64(&mut self.ctx.pc), Some(&pcdesc));
             }
