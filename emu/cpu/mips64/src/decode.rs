@@ -129,6 +129,8 @@ fn decode1<C: Config>(cpu: &Cpu<C>, opcode: u32, pc: u64) -> DecodedInsn {
         0x17 => DecodedInsn::new2("bgtzl", IReg(rs), Target(btgt.into())),
         0x18 => DecodedInsn::new3("daddi", OReg(rt), IReg(rs), Target(btgt.into())),
         0x19 => DecodedInsn::new3("daddiu", OReg(rt), IReg(rs), Target(btgt.into())),
+        0x1A => DecodedInsn::new3("ldl", OReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
+        0x1B => DecodedInsn::new3("ldr", OReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
 
         0x20 => DecodedInsn::new3("lb", OReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
         0x21 => DecodedInsn::new3("lh", OReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
@@ -142,6 +144,8 @@ fn decode1<C: Config>(cpu: &Cpu<C>, opcode: u32, pc: u64) -> DecodedInsn {
         0x29 => DecodedInsn::new3("sh", IReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
         0x2A => DecodedInsn::new3("swl", IReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
         0x2B => DecodedInsn::new3("sw", IReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
+        0x2C => DecodedInsn::new3("sdl", IReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
+        0x2D => DecodedInsn::new3("sdr", IReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
         0x2E => DecodedInsn::new3("swr", IReg(rt), Imm32(sximm32), IReg(rs)).with_fmt(MEMOP_FMT),
         0x2F => DecodedInsn::new0("cache"),
 
