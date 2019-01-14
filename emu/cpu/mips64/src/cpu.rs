@@ -246,6 +246,14 @@ macro_rules! if_cop {
     }};
 }
 
+macro_rules! if_cop_loadstore {
+    ($op:ident, $cop:ident, $loadstore:ident, $t:ident) => {{
+        if_cop!($op, $cop, {
+            return $cop.$loadstore($op.opcode, &mut $op.ctx, &mut $op.cpu.bus, $t);
+        })
+    }};
+}
+
 impl<C: Config> Cpu<C> {
     pub fn new(
         name: &str,
@@ -388,7 +396,12 @@ impl<C: Config> Cpu<C> {
                 0x3E if h("dsrl32") => *op.mrd64() = op.rt64() >> (op.sa() + 32), // DSRL32
                 0x3F if h("dsra32") => *op.mrd64() = (op.irt64() >> (op.sa() + 32)) as u64, // DSRA32
 
-                _ => panic!("unimplemented special opcode: func=0x{:x?}", op.special()),
+                _ => {
+                    return t.panic(&format!(
+                        "unimplemented special opcode: func=0x{:x?}",
+                        op.special()
+                    ));
+                }
             },
 
             // REGIMM
@@ -485,15 +498,15 @@ impl<C: Config> Cpu<C> {
             }
             0x2F => {} // CACHE
 
-            0x31 if h("lwc1") => if_cop!(op, cop1, cop1.lwc(op.opcode, &mut op.ctx, &op.cpu.bus)), // LWC1
-            0x32 if h("lwc2") => if_cop!(op, cop2, cop2.lwc(op.opcode, &mut op.ctx, &op.cpu.bus)), // LWC2
-            0x35 if h("ldc1") => if_cop!(op, cop1, cop1.ldc(op.opcode, &mut op.ctx, &op.cpu.bus)), // LDC1
-            0x36 if h("ldc2") => if_cop!(op, cop2, cop2.ldc(op.opcode, &mut op.ctx, &op.cpu.bus)), // LDC2
+            0x31 if h("lwc1") => if_cop_loadstore!(op, cop1, lwc, t), // LWC1
+            0x32 if h("lwc2") => if_cop_loadstore!(op, cop2, lwc, t), // LWC2
+            0x35 if h("ldc1") => if_cop_loadstore!(op, cop1, ldc, t), // LDC1
+            0x36 if h("ldc2") => if_cop_loadstore!(op, cop2, ldc, t), // LDC2
             0x37 if h("ld") => *op.mrt64() = op.cpu.read::<u64>(op.ea(), t)?, // LD
-            0x39 if h("swc1") => if_cop!(op, cop1, cop1.swc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SWC1
-            0x3A if h("swc2") => if_cop!(op, cop2, cop2.swc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SWC2
-            0x3D if h("sdc1") => if_cop!(op, cop1, cop1.sdc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SDC1
-            0x3E if h("sdc2") => if_cop!(op, cop2, cop2.sdc(op.opcode, &op.ctx, &mut op.cpu.bus)), // SDC2
+            0x39 if h("swc1") => if_cop_loadstore!(op, cop1, swc, t), // SWC1
+            0x3A if h("swc2") => if_cop_loadstore!(op, cop2, swc, t), // SWC2
+            0x3D if h("sdc1") => if_cop_loadstore!(op, cop1, sdc, t), // SDC1
+            0x3E if h("sdc2") => if_cop_loadstore!(op, cop2, sdc, t), // SDC2
             0x3F if h("sd") => op.cpu.write::<u64>(op.ea(), op.rt64(), t)?, // SD
 
             _ => {

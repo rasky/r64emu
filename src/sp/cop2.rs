@@ -763,7 +763,13 @@ impl Cop for SpCop2 {
         unsafe { self.uop(cpu, op, t) }
     }
 
-    fn lwc(&mut self, op: u32, ctx: &mut CpuContext, _bus: &Bus) {
+    fn lwc(
+        &mut self,
+        op: u32,
+        ctx: &mut CpuContext,
+        _bus: &Bus,
+        t: &dbg::Tracer,
+    ) -> dbg::Result<()> {
         let sp = Sp::get_mut();
         let dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
@@ -810,10 +816,17 @@ impl Cop for SpCop2 {
                     vtoff &= 7;
                 }
             }
-            _ => panic!("unimplemented VU load opcode={}", op.hex()),
+            _ => return t.panic(&format!("unimplemented VU load opcode={}", op.hex())),
         }
+        Ok(())
     }
-    fn swc(&mut self, op: u32, ctx: &CpuContext, _bus: &mut Bus) {
+    fn swc(
+        &mut self,
+        op: u32,
+        ctx: &CpuContext,
+        _bus: &mut Bus,
+        t: &dbg::Tracer,
+    ) -> dbg::Result<()> {
         let sp = Sp::get_mut();
         let mut dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
@@ -877,14 +890,27 @@ impl Cop for SpCop2 {
                 mem = mem.rotate_right((ea & 7) * 8);
                 BigEndian::write_u128(&mut dmem[qw_start..qw_start + 0x10], mem);
             }
-            _ => panic!("unimplemented VU store opcode={}", op.hex()),
+            _ => return t.panic(&format!("unimplemented VU store opcode={}", op.hex())),
         }
+        Ok(())
     }
 
-    fn ldc(&mut self, _op: u32, _ctx: &mut CpuContext, _bus: &Bus) {
+    fn ldc(
+        &mut self,
+        _op: u32,
+        _ctx: &mut CpuContext,
+        _bus: &Bus,
+        _t: &dbg::Tracer,
+    ) -> dbg::Result<()> {
         unimplemented!()
     }
-    fn sdc(&mut self, _op: u32, _ctx: &CpuContext, _bus: &mut Bus) {
+    fn sdc(
+        &mut self,
+        _op: u32,
+        _ctx: &CpuContext,
+        _bus: &mut Bus,
+        _t: &dbg::Tracer,
+    ) -> dbg::Result<()> {
         unimplemented!()
     }
     fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
