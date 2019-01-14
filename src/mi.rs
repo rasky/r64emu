@@ -1,4 +1,4 @@
-use super::n64::R4300;
+use super::r4300::R4300;
 use emu::bus::be::{Device, Reg32};
 use emu::int::Numerics;
 use mips64::Cop0;

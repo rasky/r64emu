@@ -30,6 +30,7 @@ pub mod errors {
 mod rdp;
 
 pub mod ai;
+pub mod r4300;
 pub mod cartridge;
 pub mod dp;
 pub mod mi;
@@ -40,4 +41,4 @@ pub mod sp;
 pub mod vi;
 
 mod n64;
-pub use self::n64::{N64, R4300};
+pub use self::n64::N64;

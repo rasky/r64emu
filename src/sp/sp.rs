@@ -1,5 +1,5 @@
 use super::super::mi::{IrqMask, Mi};
-use super::super::n64::R4300;
+use super::super::r4300::R4300;
 use super::cop0::SpCop0;
 use super::cop2::SpCop2;
 use crate::errors::*;

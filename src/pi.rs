@@ -1,5 +1,6 @@
 use super::mi::{IrqMask, Mi};
-use super::n64::{JOY_NAMES, R4300};
+use super::r4300::R4300;
+use super::n64::JOY_NAMES;
 use super::si::Si;
 use crate::errors::*;
 use bitfield::Bit;

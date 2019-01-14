@@ -1,7 +1,7 @@
 use slog;
 
 use super::mi::{IrqMask, Mi};
-use super::n64::R4300;
+use super::r4300::R4300;
 use super::pi::Pi;
 
 use emu::bus::be::Reg32;

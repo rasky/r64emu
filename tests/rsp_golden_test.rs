@@ -15,7 +15,7 @@ use emu::bus::be::Device;
 use emu::dbg::Tracer;
 use r64emu::dp::Dp;
 use r64emu::sp::{Sp, RSPCPU};
-use r64emu::R4300;
+use r64emu::r4300::R4300;
 use slog::Discard;
 use std::borrow;
 use std::env;

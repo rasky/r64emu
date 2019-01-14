@@ -3,7 +3,7 @@ extern crate byteorder;
 extern crate emu;
 extern crate slog;
 use super::mi::{IrqMask, Mi};
-use super::n64::R4300;
+use super::r4300::R4300;
 use super::rdp::Rdp;
 use emu::bus::be::{Device, MemIoR, Reg32, RegDeref, RegRef};
 use emu::dbg;

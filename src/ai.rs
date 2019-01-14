@@ -1,5 +1,5 @@
 use super::mi::{IrqMask, Mi};
-use super::n64::R4300;
+use super::r4300::R4300;
 use emu::bus::be::{Device, Reg32};
 use emu::dbg;
 use emu::int::Numerics;

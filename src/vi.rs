@@ -4,7 +4,7 @@ use emu::int::Numerics;
 use emu_derive::DeviceBE;
 
 use super::mi::{IrqMask, Mi};
-use super::n64::R4300;
+use super::r4300::R4300;
 
 use slog;
 

@@ -5,7 +5,7 @@ extern crate slog;
 use self::bit_field::BitField;
 use self::byteorder::{BigEndian, LittleEndian};
 use self::emu::bus::Device;
-use super::super::n64::R4300;
+use super::super::r4300::R4300;
 use super::pipeline::PixelPipeline;
 use super::raster::{draw_rect, fill_rect, fill_rect_pp, DpRenderState};
 use super::{CycleMode, DpColorFormat};
