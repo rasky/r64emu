@@ -1,6 +1,6 @@
 [package]
 name = "emu_derive"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Giovanni Bajo <rasky@develer.com>"]
 edition = "2018"
 

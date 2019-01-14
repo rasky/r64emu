@@ -1,8 +1,11 @@
 [package]
 name = "emu"
-version = "0.1.0"
+description = "A collection of libraries to write videogame emulators"
+version = "0.0.1"
 authors = ["Giovanni Bajo <rasky@develer.com>"]
 edition = "2018"
+repository = "https://github.com/rasky/r64emu"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 byteorder = "1"
@@ -12,7 +15,7 @@ num = "0.1.42"
 num-traits = "*"
 bitflags = "1.0"
 array-macro = "1.0"
-emu_derive = { path="emu-derive" }
+emu_derive = { path="emu-derive", version="0.0.1" }
 slog = "2"
 typenum = "1.10.0"
 imgui = { git="https://github.com/Gekkio/imgui-rs.git", branch="master"}
