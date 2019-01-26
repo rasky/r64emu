@@ -13,6 +13,7 @@ use emu::snd::{OwnedSndBuffer, S16_STEREO};
 use failure::Error;
 use image::png::PNGEncoder;
 use image::{ColorType, Pixel, RgbaImage};
+use r64emu::r4300::R4300;
 use r64emu::N64;
 use slog::Discard;
 use std::env;
@@ -22,7 +23,6 @@ use std::path::Path;
 
 static KROM_PATH: &'static str = "roms/tests";
 
-const FPS10: u32 = 0x10;
 const RES_320: u32 = 0x20;
 const APPROX: u32 = 0x40;
 const FPS30: u32 = 0x80;
@@ -49,10 +49,8 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
         60
     } else if flags & FPS30 != 0 {
         30
-    } else if flags & FPS10 != 0 {
-        10
     } else {
-        5
+        10
     };
     for _ in 0..numfps {
         n64.render_frame(&mut screen1.buf_mut(), &mut sound1.buf_mut());
@@ -140,6 +138,7 @@ fn test_krom(romfn: &str, flags: u32) -> Result<(), Error> {
             ColorType::RGBA(8),
         )?;
         let pngout = pngout.into_inner();
+        fs::write("expected-test.png", &pngout)?;
 
         if env::var_os("TERM_PROGRAM")
             .filter(|s| s == "iTerm.app")
@@ -188,7 +187,7 @@ macro_rules! krom_rspcpu {
 }
 macro_rules! krom_rspcp2 {
     ($test_name:ident, $romfn:expr, $flags:expr) => {
-        krom!($test_name, concat!("RSPTest/CP2/", $romfn), $flags | FPS10);
+        krom!($test_name, concat!("RSPTest/CP2/", $romfn), $flags);
     };
 }
 macro_rules! krom_video {
@@ -203,7 +202,7 @@ macro_rules! krom_rdp {
 }
 macro_rules! krom_rsp {
     ($test_name:ident, $romfn:expr, $flags:expr) => {
-        krom!($test_name, concat!("RSP/", $romfn), $flags | FPS10);
+        krom!($test_name, concat!("RSP/", $romfn), $flags);
     };
 }
 
