@@ -225,3 +225,75 @@ input = [
     0xAAAA, # VCE
     0, # dummy
 ]
+
+[[test]]
+name = "neq1"
+input = [
+    0x2233_2233, 0x2233_2233, 0x2233_2233, 0x2233_2233, # v0
+    0xDDC9_DDCA, 0xDDCB_DDCC, 0xDDCD_DDCE, 0xDDCF_DDD0, # v1
+    0x0000, # VCO
+    0x0000, # VCC
+    0x0000, # VCE
+    0, # dummy
+]
+
+
+[[test]]
+name = "neq2"
+input = [
+    0x2233_2233, 0x2233_2233, 0x2233_2233, 0x2233_2233, # v0
+    0xDDC9_DDCA, 0xDDCB_DDCC, 0xDDCD_DDCE, 0xDDCF_DDD0, # v1
+    0xFFFF, # VCO
+    0xFFFF, # VCC
+    0xFFFF, # VCE
+    0, # dummy
+]
+
+
+[[test]]
+name = "neq3"
+input = [
+    0x2233_2233, 0x2233_2233, 0x2233_2233, 0x2233_2233, # v0
+    0x2230_2231, 0x2232_2233, 0x2234_2235, 0x2236_2237, # v1
+    0x0000, # VCO
+    0x0000, # VCC
+    0x0000, # VCE
+    0, # dummy
+]
+
+
+[[test]]
+name = "neq4"
+input = [
+    0x2233_2233, 0x2233_2233, 0x2233_2233, 0x2233_2233, # v0
+    0x2230_2231, 0x2232_2233, 0x2234_2235, 0x2236_2237, # v1
+    0xFFFF, # VCO
+    0xFFFF, # VCC
+    0xFFFF, # VCE
+    0, # dummy
+]
+
+
+[[test]]
+name = "neq5"
+input = [
+    0xC233_2233, 0xC233_2233, 0xC233_2233, 0xC233_2233, # v0
+    0xC230_2231, 0xC232_2233, 0xC234_2235, 0xC236_2237, # v1
+    0x0000, # VCO
+    0x0000, # VCC
+    0x0000, # VCE
+    0, # dummy
+]
+
+
+[[test]]
+name = "neq6"
+input = [
+    0xC233_2233, 0xC233_2233, 0xC233_2233, 0xC233_2233, # v0
+    0xC230_2231, 0xC232_2233, 0xC234_2235, 0xC236_2237, # v1
+    0xFFFF, # VCO
+    0xFFFF, # VCC
+    0xFFFF, # VCE
+    0, # dummy
+]
+

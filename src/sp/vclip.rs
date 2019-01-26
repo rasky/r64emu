@@ -52,14 +52,17 @@ pub(crate) unsafe fn vch(
     let vce = _mm_and_si128(sign, _mm_cmpeq_epi16(sign, _mm_add_epi16(vs, vt)));
 
     // NE is computed as follows:
-    //  SIGN=-1 => VS+VT != 0
+    //  SIGN=-1 => VS+VT != 0 && VS+VT != -1
     //  SIGN=0  => VS-VT != 0
     //
     // Optimize as:
-    //  VTSIGN = (SIGN ? VT : -VT) = VT^SIGN - SIGN
-    //  VS - VTSIGN != 0
-    let vtsign = _mm_sub_epi16(_mm_xor_si128(sign, vt), sign);
-    let ne = _mm_xor_si128(vones, _mm_cmpeq_epi16(vzero, _mm_sub_epi16(vs, vtsign)));
+    //  SUM = VS^SIGN - VT
+    //  !(SUM == 0 || SUM == SIGN)
+    let add = _mm_sub_epi16(_mm_xor_si128(vs, sign), vt);
+    let ne = _mm_xor_si128(
+        vones,
+        _mm_or_si128(_mm_cmpeq_epi16(add, vzero), _mm_cmpeq_epi16(add, sign)),
+    );
 
     let res = vselect(
         sign,
