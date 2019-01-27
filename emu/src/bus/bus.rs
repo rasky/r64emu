@@ -390,7 +390,7 @@ where
     ///     let mut bus = Bus::new(logger);
     ///
     ///     // Create a 1Kb RAM object
-    ///     let ram1 = Mem::new("mem", 1024, MemFlags::default());
+    ///     let ram1 = Mem::new("mem", 1024, MemFlags::default(), None);
     ///
     ///     // Map the memory over a 32Mb range of virtual address starting at
     ///     // 0x0400_0000, using mirroring.
@@ -468,10 +468,10 @@ where
         self.reads[Size32].insert_range(begin, end, mem.hwio_r::<u32>(), false)?;
         self.reads[Size64].insert_range(begin, end, mem.hwio_r::<u64>(), false)?;
 
-        self.writes[Size8].insert_range(begin, end, mem.hwio_w::<u8>(), false)?;
-        self.writes[Size16].insert_range(begin, end, mem.hwio_w::<u16>(), false)?;
-        self.writes[Size32].insert_range(begin, end, mem.hwio_w::<u32>(), false)?;
-        self.writes[Size64].insert_range(begin, end, mem.hwio_w::<u64>(), false)?;
+        self.writes[Size8].insert_range(begin, end, mem.hwio_w::<Order, u8>(), false)?;
+        self.writes[Size16].insert_range(begin, end, mem.hwio_w::<Order, u16>(), false)?;
+        self.writes[Size32].insert_range(begin, end, mem.hwio_w::<Order, u32>(), false)?;
+        self.writes[Size64].insert_range(begin, end, mem.hwio_w::<Order, u64>(), false)?;
 
         return Ok(());
     }
@@ -594,7 +594,7 @@ mod tests {
 
     #[test]
     fn basic_mem_mirror() {
-        let ram1 = Mem::new("mem", 1024, MemFlags::default());
+        let ram1 = Mem::new("mem", 1024, MemFlags::default(), None);
         let mut bus = Bus::<LittleEndian>::new(logger());
 
         // Mapping a vsize which is not a multiple of psize returns an error
@@ -618,7 +618,7 @@ mod tests {
 
     #[test]
     fn basic_mem_fillnone() {
-        let ram1 = Mem::new("mem", 1024, MemFlags::default());
+        let ram1 = Mem::new("mem", 1024, MemFlags::default(), None);
         let mut bus = Bus::<LittleEndian>::new(logger());
 
         assert_eq!(
@@ -652,7 +652,7 @@ mod tests {
 
     #[test]
     fn basic_mem_fillfixed() {
-        let ram1 = Mem::new("mem", 1024, MemFlags::default());
+        let ram1 = Mem::new("mem", 1024, MemFlags::default(), None);
         let mut bus = Bus::<LittleEndian>::new(logger());
 
         // Shorter mapping

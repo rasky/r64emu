@@ -341,7 +341,7 @@ fn expand_mem_devinit(
             if #fi .len() != 0 {
                 panic!("don't specify size for already inited mem");
             }
-            *#fi = Mem::new(concat!(#structname, "::", #varname), #size, MemFlags::new(#read, #write));
+            *#fi = Mem::new(concat!(#structname, "::", #varname), #size, MemFlags::new(#read, #write), None);
         }
     }
 }

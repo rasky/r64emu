@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 /// so that it can be used in a very efficient [`EnumMap`](struct.EnumMap.html)
 /// (which boils down to a 4-element array) in case there is a need for a
 /// runtime data structure indexed by access size.
-#[derive(Debug, Enum, Copy, Clone)]
+#[derive(Debug, Enum, Copy, Clone, PartialEq, Eq)]
 pub enum AccessSize {
     Size8,
     Size16,
