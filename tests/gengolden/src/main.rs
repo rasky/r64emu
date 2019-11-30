@@ -42,6 +42,8 @@ fn main() {
             input_size += 16;
         } else if d.starts_with("u32:") {
             input_size += 4;
+        } else if d.starts_with("u64:") {
+            input_size += 8;
         } else {
             panic!(format!("invalid desc string: {}", *d));
         }
@@ -51,6 +53,8 @@ fn main() {
             output_size += 16;
         } else if d.starts_with("u32:") {
             output_size += 4;
+        } else if d.starts_with("u64:") {
+            output_size += 8;
         } else {
             panic!(format!("invalid desc string: {}", *d));
         }
