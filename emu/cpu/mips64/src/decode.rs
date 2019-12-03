@@ -90,6 +90,15 @@ fn decode1<C: Config>(cpu: &Cpu<C>, opcode: u32, pc: u64) -> DecodedInsn {
             0x2E => DecodedInsn::new3("dsub", OReg(rd), IReg(rs), IReg(rt)),
             0x2F => DecodedInsn::new3("dsubu", OReg(rd), IReg(rs), IReg(rt)),
 
+            0x34 => DecodedInsn::new2("teq", IReg(rs), IReg(rt)),
+
+            0x38 => DecodedInsn::new3("dsll", OReg(rd), IReg(rt), Imm8(sa)),
+            0x3A => DecodedInsn::new3("dsrl", OReg(rd), IReg(rt), Imm8(sa)),
+            0x3B => DecodedInsn::new3("dsra", OReg(rd), IReg(rt), Imm8(sa)),
+            0x3C => DecodedInsn::new3("dsll32", OReg(rd), IReg(rt), Imm8(sa)),
+            0x3E => DecodedInsn::new3("dsrl32", OReg(rd), IReg(rt), Imm8(sa)),
+            0x3F => DecodedInsn::new3("dsra32", OReg(rd), IReg(rt), Imm8(sa)),
+
             _ => DecodedInsn::new1("unkspc", Imm32(special)),
         },
         0x01 => match vrt {
