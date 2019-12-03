@@ -3,6 +3,7 @@ use super::UiCtx;
 use array_macro::array;
 use bitflags::bitflags;
 use imgui::*;
+use serde_derive::{Serialize, Deserialize};
 
 use crate::memint::{AccessSize, MemInt};
 
@@ -130,7 +131,7 @@ impl Tracer<'_> {
     }
 }
 
-#[derive(Eq)]
+#[derive(Eq, Serialize, Deserialize)]
 pub(crate) struct Breakpoint {
     active: bool,
     pc: u64,
@@ -155,13 +156,13 @@ impl PartialEq for Breakpoint {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
 pub(crate) enum WatchpointType {
     Read,
     Write,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum WatchpointCondition {
     Always,
     Eq(u64), // equal to
@@ -188,7 +189,7 @@ impl WatchpointCondition {
     }
 }
 
-#[derive(Eq)]
+#[derive(Eq, Serialize, Deserialize)]
 pub(crate) struct Watchpoint {
     active: bool,
     addr: u64,
@@ -244,18 +245,28 @@ impl PartialEq for Watchpoint {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct DbgCpu {
     breakpoints: Vec<Breakpoint>,
     watchpoints: Vec<Watchpoint>,
 
+    #[serde(skip)]
     bp_oneshot: Option<u64>, // Special one-shot breakpoint
 
+    #[serde(skip)]
     bp_fastmap: IntHashMap<u64, usize>,
+
+    #[serde(skip)]
     wp_fastmap: IntHashMap<u64, usize>,
 }
 
 impl DbgCpu {
+    fn after_deserialize(&mut self) {
+        self.update_bp_fastmap();
+        self.update_wp_fastmap();
+        self.bp_oneshot = None;
+    }
+
     fn add_breakpoint(&mut self, pc: u64, description: &str) {
         self.breakpoints.push(Breakpoint {
             active: true,
@@ -308,8 +319,10 @@ impl DbgCpu {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Debugger {
     cpus: HashMap<String, DbgCpu>,
+    #[serde(skip)]
     next_poll: Cell<Option<Instant>>,
 }
 
@@ -323,6 +336,12 @@ impl Debugger {
         Self {
             cpus: cpumap,
             next_poll: Cell::new(None),
+        }
+    }
+
+    pub fn after_deserialize(&mut self) {
+        for (_, c) in self.cpus.iter_mut() {
+            c.after_deserialize();
         }
     }
 

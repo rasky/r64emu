@@ -59,7 +59,9 @@ fn run() -> Result<()> {
 
     if args.debugger {
         let mut n64 = create_n64(&args.rom, &args.bios).unwrap();
-        out.run_and_debug(&mut n64);
+        let mut dbgconfig = args.rom.clone();
+        dbgconfig.set_extension("dbg");
+        out.run_and_debug(&mut n64, &dbgconfig);
     } else {
         out.run_threaded(move || Ok(Box::new(create_n64(&args.rom, &args.bios).unwrap())));
     }

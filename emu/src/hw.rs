@@ -21,6 +21,7 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
+use std::path::Path;
 
 pub struct VideoConfig {
     pub window_title: String,
@@ -248,7 +249,7 @@ impl Output {
         }
     }
 
-    pub fn run_and_debug<SI, SF, P>(&mut self, producer: &mut P)
+    pub fn run_and_debug<SI, SF, P>(&mut self, producer: &mut P, dbg_conf_filename: &Path)
     where
         SI: SampleInt + AudioFormatNum,
         SF: SampleFormat<SAMPLE = SI, ORDER = NativeEndian>,
@@ -258,6 +259,9 @@ impl Output {
         let height = self.vcfg.height as usize;
         assert_eq!(self.video.is_some(), true); // TODO: debugger could work without video as well
         let mut dbg_ui = DebuggerUI::new(self.video.as_ref().unwrap().video.clone(), producer);
+        if dbg_conf_filename.exists() {
+            dbg_ui.load_conf(dbg_conf_filename);
+        }
 
         let mut audio = Audio::<SI, SF>::new(&self.context, self.vcfg.fps, self.acfg.clone());
         let mut audio_buf = OwnedSndBuffer::with_capacity(audio.samples_per_frame());
@@ -265,7 +269,7 @@ impl Output {
         let mut event_pump = self.context.event_pump().unwrap();
         let mut screen = OwnedGfxBufferLE::<Rgb888>::new(width, height);
 
-        let mut input = match producer.input_manager() {
+        let input = match producer.input_manager() {
             Some(im) => Some(InputMapping::new(InputConfig::default(im))),
             None => None,
         };
@@ -304,6 +308,8 @@ impl Output {
 
             self.framecount += 1;
         }
+
+        dbg_ui.save_conf(dbg_conf_filename);
     }
 
     /// Run a blocking loop in which output is produced by a OutputProducer,

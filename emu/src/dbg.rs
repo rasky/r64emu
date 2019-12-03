@@ -8,10 +8,13 @@ use imgui_sdl2::ImguiSdl2;
 use imgui_sys::{igSetNextWindowSizeConstraints, ImGuiSizeCallbackData};
 use sdl2::keyboard::Scancode;
 mod uisupport;
+use serde_derive::Deserialize;
 
+use std::fs;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+use std::path::Path;
 
 // Views
 mod regview;
@@ -311,6 +314,17 @@ impl DebuggerUI {
             });
 
         self.dbg.render_main(ui, self.uictx.get_mut());
+    }
+
+    pub fn load_conf(&mut self, filename: &Path) -> std::result::Result<(), Box<dyn std::error::Error + 'static>> {
+        self.dbg = serde_json::from_str(&fs::read_to_string(filename)?)?;
+        self.dbg.after_deserialize();
+        Ok(())
+    }
+
+    pub fn save_conf(&self, filename: &Path) -> std::result::Result<(), std::io::Error> {
+        let c = serde_json::to_string(&self.dbg).unwrap();
+        fs::write(filename, c)
     }
 }
 
