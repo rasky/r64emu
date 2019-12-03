@@ -709,10 +709,10 @@ impl<C: Config> Cpu<C> {
             self.cop1.render_debug(dr);
         }
         if !self.cop2.is_null_obj() {
-            self.cop1.render_debug(dr);
+            self.cop2.render_debug(dr);
         }
         if !self.cop3.is_null_obj() {
-            self.cop1.render_debug(dr);
+            self.cop3.render_debug(dr);
         }
     }
 }
