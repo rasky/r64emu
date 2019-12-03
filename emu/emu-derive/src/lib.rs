@@ -62,6 +62,7 @@ struct MemAttributes {
     size: usize,
     readonly: bool,
     writeonly: bool,
+    wcb: bool,
 
     bank: usize,
     offset: u32,
@@ -201,6 +202,12 @@ fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemA
                 }
                 ma.writeonly = true;
             }
+            "wcb" => {
+                if kv.len() != 1 {
+                    panic!(format!("{}: unexpected argument for wcb", varname))
+                }
+                ma.wcb = true;
+            }
             "bank" => {
                 if kv.len() != 2 {
                     panic!(format!("{}: no argument for bank", varname))
@@ -256,6 +263,9 @@ fn parse_mem_attributes(varname: &str, attrs: &proc_macro2::TokenStream) -> MemA
     }
     if ma.vsize == 0 {
         ma.vsize = ma.size as u32;
+    }
+    if ma.readonly && ma.wcb {
+        panic!(format!("{}: cannot specify wcb for readonly mem", varname));
     }
     if ma.readonly && ma.writeonly {
         panic!(format!(
@@ -317,19 +327,21 @@ fn expand_reg_devinit(
 
 fn expand_mem_devinit(
     fi: &synstructure::BindingInfo,
+    dev_ident: &Ident,
     structname: &str,
     varname: &str,
     ma: &MemAttributes,
 ) -> proc_macro2::TokenStream {
     let size = ma.size;
-    let read = !ma.readonly;
-    let write = !ma.writeonly;
     if size == 0 {
         if ma.readonly {
-            panic!("cannot set readonly for manully inited mem")
+            panic!("cannot set readonly for manually inited mem")
         }
         if ma.writeonly {
-            panic!("cannot set writeonly for manully inited mem")
+            panic!("cannot set writeonly for manually inited mem")
+        }
+        if ma.wcb {
+            panic!("cannot set wcb for manually inited mem")
         }
         quote! {
             if #fi .len() == 0 {
@@ -337,11 +349,24 @@ fn expand_mem_devinit(
             }
         }
     } else {
+        let read = !ma.readonly;
+        let write = !ma.writeonly;
+        let mut qwcb = quote! {None};
+
+        if ma.wcb {
+            let cbname = Ident::new(&format!("cb_write_{}", varname), Span::call_site());
+            qwcb = quote! {
+                Some(Rc::new(Box::new(move |addr, size, old, val| {
+                    let dev = #dev_ident ::get_mut();
+                    dev. #cbname (addr, size, old, val);
+                })))
+            };
+        }
         quote! {
             if #fi .len() != 0 {
                 panic!("don't specify size for already inited mem");
             }
-            *#fi = Mem::new(concat!(#structname, "::", #varname), #size, MemFlags::new(#read, #write), None);
+            *#fi = Mem::new(concat!(#structname, "::", #varname), #size, MemFlags::new(#read, #write), #qwcb);
         }
     }
 }
@@ -422,7 +447,7 @@ fn derive_device(mut s: synstructure::Structure, bigendian: bool) -> proc_macro2
                     #dev_map
                     #dm;
                 };
-                expand_mem_devinit(fi, &dev_name, &varname, &ma)
+                expand_mem_devinit(fi, &dev_ident, &dev_name, &varname, &ma)
             }
             _ => unreachable!(),
         }
