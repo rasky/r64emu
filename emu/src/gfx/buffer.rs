@@ -209,6 +209,12 @@ where
             &self.mem[x * CF::BITS::to_usize() / 8..],
         ))
     }
+    #[inline(always)]
+    default fn get2(&self, x: usize) -> (Color<CF>, Color<CF>) {
+        let c1 = self.get(x);
+        let c2 = self.get(x + 1);
+        (c1, c2)
+    }
 }
 
 impl<'a, CF> BufferLineGetter<CF> for GfxLine<'a, CF, LittleEndian>
@@ -221,7 +227,7 @@ where
         Color::from_bits(CF::U::truncate_from(val.into()))
     }
     #[inline(always)]
-    fn get2(&self, x: usize) -> (Color<CF>, Color<CF>) {
+    default fn get2(&self, x: usize) -> (Color<CF>, Color<CF>) {
         let val = self.mem[x / 2];
         (
             Color::from_bits(CF::U::truncate_from((val & 0xF).into())),
@@ -292,6 +298,11 @@ where
     #[inline(always)]
     default fn set(&mut self, x: usize, c: Color<CF>) {
         CF::U::endian_write_to::<O>(&mut self.mem[x * CF::BITS::to_usize() / 8..], c.to_bits());
+    }
+    #[inline(always)]
+    default fn set2(&mut self, x: usize, c1: Color<CF>, c2: Color<CF>) {
+        self.set(x, c1);
+        self.set(x + 1, c2);
     }
 }
 
