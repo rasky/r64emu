@@ -16,12 +16,12 @@ use std::path::Path;
 
 use super::ai::Ai;
 use super::cartridge::{Cartridge, CicModel};
-use super::r4300::R4300;
 use super::dp::Dp;
 use super::errors::*;
 use super::mi::Mi;
 use super::mips64;
 use super::pi::Pi;
+use super::r4300::R4300;
 use super::ri::Ri;
 use super::si::Si;
 use super::sp::{Sp, RSPCPU};
@@ -181,6 +181,13 @@ impl N64 {
         }
 
         R4300::get_mut().bus.write::<u32>(0x1FC0_07E4, seed);
+
+        // FIXME: fix RDRAM initialization emulation. IPL3 does initialize RDRAM (starting at 0x0400_0040),
+        // and is supposed to end up writing the RAM size at 0x8000_0318, but it does not currently work.
+        // This is relied upon by libdragon at least. So fix it by setting the RDRAM as already initialized
+        // and copying the RAM size.
+        R4300::get_mut().bus.write::<u32>(0x0470_000C, 0x14);
+        R4300::get_mut().bus.write::<u32>(0x0000_0318, 4*1024*1024);
         Ok(())
     }
 }
