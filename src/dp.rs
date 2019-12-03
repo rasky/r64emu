@@ -5,6 +5,7 @@ extern crate slog;
 use super::mi::{IrqMask, Mi};
 use super::r4300::R4300;
 use super::rdp::Rdp;
+use super::sp::RSPCPU;
 use emu::bus::be::{Device, MemIoR, Reg32, RegDeref, RegRef};
 use emu::dbg;
 use emu::int::Numerics;
@@ -47,7 +48,7 @@ pub struct Dp {
     #[reg(bank = 0, offset = 0x8, readonly)]
     cmd_current: Reg32,
 
-    #[reg(bank = 0, offset = 0xC, rwmask = 0, wcb)]
+    #[reg(bank = 0, offset = 0xC, wcb)]
     cmd_status: Reg32,
 
     logger: slog::Logger,
@@ -101,7 +102,14 @@ impl Dp {
 
     fn cb_write_cmd_status(&mut self, old: u32, new: u32) {
         self.cmd_status.set(old);
+        let mut status = self.cmd_status_ref();
         warn!(self.logger, "writing to DP status"; o!("val" => new.hex()));
+        if new & (1<<0) != 0 {
+            status.remove(StatusFlags::XBUS_DMA);
+        }
+        if new & (1<<1) != 0 {
+            status.insert(StatusFlags::XBUS_DMA);
+        }
     }
 
     fn check_start(&mut self) {
@@ -117,7 +125,11 @@ impl Dp {
             let start = self.cmd_start.get();
             *self.cmd_current_ref() = start;
             self.fetched_start_addr = start;
-            self.fetched_mem = R4300::get().bus.fetch_read::<u64>(start);
+            if status.contains(StatusFlags::XBUS_DMA) {
+                self.fetched_mem = RSPCPU::get().bus.fetch_read::<u64>(start);
+            } else {
+                self.fetched_mem = R4300::get().bus.fetch_read::<u64>(start);
+            }
             if self.fetched_mem.iter().is_none() {
                 error!(self.logger, "cmd buffer pointing to non-linear memory"; o!("ptr" => start.hex()));
             }
