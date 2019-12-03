@@ -360,6 +360,7 @@ impl Cop for Fpu {
                 }
             },
             0x4 => self.ctx.regs[rs] = (cpu.regs[rt] as u32) as u64, // MTC1
+            0x5 => self.ctx.set_fgr(rs, cpu.regs[rt]), // DMTC1
             0x6 => match rs {
                 // CTC1
                 31 => self.ctx.fcsr = cpu.regs[rt],
@@ -436,6 +437,7 @@ impl Cop for Fpu {
                     0x0 => DecodedInsn::new2("mfc1", OReg(rt), IReg(fs)),
                     0x2 => DecodedInsn::new2("cfc1", OReg(rt), IReg(cfs)),
                     0x4 => DecodedInsn::new2("mtc1", IReg(rt), OReg(fs)),
+                    0x5 => DecodedInsn::new2("dmtc1", IReg(rt), OReg(fs)),
                     0x6 => DecodedInsn::new2("ctc1", IReg(rt), OReg(cfs)),
                     0x8 => {
                         let tgt = pc + 4 + (opcode as u16).sx64() * 4;
