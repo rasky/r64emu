@@ -75,9 +75,9 @@ impl RSPCPU {
                 logger.new(o!()),
                 Bus::new(logger.new(o!())),
                 (
-                    SpCop0::new(logger.new(o!()))?,
+                    SpCop0::new("RSP-COP0", logger.new(o!()))?,
                     mips64::CopNull {},
-                    SpCop2::new(logger.new(o!()))?,
+                    SpCop2::new("RSP-VU", logger.new(o!()))?,
                     mips64::CopNull {},
                 ),
             ),

@@ -69,6 +69,7 @@ struct SpCop2Context {
 
 pub struct SpCop2 {
     ctx: Field<SpCop2Context>,
+    name: String,
     logger: slog::Logger,
 }
 
@@ -80,8 +81,9 @@ impl SpCop2 {
     pub const REG_ACCUM_MD: usize = 36;
     pub const REG_ACCUM_HI: usize = 37;
 
-    pub fn new(logger: slog::Logger) -> Result<SpCop2> {
+    pub fn new(name: &str, logger: slog::Logger) -> Result<SpCop2> {
         Ok(SpCop2 {
+            name: name.to_owned(),
             ctx: Field::new("sp::cop2", SpCop2Context::default()),
             logger: logger,
         })
@@ -916,4 +918,39 @@ impl Cop for SpCop2 {
     fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
         decode(opcode, pc)
     }
+
+    fn render_debug(&mut self, dr: &dbg::DebuggerRenderer) {
+        dr.render_regview(self);
+    }
 }
+
+impl dbg::RegisterView for SpCop2 {
+    const WINDOW_SIZE: (f32, f32) = (180.0, 400.0);
+    const COLUMNS: usize = 8;
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)
+    where
+        F: for<'a> FnMut(&'a str, dbg::RegisterSize<'a>, Option<&str>),
+    {
+        use emu::dbg::RegisterSize::*;
+        let ctx = unsafe { self.ctx.as_mut() };
+        const REG_NAMES: [&str; 32] = [ "v0","v1","v2","v3","v4","v5","v6","v7","v8","v9","v10","v11","v12","v13","v14","v15","v16","v17","v18","v19","v20","v21","v22","v23","v24","v25","v26","v27","v28","v29","v30","v31"];
+        const ACC_NAMES: [&str; 3] = [ "acc_lo", "acc_md", "acc_hi"];
+
+        for i in 0..32 {
+            let v: &mut [u16; 8] = unsafe { std::mem::transmute(&mut ctx.vregs[i].0) };
+            visit(if col==7 { &REG_NAMES[i] } else { "" }, Reg16(&mut v[7-col]), None);
+        }
+
+        for i in 0..3 {
+            let v: &mut [u16; 8] = unsafe { std::mem::transmute(&mut ctx.accum[i].0) };
+            visit(if col==7 { ACC_NAMES[i] } else { "" }, Reg16(&mut v[7-col]), None);
+        }
+    }
+}
+
+

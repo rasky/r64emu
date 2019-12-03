@@ -43,13 +43,15 @@ const RSP_COP0_REG_NAMES: [&'static str; 32] = [
 ];
 
 pub struct SpCop0 {
+    name: String,
     _logger: slog::Logger,
     reg_bus: Box<Bus>, // bus to access SP HW registers via MTC/MFC
 }
 
 impl SpCop0 {
-    pub fn new(logger: slog::Logger) -> Result<SpCop0> {
+    pub fn new(name: &str, logger: slog::Logger) -> Result<SpCop0> {
         Ok(SpCop0 {
+            name: name.to_owned(),
             _logger: logger.new(o!()),
             reg_bus: Bus::new(logger.new(o!())),
         })
