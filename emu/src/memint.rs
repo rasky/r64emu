@@ -11,6 +11,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use enum_map::Enum;
 use num::PrimInt;
 use serde::{Deserialize, Serialize};
+use serde_derive::{Deserialize, Serialize};
 
 /// An enum that defines the four supported access sizes. This is exposed
 /// through the associated constant `ACCESS_SIZE` in
@@ -18,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// so that it can be used in a very efficient [`EnumMap`](struct.EnumMap.html)
 /// (which boils down to a 4-element array) in case there is a need for a
 /// runtime data structure indexed by access size.
-#[derive(Debug, Enum, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Enum, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccessSize {
     Size8,
     Size16,
