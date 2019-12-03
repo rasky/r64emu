@@ -31,6 +31,9 @@ pub struct Mi {
     #[reg(offset = 0x00, wcb)]
     reg_mode: Reg32,
 
+    #[reg(offset = 0x04, init = 0x02020102, readonly)]
+    reg_version: Reg32,
+
     #[reg(offset = 0x08, readonly)]
     irq_ack: Reg32,
 
@@ -46,6 +49,7 @@ impl Mi {
             reg_mode: Reg32::default(),
             irq_ack: Reg32::default(),
             irq_mask: Reg32::default(),
+            reg_version: Reg32::default(),
             logger,
         })
     }
