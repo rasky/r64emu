@@ -22,6 +22,7 @@ pub enum Exception {
     Nmi,
     TlbRefill,
     XTlbRefill,
+    Trap,
 }
 
 impl Exception {
@@ -34,6 +35,7 @@ impl Exception {
             Exception::SoftReset => None,
             Exception::TlbRefill => None,
             Exception::XTlbRefill => None,
+            Exception::Trap => Some(0x0D),
         }
     }
 }
@@ -388,6 +390,12 @@ impl<C: Config> Cpu<C> {
                 0x2D if h("daddu") => *op.mrd64() = op.rs64() + op.rt64(), // DADDU
                 0x2E if h("dsub") => check_overflow_sub!(op, *op.mrd64(), op.irs64(), op.irt64()), // DSUB
                 0x2F if h("dsubu") => *op.mrd64() = op.rs64() - op.rt64(), // DSUBU
+
+                0x34 if h("teq") => { // TEQ
+                    if op.rs64() == op.rt64() {
+                        op.cpu.exception(Exception::Trap)
+                    }
+                }
 
                 0x38 if h("dsll") => *op.mrd64() = op.rt64() << op.sa(), // DSLL
                 0x3A if h("dsrl") => *op.mrd64() = op.rt64() >> op.sa(), // DSRL
