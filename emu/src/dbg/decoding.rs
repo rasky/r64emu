@@ -5,46 +5,6 @@ use std::fmt;
 
 const MAX_OPERANDS_PER_INSN: usize = 4;
 
-/// enum_str allows to define a enum that implements Display
-/// It can be useful while defining an Insn enum to be used
-/// as generic argument to DecodedInsn.
-#[macro_export]
-macro_rules! enum_str {
-    (pub enum $name:ident {
-        $($variant:ident = $val:expr),*,
-    }) => {
-        #[derive(Copy, Clone, PartialEq)]
-        pub enum $name {
-            $($variant = $val),*
-        }
-
-        impl ::std::fmt::Display for $name {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                match self {
-                    $($name::$variant => write!(f, "{}", stringify!($variant).to_lowercase())),*
-                }
-            }
-        }
-    };
-
-    (pub enum $name:ident {
-        $($variant:ident),*,
-    }) => {
-        #[derive(Copy, Clone, PartialEq)]
-        pub enum $name {
-            $($variant),*
-        }
-
-        impl ::std::fmt::Display for $name {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                match self {
-                    $($name::$variant => write!(f, "{}", stringify!($variant).to_lowercase())),*
-                }
-            }
-        }
-    };
-}
-
 /// An instruction operand.
 /// Reg is a type that can be used to identify a CPU register.
 /// It does not store the runtime value of the register, but just
@@ -53,13 +13,13 @@ macro_rules! enum_str {
 /// enum (possibly using enum_str!) or a string.
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum Operand<Reg: fmt::Display + Copy + Clone + PartialEq> {
+pub enum Operand {
     Null,         // Unused operand slot
-    IReg(Reg),    // Input register
-    OReg(Reg),    // Output register
-    IOReg(Reg),   // Input/Output register
-    HidIReg(Reg), // Implicit input register (not part of disasm)
-    HidOReg(Reg), // Implicit output register (not part of disasm)
+    IReg(&'static str),    // Input register
+    OReg(&'static str),    // Output register
+    IOReg(&'static str),   // Input/Output register
+    HidIReg(&'static str), // Implicit input register (not part of disasm)
+    HidOReg(&'static str), // Implicit output register (not part of disasm)
     Imm8(u8),     // 8-bit immediate
     Imm16(u16),   // 16-bit immediate
     Imm32(u32),   // 32-bit immediate
@@ -67,9 +27,7 @@ pub enum Operand<Reg: fmt::Display + Copy + Clone + PartialEq> {
     Target(u64),  // A branch target (absolute address)
 }
 
-impl<Reg> fmt::Display for Operand<Reg>
-where
-    Reg: fmt::Display + Copy + Clone + PartialEq,
+impl fmt::Display for Operand
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Operand::*;
@@ -89,9 +47,7 @@ where
     }
 }
 
-impl<Reg> Operand<Reg>
-where
-    Reg: fmt::Display + Copy + Clone + PartialEq,
+impl Operand
 {
     fn is_hidden(self) -> bool {
         use self::Operand::*;
@@ -101,7 +57,7 @@ where
         }
     }
 
-    fn input(self) -> Option<Reg> {
+    fn input(self) -> Option<&'static str> {
         use self::Operand::*;
         match self {
             IReg(r) | IOReg(r) | HidIReg(r) => Some(r),
@@ -109,7 +65,7 @@ where
         }
     }
 
-    fn output(self) -> Option<Reg> {
+    fn output(self) -> Option<&'static str> {
         use self::Operand::*;
         match self {
             OReg(r) | IOReg(r) | HidOReg(r) => Some(r),
@@ -118,52 +74,48 @@ where
     }
 }
 
-/// A decoded instruction. Insn is usually a string or a enum that selects
-/// among all possible instructions, but any type would work
-/// as long as it's value-like (Copy+Clone+PartialEq) and implements
-/// fmt::Display for the purpose of being displayed in the disassembly window.
+/// A decoded instruction, composed of an opcode and zero to several arguments.
+/// Both opcodes and operands are forced to be static strings, as it's a reasonable
+/// constraint for disassemblers. It would be useless to genericize this structure
+/// over an enum of opssible opcodes as the only usage is within the context of
+/// disaplying a disassembled views, so using strings do not constraint the debugger
+/// implementation in any way.
 ///
 /// fmt is the formatting pattern (in std::fmt format) used to represent the arguments.
 /// If None, the arguments will be displayed as comma-separated.
 #[derive(Clone, PartialEq)]
-pub struct DecodedInsn<Insn, Reg>
-where
-    Insn: fmt::Display + Copy + Clone + PartialEq,
-    Reg: fmt::Display + Copy + Clone + PartialEq,
+pub struct DecodedInsn
 {
-    pub op: Insn,
+    pub op: &'static str,
     pub fmt: Option<String>,
-    pub args: [Operand<Reg>; MAX_OPERANDS_PER_INSN],
+    pub args: [Operand; MAX_OPERANDS_PER_INSN],
 }
 
-impl<Insn, Reg> DecodedInsn<Insn, Reg>
-where
-    Insn: fmt::Display + Copy + Clone + PartialEq,
-    Reg: fmt::Display + Copy + Clone + PartialEq,
+impl DecodedInsn
 {
-    pub fn new0<I: Into<Insn>>(op: I) -> Self {
+    pub fn new0<I: Into<&'static str>>(op: I) -> Self {
         DecodedInsn {
             op: op.into(),
             fmt: None,
             args: [Operand::Null, Operand::Null, Operand::Null, Operand::Null],
         }
     }
-    pub fn new1<I: Into<Insn>>(op: I, arg1: Operand<Reg>) -> Self {
+    pub fn new1<I: Into<&'static str>>(op: I, arg1: Operand) -> Self {
         let mut op = Self::new0(op);
         op.args[0] = arg1;
         op
     }
-    pub fn new2<I: Into<Insn>>(op: I, arg1: Operand<Reg>, arg2: Operand<Reg>) -> Self {
+    pub fn new2<I: Into<&'static str>>(op: I, arg1: Operand, arg2: Operand) -> Self {
         let mut op = Self::new0(op);
         op.args[0] = arg1;
         op.args[1] = arg2;
         op
     }
-    pub fn new3<I: Into<Insn>>(
+    pub fn new3<I: Into<&'static str>>(
         op: I,
-        arg1: Operand<Reg>,
-        arg2: Operand<Reg>,
-        arg3: Operand<Reg>,
+        arg1: Operand,
+        arg2: Operand,
+        arg3: Operand,
     ) -> Self {
         let mut op = Self::new0(op);
         op.args[0] = arg1;
@@ -171,12 +123,12 @@ where
         op.args[2] = arg3;
         op
     }
-    pub fn new4<I: Into<Insn>>(
+    pub fn new4<I: Into<&'static str>>(
         op: I,
-        arg1: Operand<Reg>,
-        arg2: Operand<Reg>,
-        arg3: Operand<Reg>,
-        arg4: Operand<Reg>,
+        arg1: Operand,
+        arg2: Operand,
+        arg3: Operand,
+        arg4: Operand,
     ) -> Self {
         let mut op = Self::new0(op);
         op.args[0] = arg1;
@@ -191,7 +143,7 @@ where
         self
     }
 
-    pub fn args(&self) -> impl Iterator<Item = &Operand<Reg>> {
+    pub fn args(&self) -> impl Iterator<Item = &Operand> {
         self.args.iter().take_while(|o| *o != &Operand::Null)
     }
 

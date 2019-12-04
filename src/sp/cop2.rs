@@ -13,7 +13,7 @@ use emu::dbg;
 use emu::int::Numerics;
 use emu::memint::MemInt;
 use emu::state::Field;
-use mips64::{Cop, CpuContext, DecodedInsn};
+use mips64::{Cop, CpuContext};
 use serde_derive::{Deserialize, Serialize};
 use slog;
 use std::arch::x86_64::*;
@@ -915,7 +915,7 @@ impl Cop for SpCop2 {
     ) -> dbg::Result<()> {
         unimplemented!()
     }
-    fn decode(&self, opcode: u32, pc: u64) -> DecodedInsn {
+    fn decode(&self, opcode: u32, pc: u64) -> dbg::DecodedInsn {
         decode(opcode, pc)
     }
 

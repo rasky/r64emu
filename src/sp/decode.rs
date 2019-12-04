@@ -1,7 +1,7 @@
 extern crate emu;
 
-use emu::dbg::Operand;
-use mips64::{DecodedInsn, REG_NAMES};
+use emu::dbg::{DecodedInsn, Operand};
+use mips64::REG_NAMES;
 
 // Decoder constants
 const VREG_NAMES: [&'static str; 32] = [

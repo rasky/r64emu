@@ -1,6 +1,6 @@
 extern crate emu;
 use super::{Arch, Config, Cop, Cpu};
-use emu::dbg::Operand;
+use emu::dbg::{Operand, DecodedInsn};
 
 // Decoding format for arguments of load/store ops
 pub const MEMOP_FMT: &'static str = "{},{}({})";
@@ -11,13 +11,6 @@ pub const REG_NAMES: [&'static str; 34] = [
     "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra",
     "hi", "lo",
 ];
-
-/// DecodedInsn stores a MIPS64 decoded instruction.
-///
-/// We can't use enums here because there could be external
-/// COP implementations (accessed through trait obejcts) and
-/// we can't extend a enum.
-pub type DecodedInsn = emu::dbg::DecodedInsn<&'static str, &'static str>;
 
 macro_rules! decode_cop {
     ($cpu:ident, $opcode:ident, $pc:ident, $copn:ident, $default:expr) => {{

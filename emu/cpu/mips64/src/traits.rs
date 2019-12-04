@@ -1,6 +1,6 @@
-use super::{CpuContext, DecodedInsn, Exception};
+use super::{CpuContext, Exception};
 use emu::bus::be::Bus;
-use emu::dbg::{DebuggerRenderer, Result, Tracer};
+use emu::dbg::{DebuggerRenderer, DecodedInsn, Result, Tracer};
 
 /// Arch is a trait that allows to customise the MIPS core at the opcode level.
 /// It is used to implement different MIPS variants (architecture levels).

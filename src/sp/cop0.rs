@@ -3,9 +3,9 @@ use super::{Sp, StatusFlags};
 use crate::errors::*;
 use emu::bus::be::{Bus, Device};
 use emu::dbg;
-use emu::dbg::{Operand, Tracer};
+use emu::dbg::{DecodedInsn, Operand, Tracer};
 use mips64;
-use mips64::{DecodedInsn, REG_NAMES};
+use mips64::REG_NAMES;
 
 const RSP_COP0_REG_NAMES: [&'static str; 32] = [
     "DMA_CACHE",

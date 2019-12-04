@@ -1,4 +1,4 @@
-use super::decode::decode;
+use super::decode::{decode, REG_NAMES};
 use super::mmu::Mmu;
 use super::{Arch, Config, Cop, Cop0};
 

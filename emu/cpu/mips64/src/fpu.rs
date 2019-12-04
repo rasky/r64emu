@@ -1,7 +1,7 @@
-use super::decode::{DecodedInsn, MEMOP_FMT, REG_NAMES};
+use super::decode::{MEMOP_FMT, REG_NAMES};
 use super::{Cop, CpuContext};
 
-use emu::dbg::{DebuggerRenderer, Operand, RegisterSize, RegisterView, Result, Tracer};
+use emu::dbg::{DebuggerRenderer, DecodedInsn, Operand, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
 use emu::state::Field;
 

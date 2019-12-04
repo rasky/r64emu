@@ -1,8 +1,8 @@
 use bitfield::bitfield;
 
-use super::decode::{DecodedInsn, REG_NAMES};
+use super::decode::REG_NAMES;
 use super::{Cop, Cop0, CpuContext, Exception};
-use emu::dbg::{DebuggerRenderer, Operand, RegisterSize, RegisterView, Result, Tracer};
+use emu::dbg::{DebuggerRenderer, DecodedInsn, Operand, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
 use emu::state::Field;
 use serde_derive::{Deserialize, Serialize};
