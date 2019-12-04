@@ -133,6 +133,7 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                 0x03 => vloadinsn_new("ldv", off * 8),
                 0x04 => vloadinsn_new("lqv", off * 16),
                 0x05 => vloadinsn_new("lrv", off * 16),
+                0x06 => vloadinsn_new("lpv", off * 8),
                 0x0B => vloadinsn_new("ltv", off * 16),
                 _ => DecodedInsn::new1("lwc2", Imm32(oploadstore)),
             }
@@ -154,6 +155,7 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                 0x03 => vstoreinsn_new("sdv", off * 8),
                 0x04 => vstoreinsn_new("sqv", off * 16),
                 0x05 => vstoreinsn_new("srv", off * 16),
+                0x06 => vstoreinsn_new("spv", off * 8),
                 0x0A => vstoreinsn_new("swv", off * 16),
                 0x0B => vstoreinsn_new("stv", off * 16),
                 _ => DecodedInsn::new1("swc2", Imm32(oploadstore)),
