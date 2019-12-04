@@ -49,7 +49,7 @@ impl fmt::Display for Operand
 
 impl Operand
 {
-    fn is_hidden(self) -> bool {
+    pub fn is_hidden(self) -> bool {
         use self::Operand::*;
         match self {
             HidIReg(_) | HidOReg(_) => true,
@@ -57,7 +57,7 @@ impl Operand
         }
     }
 
-    fn input(self) -> Option<&'static str> {
+    pub fn input(self) -> Option<&'static str> {
         use self::Operand::*;
         match self {
             IReg(r) | IOReg(r) | HidIReg(r) => Some(r),
@@ -65,7 +65,7 @@ impl Operand
         }
     }
 
-    fn output(self) -> Option<&'static str> {
+    pub fn output(self) -> Option<&'static str> {
         use self::Operand::*;
         match self {
             OReg(r) | IOReg(r) | HidOReg(r) => Some(r),

@@ -3,7 +3,7 @@ use super::mmu::Mmu;
 use super::{Arch, Config, Cop, Cop0};
 
 use emu::bus::be::{Bus, MemIoR};
-use emu::dbg::{DebuggerRenderer, DisasmView, RegisterSize, RegisterView, Result, Tracer};
+use emu::dbg::{DebuggerRenderer, DisasmView, DecodedInsn, RegisterSize, RegisterView, Result, Tracer};
 use emu::int::Numerics;
 use emu::memint::MemInt;
 use emu::state::Field;
@@ -725,6 +725,10 @@ impl<C: Config> RegisterView for Cpu<C> {
         &self.name
     }
 
+    fn cpu_name(&self) -> &str {
+        &self.name
+    }
+
     fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)
     where
         F: for<'a> FnMut(&'a str, RegisterSize<'a>, Option<&str>),
@@ -764,13 +768,13 @@ impl<C: Config> DisasmView for Cpu<C> {
         (C::pc_mask(0x0).into(), C::pc_mask(0xFFFF_FFFF).into())
     }
 
-    fn disasm_block<Func: FnMut(u64, &[u8], &str)>(&self, pc_range: (u64, u64), mut f: Func) {
+    fn disasm_block<Func: FnMut(u64, &[u8], &DecodedInsn)>(&self, pc_range: (u64, u64), mut f: Func) {
         let mut buf = vec![0u8, 0u8, 0u8, 0u8];
         let mut pc = pc_range.0 as u32;
 
         let mut dis = move |pc: u32, opcode: u32| {
             byteorder::BigEndian::write_u32(&mut buf, opcode);
-            let insn = decode(self, opcode, pc.into()).disasm();
+            let insn = decode(self, opcode, pc.into());
             f(pc as u64, &buf, &insn);
         };
 

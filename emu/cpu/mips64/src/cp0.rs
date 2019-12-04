@@ -95,15 +95,15 @@ struct Cp0Context {
 pub struct Cp0 {
     ctx: Field<Cp0Context>,
     logger: slog::Logger,
-    name: &'static str,
+    cpu_name: &'static str,
 }
 
 impl Cp0 {
-    pub fn new(name: &'static str, logger: slog::Logger) -> Cp0 {
+    pub fn new(cpu_name: &'static str, logger: slog::Logger) -> Cp0 {
         Cp0 {
-            ctx: Field::new(&("mips64::cp0::".to_owned() + name), Cp0Context::default()),
+            ctx: Field::new(&("mips64::".to_owned() + cpu_name + "::cop0"), Cp0Context::default()),
             logger: logger,
-            name,
+            cpu_name,
         }
     }
 
@@ -422,7 +422,11 @@ impl RegisterView for Cp0 {
     const COLUMNS: usize = 1;
 
     fn name(&self) -> &str {
-        self.name
+        "COP0"
+    }
+
+    fn cpu_name(&self) -> &'static str {
+        self.cpu_name
     }
 
     fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)

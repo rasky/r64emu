@@ -12,10 +12,18 @@ pub(crate) enum UiCommand {
     Pause(bool),                    // Set global pause status
 }
 
+pub(crate) enum RegHighlight {
+    Input,
+    Output,
+}
+
+// Global state for a disasm view
 #[derive(Default)]
 pub(crate) struct UiCtxDisasm {
     pub blink_pc: Option<(u64, Instant)>,
     pub cursor_pc: Option<u64>,
+    pub cur_pc: Option<u64>,
+    pub regs_highlight: HashMap<&'static str, RegHighlight>,
 }
 
 // Global state shared by all debugger UIs, passed to all rendere functions.

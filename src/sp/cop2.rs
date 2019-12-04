@@ -958,6 +958,10 @@ impl dbg::RegisterView for SpCop2 {
         &self.name
     }
 
+    fn cpu_name(&self) -> &'static str {
+        "RSP"
+    }
+
     fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)
     where
         F: for<'a> FnMut(&'a str, dbg::RegisterSize<'a>, Option<&str>),

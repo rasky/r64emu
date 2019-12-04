@@ -2,8 +2,9 @@ use imgui::*;
 use imgui_sys;
 use sdl2::keyboard::Scancode;
 
+use super::decoding::DecodedInsn;
 use super::uisupport::*;
-use super::{TraceEvent, UiCommand, UiCtx};
+use super::{TraceEvent, UiCommand, UiCtx, RegHighlight};
 
 use std::time::Instant;
 
@@ -22,7 +23,7 @@ pub trait DisasmView {
 
     /// Disassemble a single instruction at the specified program counter;
     /// Returns the bytes composing the instruction and the string representation.
-    fn disasm_block<Func: FnMut(u64, &[u8], &str)>(&self, pc_range: (u64, u64), f: Func);
+    fn disasm_block<Func: FnMut(u64, &[u8], &DecodedInsn)>(&self, pc_range: (u64, u64), f: Func);
 }
 
 struct ByteBuf<'a>(&'a [u8]);
@@ -226,7 +227,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                     ImGuiListClipper::new(num_lines as usize).build(|start, end| {
                         v.disasm_block(
                             (pc_range.0 + start as u64 * 4, pc_range.0 + end as u64 * 4),
-                            |pc, mem, text| {
+                            |pc, mem, insn| {
                                 let mut bkg_color = color(0, 0, 0);
 
                                 // Highlight this line if it's the current cursor position
@@ -251,6 +252,23 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                                     let c1 = color(41, 65, 100);
                                     dl.add_rect_filled_multicolor(pos, end, c1, c1, c1, c1);
                                     bkg_color = c1;
+
+                                    // If PC changed since last time, update also the context to save
+                                    // input/output regs (that will be used to highlight them).
+                                    let ctx = ctx.disasm.get_mut(&cpu_name).unwrap();
+                                    if ctx.cur_pc.is_none() || ctx.cur_pc.unwrap() != pc {
+                                        ctx.cur_pc = Some(pc);
+
+                                        ctx.regs_highlight.clear();
+                                        for op in insn.args() {
+                                            if let Some(inp) = op.input() {
+                                                ctx.regs_highlight.insert(inp, RegHighlight::Input);
+                                            }
+                                            if let Some(outp) = op.output() {
+                                                ctx.regs_highlight.insert(outp, RegHighlight::Output);
+                                            }
+                                        }
+                                    }
                                 }
 
                                 // See if we need to do a blink animation over this PC
@@ -271,7 +289,8 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                                     }
                                 }
 
-                                let fields: Vec<&str> = text.splitn(2, "\t").collect();
+                                let dis = insn.disasm();
+                                let fields: Vec<&str> = dis.splitn(2, "\t").collect();
                                 let mut hovered = false;
 
                                 // Address

@@ -61,7 +61,7 @@ impl FpuContext {
 pub struct Fpu {
     ctx: Field<FpuContext>,
     logger: slog::Logger,
-    name: &'static str,
+    cpu_name: &'static str,
 }
 
 trait FloatRawConvert {
@@ -209,11 +209,11 @@ macro_rules! fp_suffix {
 }
 
 impl Fpu {
-    pub fn new(name: &'static str, logger: slog::Logger) -> Fpu {
+    pub fn new(cpu_name: &'static str, logger: slog::Logger) -> Fpu {
         Fpu {
-            ctx: Field::new(&("mips64::fpu::".to_owned() + name), FpuContext::default()),
+            ctx: Field::new(&("mips64".to_owned() + cpu_name + "::fpu"), FpuContext::default()),
             logger,
-            name,
+            cpu_name,
         }
     }
 
@@ -592,7 +592,11 @@ impl RegisterView for Fpu {
     const COLUMNS: usize = 2;
 
     fn name(&self) -> &str {
-        self.name
+        "FPU"
+    }
+
+    fn cpu_name(&self) -> &str {
+        self.cpu_name
     }
 
     fn visit_regs<'s, F>(&'s mut self, col: usize, mut visit: F)
