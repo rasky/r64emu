@@ -951,7 +951,7 @@ impl Cop for SpCop2 {
 }
 
 impl dbg::RegisterView for SpCop2 {
-    const WINDOW_SIZE: (f32, f32) = (180.0, 400.0);
+    const WINDOW_SIZE: [f32; 2] = [180.0, 400.0];
     const COLUMNS: usize = 8;
 
     fn name(&self) -> &str {

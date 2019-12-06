@@ -2,7 +2,8 @@ use crate::gfx::{GfxBufferMutLE, Rgb888};
 use crate::hw::glutils::Texture;
 use crate::snd::{SampleFormat, SndBufferMut};
 
-use imgui::*;
+use imgui;
+use imgui::im_str;
 use imgui_opengl_renderer::Renderer;
 use imgui_sdl2::ImguiSdl2;
 use imgui_sys::{igSetNextWindowSizeConstraints, ImGuiSizeCallbackData};
@@ -69,7 +70,7 @@ pub trait DebuggerModel {
 }
 
 pub struct DebuggerUI {
-    imgui: Rc<RefCell<ImGui>>,
+    imgui: Rc<RefCell<imgui::Context>>,
     imgui_sdl2: ImguiSdl2,
     backend: Renderer,
     hidpi_factor: f32,
@@ -84,13 +85,13 @@ pub struct DebuggerUI {
 }
 
 impl DebuggerUI {
-    pub(crate) fn new<T: DebuggerModel>(video: sdl2::VideoSubsystem, producer: &mut T) -> Self {
+    pub(crate) fn new<T: DebuggerModel>(video: sdl2::VideoSubsystem, window: &sdl2::video::Window, producer: &mut T) -> Self {
         let hidpi_factor = 1.0;
 
-        let mut imgui = ImGui::init();
-        imgui.set_ini_filename(Some(im_str!("debug.ini").to_owned()));
+        let mut imgui = imgui::Context::create();
+        imgui.set_ini_filename(Some("debug.ini".into()));
 
-        let imgui_sdl2 = ImguiSdl2::new(&mut imgui);
+        let imgui_sdl2 = ImguiSdl2::new(&mut imgui, &window);
         let backend = Renderer::new(&mut imgui, move |s| video.gl_get_proc_address(s) as _);
 
         let mut uictx = UiCtx::default();
@@ -206,8 +207,15 @@ impl DebuggerUI {
     ) {
         let imgui = self.imgui.clone();
         let mut imgui = imgui.borrow_mut();
-        let ui = self.imgui_sdl2.frame(&window, &mut imgui, &event_pump);
+        self.imgui_sdl2.prepare_frame(imgui.io_mut(), &window, &event_pump.mouse_state());
 
+        let now = Instant::now();
+        let delta = now - self.last_render;
+        let delta_s = delta.as_secs() as f32 + delta.subsec_nanos() as f32 / 1_000_000_000.0;
+        self.last_render = Instant::now();
+        imgui.io_mut().delta_time = delta_s;
+
+        let ui = imgui.frame();
         self.render_main(&ui, model);
         ui.show_demo_window(&mut true);
 
@@ -226,7 +234,6 @@ impl DebuggerUI {
         }
 
         self.backend.render(ui);
-        self.last_render = Instant::now();
 
         let uictx = self.uictx.get_mut();
         uictx.event = None;
@@ -247,8 +254,8 @@ impl DebuggerUI {
         uictx.command = None;
     }
 
-    fn render_main<'ui, T: DebuggerModel>(&mut self, ui: &Ui<'ui>, model: &mut T) {
-        if ui.imgui().is_key_pressed(Scancode::Space as _) {
+    fn render_main<'ui, T: DebuggerModel>(&mut self, ui: &imgui::Ui<'ui>, model: &mut T) {
+        if ui.is_key_pressed(Scancode::Space as _) {
             self.paused = !self.paused;
             if self.paused {
                 self.uictx.get_mut().event = Some((box TraceEvent::Paused(), Instant::now()));
@@ -258,16 +265,16 @@ impl DebuggerUI {
         render_flash_msgs(ui, self.uictx.get_mut());
 
         let help = render_help(ui);
-        if ui.imgui().is_key_pressed(Scancode::H as _) {
+        if ui.is_key_pressed(Scancode::H as _) {
             ui.open_popup(&help);
         }
 
         ui.main_menu_bar(|| {
-            ui.menu(im_str!("Emulation")).build(|| {
-                if ui.menu_item(im_str!("Soft Reset")).build() {
+            ui.menu(im_str!("Emulation"), true, || {
+                if imgui::MenuItem::new(im_str!("Soft Reset")).build(ui) {
                     model.reset(false);
                 }
-                if ui.menu_item(im_str!("Hard Reset")).build() {
+                if imgui::MenuItem::new(im_str!("Hard Reset")).build(ui) {
                     model.reset(true);
                 }
             });
@@ -276,12 +283,12 @@ impl DebuggerUI {
             ui.text(im_str!("State:"));
             if self.paused {
                 ui.text(im_str!("PAUSED"));
-                if ui.button(im_str!("Run"), (40.0, 20.0)) {
+                if ui.button(im_str!("Run"), [40.0, 20.0]) {
                     self.paused = false;
                 }
             } else {
                 ui.text(im_str!("RUNNING"));
-                if ui.button(im_str!("Pause"), (40.0, 20.0)) {
+                if ui.button(im_str!("Pause"), [40.0, 20.0]) {
                     self.paused = true;
                     self.uictx.get_mut().event = Some((box TraceEvent::Paused(), Instant::now()));
                 }
@@ -304,13 +311,13 @@ impl DebuggerUI {
                 (&mut self.screen_size as *mut (usize, usize)) as *mut ::std::ffi::c_void,
             );
         }
-        ui.window(im_str!("Screen"))
-            .size((320.0, 240.0), ImGuiCond::FirstUseEver)
-            .build(|| {
+        imgui::Window::new(im_str!("Screen"))
+            .size([320.0, 240.0], imgui::Condition::FirstUseEver)
+            .build(ui, || {
                 let tsid = self.tex_screen.id();
-                let reg = ui.get_content_region_avail();
-                let image = Image::new(ui, tsid.into(), reg);
-                image.build();
+                let reg = ui.content_region_avail();
+                let image = imgui::Image::new(tsid.into(), reg);
+                image.build(ui);
             });
 
         self.dbg.render_main(ui, self.uictx.get_mut());
@@ -332,14 +339,14 @@ extern "C" fn screen_resize_callback(data: *mut ImGuiSizeCallbackData) {
     unsafe {
         // Constraint the screen window to the ratio of the actual framebuffer
         // (as stored in the last frame).
-        let screen_size = (*data).user_data as *mut (usize, usize);
+        let screen_size = (*data).UserData as *mut (usize, usize);
         let ratio = ((*screen_size).1 as f32) / ((*screen_size).0 as f32);
-        (*data).desired_size.y = (*data).desired_size.x * ratio;
+        (*data).DesiredSize.y = (*data).DesiredSize.x * ratio;
     }
 }
 
 pub struct DebuggerRenderer<'a, 'ui> {
-    ui: &'a Ui<'ui>,
+    ui: &'a imgui::Ui<'ui>,
     ctx: &'a RefCell<UiCtx>,
 }
 

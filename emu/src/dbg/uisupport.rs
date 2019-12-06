@@ -37,7 +37,7 @@ impl ImGuiListClipper {
             if !done {
                 break;
             }
-            f(clip.display_start as isize, clip.display_end as isize);
+            f(clip.DisplayStart as isize, clip.DisplayEnd as isize);
         }
 
         unsafe {
@@ -96,45 +96,49 @@ pub fn imgui_input_hex<T: HexableInt>(
     wait_enter: bool,
 ) -> bool {
     let mut changed = false;
-    ui.with_item_width(T::HEX_DIGITS as f32 * 7.0 + 8.0, || {
-        let mut spc = ImString::new(val.format());
-        if ui
-            .input_text(name, &mut spc)
-            .chars_hexadecimal(true)
-            .enter_returns_true(wait_enter)
-            .auto_select_all(true)
-            .build()
-        {
-            if let Some(v) = T::parse(spc.as_ref()) {
-                *val = v;
-                changed = true;
-            }
+
+    let iw = ui.push_item_width(T::HEX_DIGITS as f32 * 7.0 + 8.0);
+
+    let mut spc = ImString::new(val.format());
+    if ui
+        .input_text(name, &mut spc)
+        .chars_hexadecimal(true)
+        .enter_returns_true(wait_enter)
+        .auto_select_all(true)
+        .build()
+    {
+        if let Some(v) = T::parse(spc.as_ref()) {
+            *val = v;
+            changed = true;
         }
-    });
+    }
+
+    iw.pop(&ui);
+
     changed
 }
 
-fn interp4(a: ImVec4, b: ImVec4, d: f32) -> ImVec4 {
-    ImVec4::new(
-        a.x + (b.x - a.x) * d,
-        a.y + (b.y - a.y) * d,
-        a.z + (b.z - a.z) * d,
-        a.w + (b.w - a.w) * d,
-    )
+fn interp4(a: [f32; 4], b: [f32; 4], d: f32) -> [f32; 4] {
+    [
+        a[0] + (b[0] - a[0]) * d,
+        a[1] + (b[1] - a[1]) * d,
+        a[2] + (b[2] - a[2]) * d,
+        a[3] + (b[3] - a[3]) * d,
+    ]
 }
 
-pub fn blink_color(base: ImVec4, start: Instant) -> Option<ImVec4> {
+pub fn blink_color(base: [f32; 4], start: Instant) -> Option<[f32; 4]> {
+    const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let elapsed = start.elapsed();
-    let white = ImVec4::new(1.0, 1.0, 1.0, 1.0);
     let end = Duration::from_millis(1000);
     let mid = end / 2;
 
     if elapsed < mid {
         let d = (mid - elapsed).subsec_millis() as f32 / mid.subsec_millis() as f32;
-        Some(interp4(base, white, d))
+        Some(interp4(base, WHITE, d))
     } else if elapsed < end {
         let d = (end - elapsed).subsec_millis() as f32 / mid.subsec_millis() as f32;
-        Some(interp4(white, base, d))
+        Some(interp4(WHITE, base, d))
     } else {
         None
     }

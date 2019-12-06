@@ -471,7 +471,7 @@ impl Debugger {
                 .auto_select_all(true)
                 .build();
 
-            if ui.button(im_str!("Add"), (40.0, 20.0)) {
+            if ui.button(im_str!("Add"), [40.0, 20.0]) {
                 let desc = ctx.new_bp_desc.to_str().to_owned();
                 cpu.add_breakpoint(ctx.new_bp_pc, &desc);
                 ui.close_current_popup();
@@ -490,14 +490,14 @@ impl Debugger {
         ui.set_column_offset(2, 110.0);
         for (idx, bp) in cpu.breakpoints.iter_mut().enumerate() {
             let name = im_str!("###breakpoints#active#{}", idx);
-            if ui.checkbox(name, &mut bp.active) {
+            if ui.checkbox(&name, &mut bp.active) {
                 // Changing activation requires update to fastmap
                 bp_changed = true;
             }
             ui.next_column();
 
             let name = im_str!("###breakpoints#pc#{}", idx);
-            if imgui_input_hex(ui, name, &mut bp.pc, true) {
+            if imgui_input_hex(ui, &name, &mut bp.pc, true) {
                 // Changing PC requires update to fastmap
                 bp_changed = true;
             }
@@ -506,7 +506,7 @@ impl Debugger {
             let name = im_str!("###breakpoints#desc#{}", idx);
             let mut sdesc = ImString::new(bp.description.clone());
             if ui
-                .input_text(name, &mut sdesc)
+                .input_text(&name, &mut sdesc)
                 .enter_returns_true(true)
                 .auto_select_all(true)
                 .build()
@@ -548,20 +548,17 @@ impl Debugger {
 
             ui.text(im_str!("Condition:"));
             ui.same_line(80.0);
-            ui.combo(
-                im_str!("###wp#new_cond"),
-                &mut ctx.new_wp_cond,
-                &[
-                    im_str!("Always"),
-                    im_str!("=="),
-                    im_str!("!="),
-                    im_str!(">="),
-                    im_str!("<="),
-                    im_str!(">"),
-                    im_str!("<"),
-                ],
-                0,
-            );
+            ComboBox::new(&im_str!("###wp#new_cond"))
+                .build_simple_string(&ui, &mut ctx.new_wp_cond,
+                    &[
+                        im_str!("Always"),
+                        im_str!("=="),
+                        im_str!("!="),
+                        im_str!(">="),
+                        im_str!("<="),
+                        im_str!(">"),
+                        im_str!("<"),
+                    ]);
 
             if ctx.new_wp_cond != 0 {
                 ui.text(im_str!("Value:"));
@@ -569,7 +566,7 @@ impl Debugger {
                 imgui_input_hex(ui, im_str!("###wp#new_value"), &mut ctx.new_wp_value, false);
             }
 
-            if ui.button(im_str!("Add"), (40.0, 20.0)) {
+            if ui.button(im_str!("Add"), [40.0, 20.0]) {
                 let desc = ctx.new_wp_desc.to_str().to_owned();
                 let wtype = if ctx.new_wp_type == 0 {
                     WatchpointType::Read
@@ -606,14 +603,14 @@ impl Debugger {
         ui.set_column_offset(2, 110.0);
         for (idx, wp) in cpu.watchpoints.iter_mut().enumerate() {
             let name = im_str!("###watchpoints#active#{}", idx);
-            if ui.checkbox(name, &mut wp.active) {
+            if ui.checkbox(&name, &mut wp.active) {
                 // Changing activation requires update to fastmap
                 wp_changed = true;
             }
             ui.next_column();
 
             let name = im_str!("###watchpoints#addr#{}", idx);
-            if imgui_input_hex(ui, name, &mut wp.addr, true) {
+            if imgui_input_hex(ui, &name, &mut wp.addr, true) {
                 // Changing addr requires update to fastmap
                 wp_changed = true;
             }
@@ -622,7 +619,7 @@ impl Debugger {
             let name = im_str!("###watchpoint#desc#{}", idx);
             let mut sdesc = ImString::new(wp.description.clone());
             if ui
-                .input_text(name, &mut sdesc)
+                .input_text(&name, &mut sdesc)
                 .enter_returns_true(true)
                 .auto_select_all(true)
                 .build()
@@ -646,9 +643,9 @@ impl Debugger {
         for idx in 0..ctx.cpus.len() {
             let cpu_name = ctx.cpus[idx].clone();
 
-            ui.window(im_str!("[{}] Breakpoints & Watchpoints", cpu_name))
-                .size((200.0, 400.0), ImGuiCond::FirstUseEver)
-                .build(|| {
+            Window::new(&im_str!("[{}] Breakpoints & Watchpoints", cpu_name))
+                .size([200.0, 400.0], Condition::FirstUseEver)
+                .build(ui, || {
                     if ui
                         .collapsing_header(im_str!("Breakpoints"))
                         .default_open(true)

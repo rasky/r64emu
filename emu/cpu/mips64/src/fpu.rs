@@ -588,7 +588,7 @@ impl Cop for Fpu {
 }
 
 impl RegisterView for Fpu {
-    const WINDOW_SIZE: (f32, f32) = (360.0, 400.0);
+    const WINDOW_SIZE: [f32; 2] = [360.0, 400.0];
     const COLUMNS: usize = 2;
 
     fn name(&self) -> &str {

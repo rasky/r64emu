@@ -41,7 +41,7 @@ pub(crate) fn render_help(ui: &Ui<'_>) -> ImString {
 
         ui.spacing();
         ui.spacing();
-        if ui.button(im_str!("Close"), (80.0, 30.0)) {
+        if ui.button(&im_str!("Close"), [80.0, 30.0]) {
             ui.close_current_popup();
         }
     });
@@ -58,14 +58,14 @@ pub(crate) fn render_flash_msgs(ui: &Ui<'_>, ctx: &mut UiCtx) {
     const DISTANCE_X: f32 = 10.0;
     const DISTANCE_Y: f32 = 25.0;
 
-    let disp_size = ui.imgui().display_size();
+    let disp_size = ui.io().display_size;
     let wpos_x = if CORNER & 1 != 0 {
-        disp_size.0 - DISTANCE_X
+        disp_size[0] - DISTANCE_X
     } else {
         DISTANCE_X
     };
     let wpos_y = if CORNER & 2 != 0 {
-        disp_size.1 - DISTANCE_Y
+        disp_size[1] - DISTANCE_Y
     } else {
         DISTANCE_Y
     };
@@ -75,20 +75,21 @@ pub(crate) fn render_flash_msgs(ui: &Ui<'_>, ctx: &mut UiCtx) {
     unsafe {
         igSetNextWindowPos(
             (wpos_x, wpos_y).into(),
-            ImGuiCond::Always,
+            ImGuiCond_Always as i32,
             (pivot_x, pivot_y).into(),
         );
         igSetNextWindowBgAlpha(0.5);
     }
-    ui.window(im_str!(""))
+    Window::new(&im_str!(""))
         .resizable(false)
         .movable(false)
         .collapsible(false)
         .title_bar(false)
         .save_settings(false)
-        .inputs(false)
-        .build(|| {
-            ui.text(im_str!("{}", msg));
+        .no_nav()
+        .mouse_inputs(false)
+        .build(ui, || {
+            ui.text(&im_str!("{}", msg));
         });
 
     if when.elapsed() > Duration::from_secs(4) {

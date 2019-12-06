@@ -418,7 +418,7 @@ impl Cop for Cp0 {
 }
 
 impl RegisterView for Cp0 {
-    const WINDOW_SIZE: (f32, f32) = (180.0, 400.0);
+    const WINDOW_SIZE: [f32; 2] = [180.0, 400.0];
     const COLUMNS: usize = 1;
 
     fn name(&self) -> &str {

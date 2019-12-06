@@ -56,7 +56,7 @@ pub(crate) struct UiCtx {
     pub new_wp_addr: u64,
     pub new_wp_desc: ImString,
     pub new_wp_type: i32,
-    pub new_wp_cond: i32,
+    pub new_wp_cond: usize,
     pub new_wp_value: u64,
 }
 

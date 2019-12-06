@@ -258,7 +258,9 @@ impl Output {
         let width = self.vcfg.width as usize;
         let height = self.vcfg.height as usize;
         assert_eq!(self.video.is_some(), true); // TODO: debugger could work without video as well
-        let mut dbg_ui = DebuggerUI::new(self.video.as_ref().unwrap().video.clone(), producer);
+
+        let video = self.video.as_ref().unwrap();
+        let mut dbg_ui = DebuggerUI::new(video.video.clone(), &video.window, producer);
         if dbg_conf_filename.exists() {
             dbg_ui.load_conf(dbg_conf_filename);
         }

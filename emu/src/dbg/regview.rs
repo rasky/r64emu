@@ -12,7 +12,7 @@ pub enum RegisterSize<'a> {
 /// A trait for an object that can display register contents to
 /// a debugger view.
 pub trait RegisterView {
-    const WINDOW_SIZE: (f32, f32);
+    const WINDOW_SIZE: [f32; 2];
     const COLUMNS: usize;
     fn name<'a>(&'a self) -> &'a str;
     fn cpu_name<'a>(&'a self) -> &'a str;
@@ -31,9 +31,9 @@ pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(
     v: &mut RV,
 ) {
     let disasm = ctx.disasm.get(v.cpu_name());
-    ui.window(im_str!("[{}] Registers", v.name()))
-        .size(RV::WINDOW_SIZE, ImGuiCond::FirstUseEver)
-        .build(|| {
+    Window::new(&im_str!("[{}] Registers", v.name()))
+        .size(RV::WINDOW_SIZE, Condition::FirstUseEver)
+        .build(ui, || {
             // Iterate on all the columns
             ui.columns(RV::COLUMNS as _, im_str!("columns"), true);
             for col in 0..RV::COLUMNS {
@@ -53,18 +53,20 @@ pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(
                     };
 
                     // Draw the register box
-                    let name = im_str!("{}", name);
-                    ui.with_color_var(ImGuiCol::FrameBg, bgcolor, || {
-                        match val {
-                            Reg8(v) => imgui_input_hex(ui, name, v, true),
-                            Reg16(v) => imgui_input_hex(ui, name, v, true),
-                            Reg32(v) => imgui_input_hex(ui, name, v, true),
-                            Reg64(v) => imgui_input_hex(ui, name, v, true),
-                        };
-                        if let Some(desc) = desc {
-                            ui.text(im_str!("{}", desc));
-                        }
-                    });
+                    let name = &im_str!("{}", name);
+                    let color = ui.push_style_color(StyleColor::FrameBg, bgcolor);
+
+                    match val {
+                        Reg8(v) => imgui_input_hex(ui, name, v, true),
+                        Reg16(v) => imgui_input_hex(ui, name, v, true),
+                        Reg32(v) => imgui_input_hex(ui, name, v, true),
+                        Reg64(v) => imgui_input_hex(ui, name, v, true),
+                    };
+                    if let Some(desc) = desc {
+                        ui.text(im_str!("{}", desc));
+                    }
+
+                    color.pop(&ui);
                 });
                 ui.next_column();
             }

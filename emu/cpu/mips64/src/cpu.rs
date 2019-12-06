@@ -718,7 +718,7 @@ impl<C: Config> Cpu<C> {
 }
 
 impl<C: Config> RegisterView for Cpu<C> {
-    const WINDOW_SIZE: (f32, f32) = (380.0, 400.0);
+    const WINDOW_SIZE: [f32; 2] = [380.0, 400.0];
     const COLUMNS: usize = 3;
 
     fn name(&self) -> &str {
