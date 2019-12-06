@@ -109,6 +109,8 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
     Window::new(&im_str!("[{}] Disassembly", cpu_name))
         .size([450.0, 400.0], Condition::FirstUseEver)
         .build(ui, || {
+            let has_focus = ui.is_window_focused_with_flags(WindowFocusedFlags::ROOT_AND_CHILD_WINDOWS);
+
             // *******************************************
             // Goto popup
             // *******************************************
@@ -130,7 +132,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
             // *******************************************
             // Cursor input
             // *******************************************
-            if ui.is_window_focused() {
+            if has_focus {
                 if ui.is_key_pressed(Scancode::Up as _) {
                     let cpc = match ctx.disasm[&cpu_name].cursor_pc {
                         Some(cpc) => cpc - 4,
@@ -155,19 +157,19 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
             }
             ui.same_line(0.0);
             if ui.small_button(im_str!("Center"))
-                || (ui.is_window_focused() && ui.is_key_pressed(Scancode::C as _))
+                || (has_focus && ui.is_key_pressed(Scancode::C as _))
             {
                 force_pc = Some(cur_pc);
             }
             ui.same_line(0.0);
             if ui.small_button(im_str!("Step"))
-                || (ui.is_window_focused() && ui.is_key_pressed(Scancode::S as _))
+                || (has_focus && ui.is_key_pressed(Scancode::S as _))
             {
                 ctx.command = Some(UiCommand::CpuStep(cpu_name.clone()));
             }
             ui.same_line(0.0);
             if ui.small_button(im_str!("Here"))
-                || (ui.is_window_focused() && ui.is_key_pressed(Scancode::Return as _))
+                || (has_focus && ui.is_key_pressed(Scancode::Return as _))
             {
                 if let Some(cpc) = ctx.disasm[&cpu_name].cursor_pc {
                     ctx.command = Some(UiCommand::BreakpointOneShot(cpu_name.clone(), cpc));
