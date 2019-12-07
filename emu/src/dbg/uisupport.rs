@@ -99,7 +99,14 @@ pub fn imgui_input_hex<T: HexableInt>(
 
     let iw = ui.push_item_width(T::HEX_DIGITS as f32 * 7.0 + 8.0);
 
-    let mut spc = ImString::new(val.format());
+    let vals = val.format();
+
+    // Create a buffer with the exact capacity needed to store this number.
+    // This blocks Imgui from letting the user put more digits than allowed.
+    let mut spc = ImString::with_capacity(vals.len());
+    spc.push_str(&vals);
+
+    // Draw the input text
     if ui
         .input_text(name, &mut spc)
         .chars_hexadecimal(true)
