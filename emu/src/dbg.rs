@@ -11,11 +11,11 @@ use sdl2::keyboard::Scancode;
 mod uisupport;
 use serde_derive::Deserialize;
 
-use std::fs;
 use std::cell::RefCell;
+use std::fs;
+use std::path::Path;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use std::path::Path;
 
 // Views
 mod regview;
@@ -207,7 +207,8 @@ impl DebuggerUI {
     ) {
         let imgui = self.imgui.clone();
         let mut imgui = imgui.borrow_mut();
-        self.imgui_sdl2.prepare_frame(imgui.io_mut(), &window, &event_pump.mouse_state());
+        self.imgui_sdl2
+            .prepare_frame(imgui.io_mut(), &window, &event_pump.mouse_state());
 
         let now = Instant::now();
         let delta = now - self.last_render;
@@ -255,7 +256,8 @@ impl DebuggerUI {
     }
 
     fn render_main<'ui, T: DebuggerModel>(&mut self, ui: &imgui::Ui<'ui>, model: &mut T) {
-        if ui.is_key_pressed(Scancode::Space as _) {
+        let use_global_keys = !ui.io().want_text_input;
+        if use_global_keys && ui.is_key_pressed(Scancode::Space as _) {
             self.paused = !self.paused;
             if self.paused {
                 self.uictx.get_mut().event = Some((box TraceEvent::Paused(), Instant::now()));
@@ -265,7 +267,7 @@ impl DebuggerUI {
         render_flash_msgs(ui, self.uictx.get_mut());
 
         let help = render_help(ui);
-        if ui.is_key_pressed(Scancode::H as _) {
+        if use_global_keys && ui.is_key_pressed(Scancode::H as _) {
             ui.open_popup(&help);
         }
 
@@ -323,7 +325,10 @@ impl DebuggerUI {
         self.dbg.render_main(ui, self.uictx.get_mut());
     }
 
-    pub fn load_conf(&mut self, filename: &Path) -> std::result::Result<(), Box<dyn std::error::Error + 'static>> {
+    pub fn load_conf(
+        &mut self,
+        filename: &Path,
+    ) -> std::result::Result<(), Box<dyn std::error::Error + 'static>> {
         self.dbg = serde_json::from_str(&fs::read_to_string(filename)?)?;
         self.dbg.after_deserialize();
         Ok(())
