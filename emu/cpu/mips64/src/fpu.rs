@@ -623,7 +623,7 @@ impl RegisterView for Fpu {
             }
         } else {
             for idx in 0..8 {
-                let idx = idx * 2 + col * 8;
+                let idx = idx * 2 + col * 16;
 
                 let val = self.ctx.get_fgr(idx);
                 let desc = if val >> 32 == 0 {
