@@ -3,7 +3,7 @@ use runtime_fmt::rt_format_args;
 
 use std::fmt;
 
-const MAX_OPERANDS_PER_INSN: usize = 4;
+const MAX_OPERANDS_PER_INSN: usize = 8;
 
 /// An instruction operand.
 /// Reg is a type that can be used to identify a CPU register.
@@ -14,21 +14,20 @@ const MAX_OPERANDS_PER_INSN: usize = 4;
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Operand {
-    Null,         // Unused operand slot
+    Null,                  // Unused operand slot
     IReg(&'static str),    // Input register
     OReg(&'static str),    // Output register
     IOReg(&'static str),   // Input/Output register
     HidIReg(&'static str), // Implicit input register (not part of disasm)
     HidOReg(&'static str), // Implicit output register (not part of disasm)
-    Imm8(u8),     // 8-bit immediate
-    Imm16(u16),   // 16-bit immediate
-    Imm32(u32),   // 32-bit immediate
-    Imm64(u64),   // 64-bit immediate
-    Target(u64),  // A branch target (absolute address)
+    Imm8(u8),              // 8-bit immediate
+    Imm16(u16),            // 16-bit immediate
+    Imm32(u32),            // 32-bit immediate
+    Imm64(u64),            // 64-bit immediate
+    Target(u64),           // A branch target (absolute address)
 }
 
-impl fmt::Display for Operand
-{
+impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Operand::*;
         match self {
@@ -47,8 +46,7 @@ impl fmt::Display for Operand
     }
 }
 
-impl Operand
-{
+impl Operand {
     pub fn is_hidden(self) -> bool {
         use self::Operand::*;
         match self {
@@ -84,20 +82,27 @@ impl Operand
 /// fmt is the formatting pattern (in std::fmt format) used to represent the arguments.
 /// If None, the arguments will be displayed as comma-separated.
 #[derive(Clone, PartialEq)]
-pub struct DecodedInsn
-{
+pub struct DecodedInsn {
     pub op: &'static str,
     pub fmt: Option<String>,
     pub args: [Operand; MAX_OPERANDS_PER_INSN],
 }
 
-impl DecodedInsn
-{
+impl DecodedInsn {
     pub fn new0<I: Into<&'static str>>(op: I) -> Self {
         DecodedInsn {
             op: op.into(),
             fmt: None,
-            args: [Operand::Null, Operand::Null, Operand::Null, Operand::Null],
+            args: [
+                Operand::Null,
+                Operand::Null,
+                Operand::Null,
+                Operand::Null,
+                Operand::Null,
+                Operand::Null,
+                Operand::Null,
+                Operand::Null,
+            ],
         }
     }
     pub fn new1<I: Into<&'static str>>(op: I, arg1: Operand) -> Self {
@@ -111,12 +116,7 @@ impl DecodedInsn
         op.args[1] = arg2;
         op
     }
-    pub fn new3<I: Into<&'static str>>(
-        op: I,
-        arg1: Operand,
-        arg2: Operand,
-        arg3: Operand,
-    ) -> Self {
+    pub fn new3<I: Into<&'static str>>(op: I, arg1: Operand, arg2: Operand, arg3: Operand) -> Self {
         let mut op = Self::new0(op);
         op.args[0] = arg1;
         op.args[1] = arg2;
@@ -135,6 +135,82 @@ impl DecodedInsn
         op.args[1] = arg2;
         op.args[2] = arg3;
         op.args[3] = arg4;
+        op
+    }
+    pub fn new5<I: Into<&'static str>>(
+        op: I,
+        arg1: Operand,
+        arg2: Operand,
+        arg3: Operand,
+        arg4: Operand,
+        arg5: Operand,
+    ) -> Self {
+        let mut op = Self::new0(op);
+        op.args[0] = arg1;
+        op.args[1] = arg2;
+        op.args[2] = arg3;
+        op.args[3] = arg4;
+        op.args[4] = arg5;
+        op
+    }
+    pub fn new6<I: Into<&'static str>>(
+        op: I,
+        arg1: Operand,
+        arg2: Operand,
+        arg3: Operand,
+        arg4: Operand,
+        arg5: Operand,
+        arg6: Operand,
+    ) -> Self {
+        let mut op = Self::new0(op);
+        op.args[0] = arg1;
+        op.args[1] = arg2;
+        op.args[2] = arg3;
+        op.args[3] = arg4;
+        op.args[4] = arg5;
+        op.args[5] = arg6;
+        op
+    }
+    pub fn new7<I: Into<&'static str>>(
+        op: I,
+        arg1: Operand,
+        arg2: Operand,
+        arg3: Operand,
+        arg4: Operand,
+        arg5: Operand,
+        arg6: Operand,
+        arg7: Operand,
+    ) -> Self {
+        let mut op = Self::new0(op);
+        op.args[0] = arg1;
+        op.args[1] = arg2;
+        op.args[2] = arg3;
+        op.args[3] = arg4;
+        op.args[4] = arg5;
+        op.args[5] = arg6;
+        op.args[6] = arg7;
+        op
+    }
+    pub fn new8<I: Into<&'static str>>(
+        op: I,
+        arg1: Operand,
+        arg2: Operand,
+        arg3: Operand,
+        arg4: Operand,
+        arg5: Operand,
+        arg6: Operand,
+        arg7: Operand,
+        arg8: Operand,
+    ) -> Self {
+        let mut op = Self::new0(op);
+        op.args[0] = arg1;
+        op.args[1] = arg2;
+        op.args[2] = arg3;
+        op.args[3] = arg4;
+        op.args[4] = arg5;
+        op.args[5] = arg6;
+        op.args[6] = arg7;
+        op.args[7] = arg8;
         op
     }
 
