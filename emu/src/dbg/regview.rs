@@ -71,12 +71,16 @@ pub(crate) fn render_regview<'a, 'ui, RV: RegisterView>(
                             imgui_input_hex(ui, name, v, true);
                         }
                         Reg16x8(v) => {
+                            let id = ui.push_id(name);
                             let left = ui.cursor_pos()[0];
                             for i in 0..7 {
-                                imgui_input_hex(ui, &im_str!("##{}#{}", rname, i), &mut v[i], true);
+                                let id = ui.push_id(i as i32);
+                                imgui_input_hex(ui, &im_str!(""), &mut v[i], true);
                                 ui.same_line(left + (i + 1) as f32 * 40.0);
+                                id.pop(&ui);
                             }
                             imgui_input_hex(ui, name, &mut v[7], true);
+                            id.pop(&ui);
                         }
                     };
                     if let Some(desc) = desc {
