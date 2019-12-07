@@ -621,14 +621,14 @@ impl<C: Config> Cpu<C> {
         let val = self
             .bus
             .read::<U>(C::addr_mask(addr) & !(U::SIZE as u32 - 1));
-        t.trace_mem_read(&self.name, addr.into(), U::ACCESS_SIZE, val.into())?;
+        t.trace_mem_read(&self.name, C::addr_mask(addr).into(), U::ACCESS_SIZE, val.into())?;
         Ok(val)
     }
 
     fn write<U: MemInt>(&mut self, addr: u32, val: U, t: &Tracer) -> Result<()> {
         self.bus
             .write::<U>(C::addr_mask(addr) & !(U::SIZE as u32 - 1), val);
-        t.trace_mem_write(&self.name, addr.into(), U::ACCESS_SIZE, val.into())
+        t.trace_mem_write(&self.name, C::addr_mask(addr).into(), U::ACCESS_SIZE, val.into())
     }
 
     pub fn run(&mut self, until: i64, t: &Tracer) -> Result<()> {
