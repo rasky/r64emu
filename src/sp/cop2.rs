@@ -1,6 +1,6 @@
 extern crate emu;
 
-use super::decode::decode;
+use super::decode::{decode, ACC_NAMES, VREG_NAMES};
 use super::sp::Sp;
 use super::vclip;
 use super::vmul;
@@ -808,8 +808,8 @@ impl Cop for SpCop2 {
                 let ea_idx = ea & 0x7;
 
                 let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
-                mem = mem.rotate_right(element*8);
-                mem = mem.rotate_left((ea_idx as u32)*8);
+                mem = mem.rotate_right(element * 8);
+                mem = mem.rotate_left((ea_idx as u32) * 8);
                 for e in 0..8 {
                     mem = mem.rotate_left(8);
                     self.ctx.vregs[vtidx].setlane(e, ((mem & 0xFF) << 8) as u16);
@@ -884,7 +884,7 @@ impl Cop for SpCop2 {
 
                 let memptr = &mut dmem[ea..ea + 0x10];
                 for e in 0 as usize..8 as usize {
-                    let eidx = (e+element as usize) & 0xF;
+                    let eidx = (e + element as usize) & 0xF;
                     memptr[e] = ((vt.lane(eidx & 0x7) << (eidx >> 3)) >> 8) as u8;
                 }
             }
@@ -968,32 +968,28 @@ impl dbg::RegisterView for SpCop2 {
     {
         use emu::dbg::RegisterSize::*;
         let ctx = unsafe { self.ctx.as_mut() };
-        const REG_NAMES: [&str; 32] = [ "v0","v1","v2","v3","v4","v5","v6","v7","v8","v9","v10","v11","v12","v13","v14","v15","v16","v17","v18","v19","v20","v21","v22","v23","v24","v25","v26","v27","v28","v29","v30","v31"];
-        const ACC_NAMES: [&str; 3] = [ "acc_lo", "acc_md", "acc_hi"];
 
         let mut vle: [u16; 8] = [0; 8];
         for i in 0..32 {
             let v: &mut [u16; 8] = unsafe { std::mem::transmute(&mut ctx.vregs[i].0) };
             for j in 0..8 {
-                vle[j] = v[7-j];
+                vle[j] = v[7 - j];
             }
-            visit(&REG_NAMES[i], Reg16x8(&mut vle), None);
+            visit(&VREG_NAMES[i], Reg16x8(&mut vle), None);
             for j in 0..8 {
-                v[j] = vle[7-j];
+                v[j] = vle[7 - j];
             }
         }
 
         for i in 0..3 {
             let v: &mut [u16; 8] = unsafe { std::mem::transmute(&mut ctx.accum[i].0) };
             for j in 0..8 {
-                vle[j] = v[7-j];
+                vle[j] = v[7 - j];
             }
             visit(ACC_NAMES[i], Reg16x8(&mut vle), None);
             for j in 0..8 {
-                v[j] = vle[7-j];
+                v[j] = vle[7 - j];
             }
         }
     }
 }
-
-
