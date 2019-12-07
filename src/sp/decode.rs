@@ -42,22 +42,49 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
         }
     };
 
+    let vmulinsn_new = |name| {
+        if vrd == vrs {
+            DecodedInsn::new6(
+                name,
+                IOReg(vrd),
+                IReg(vrt),
+                Imm8(e),
+                HidOReg(ACC_NAMES[0]),
+                HidOReg(ACC_NAMES[1]),
+                HidOReg(ACC_NAMES[2]),
+            )
+            .with_fmt(VREG2_FMT)
+        } else {
+            DecodedInsn::new7(
+                name,
+                IOReg(vrd),
+                IReg(vrs),
+                IReg(vrt),
+                Imm8(e),
+                HidOReg(ACC_NAMES[0]),
+                HidOReg(ACC_NAMES[1]),
+                HidOReg(ACC_NAMES[2]),
+            )
+            .with_fmt(VREG3_FMT)
+        }
+    };
+
     match op {
         0x12 => {
             if opcode & (1 << 25) != 0 {
                 match func {
-                    0x00 => vreg3insn_new("vmulf"),
-                    0x01 => vreg3insn_new("vmulu"),
-                    0x04 => vreg3insn_new("vmudl"),
-                    0x05 => vreg3insn_new("vmudm"),
-                    0x06 => vreg3insn_new("vmudn"),
-                    0x07 => vreg3insn_new("vmudh"),
-                    0x08 => vreg3insn_new("vmacf"),
-                    0x09 => vreg3insn_new("vmacu"),
-                    0x0C => vreg3insn_new("vmadl"),
-                    0x0D => vreg3insn_new("vmadm"),
-                    0x0E => vreg3insn_new("vmadn"),
-                    0x0F => vreg3insn_new("vmadh"),
+                    0x00 => vmulinsn_new("vmulf"),
+                    0x01 => vmulinsn_new("vmulu"),
+                    0x04 => vmulinsn_new("vmudl"),
+                    0x05 => vmulinsn_new("vmudm"),
+                    0x06 => vmulinsn_new("vmudn"),
+                    0x07 => vmulinsn_new("vmudh"),
+                    0x08 => vmulinsn_new("vmacf"),
+                    0x09 => vmulinsn_new("vmacu"),
+                    0x0C => vmulinsn_new("vmadl"),
+                    0x0D => vmulinsn_new("vmadm"),
+                    0x0E => vmulinsn_new("vmadn"),
+                    0x0F => vmulinsn_new("vmadh"),
                     0x10 => vreg3insn_new("vadd"),
                     0x11 => vreg3insn_new("vsub"),
                     0x13 => vreg3insn_new("vabs"),
@@ -66,9 +93,9 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                     0x17 => vreg3insn_new("vsubb"),
                     0x19 => vreg3insn_new("vsucb"),
                     0x1D => match e {
-                        8 => DecodedInsn::new2("vsar", OReg(vrd), IReg("accum_lo")),
-                        9 => DecodedInsn::new2("vsar", OReg(vrd), IReg("accum_md")),
-                        10 => DecodedInsn::new2("vsar", OReg(vrd), IReg("accum_hi")),
+                        8 => DecodedInsn::new2("vsar", OReg(vrd), IReg(ACC_NAMES[0])),
+                        9 => DecodedInsn::new2("vsar", OReg(vrd), IReg(ACC_NAMES[1])),
+                        10 => DecodedInsn::new2("vsar", OReg(vrd), IReg(ACC_NAMES[2])),
                         _ => DecodedInsn::new2("vsar?", OReg(vrd), Imm8(e)),
                     },
                     0x20 => vreg3insn_new("vlt"),
