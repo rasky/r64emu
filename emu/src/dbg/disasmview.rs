@@ -4,7 +4,7 @@ use sdl2::keyboard::Scancode;
 
 use super::decoding::DecodedInsn;
 use super::uisupport::*;
-use super::{TraceEvent, UiCommand, UiCtx, RegHighlight};
+use super::{RegHighlight, TraceEvent, UiCommand, UiCtx};
 
 use std::time::Instant;
 
@@ -109,7 +109,8 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
     Window::new(&im_str!("[{}] Disassembly", cpu_name))
         .size([450.0, 400.0], Condition::FirstUseEver)
         .build(ui, || {
-            let has_focus = ui.is_window_focused_with_flags(WindowFocusedFlags::ROOT_AND_CHILD_WINDOWS);
+            let has_focus =
+                ui.is_window_focused_with_flags(WindowFocusedFlags::ROOT_AND_CHILD_WINDOWS);
 
             // *******************************************
             // Goto popup
@@ -268,7 +269,8 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                                                 ctx.regs_highlight.insert(inp, RegHighlight::Input);
                                             }
                                             if let Some(outp) = op.output() {
-                                                ctx.regs_highlight.insert(outp, RegHighlight::Output);
+                                                ctx.regs_highlight
+                                                    .insert(outp, RegHighlight::Output);
                                             }
                                         }
                                     }
@@ -294,28 +296,26 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
 
                                 let dis = insn.disasm();
                                 let fields: Vec<&str> = dis.splitn(2, "\t").collect();
-                                let mut hovered = false;
+
+                                let gr = ui.begin_group();
 
                                 // Address
                                 ui.text_colored(color(174, 129, 255), im_str!("{:08x}", pc));
-                                hovered |= ui.is_item_hovered();
 
                                 // Hex dump
                                 ui.same_line(80.0);
                                 ui.text_colored(color(102, 99, 83), im_str!("{:x}", ByteBuf(mem)));
-                                hovered |= ui.is_item_hovered();
 
                                 // Opcode
                                 ui.same_line(160.0);
                                 ui.text_colored(color(165, 224, 46), im_str!("{}", fields[0]));
-                                hovered |= ui.is_item_hovered();
 
                                 // Args
                                 ui.same_line(230.0);
-                                ui.text_colored(color(230, 219, 116), im_str!("{}", fields[1]));
-                                hovered |= ui.is_item_hovered();
+                                ui.text_colored(color(230, 219, 116), im_str!("{:80}", fields[1]));
 
-                                if hovered
+                                gr.end(&ui);
+                                if ui.is_item_hovered()
                                     && ui.is_window_focused()
                                     && ui.is_mouse_clicked(MouseButton::Left)
                                 {
