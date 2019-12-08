@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate error_chain;
 
+use emu::dbg;
 use emu::hw;
 use emu::log;
 use r64emu::errors::*;
@@ -33,8 +34,7 @@ struct Cli {
 
 quick_main!(run);
 
-fn create_n64(romfn: &Path, biosfn: &Path) -> Result<N64> {
-    let logger = log::new_console_logger();
+fn create_n64(romfn: &Path, biosfn: &Path, logger: slog::Logger) -> Result<N64> {
     let mut n64 = N64::new(logger, romfn, biosfn).unwrap();
     n64.setup_cic(true)?;
     Ok(n64)
@@ -58,12 +58,17 @@ fn run() -> Result<()> {
     out.enable_audio()?;
 
     if args.debugger {
-        let mut n64 = create_n64(&args.rom, &args.bios).unwrap();
+        let (logger, logpool) = dbg::new_debugger_logger();
+        let mut n64 = create_n64(&args.rom, &args.bios, logger).unwrap();
         let mut dbgconfig = args.rom.clone();
         dbgconfig.set_extension("dbg");
-        out.run_and_debug(&mut n64, &dbgconfig);
+        out.run_and_debug(&mut n64, &dbgconfig, logpool);
     } else {
-        out.run_threaded(move || Ok(Box::new(create_n64(&args.rom, &args.bios).unwrap())));
+        out.run_threaded(move || {
+            let logger = log::new_console_logger();
+            let n64 = create_n64(&args.rom, &args.bios, logger).unwrap();
+            Ok(Box::new(n64))
+        });
     }
 
     Ok(())

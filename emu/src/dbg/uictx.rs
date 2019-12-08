@@ -1,3 +1,4 @@
+use super::LogLine;
 use super::TraceEvent;
 use imgui::ImString;
 
@@ -26,6 +27,25 @@ pub(crate) struct UiCtxDisasm {
     pub regs_highlight: HashMap<&'static str, RegHighlight>,
 }
 
+// Global state for log view
+pub(crate) struct UiCtxLog {
+    pub cached_lines: Vec<LogLine>,
+    pub cached_start_line: usize,
+    pub last_filter_count: Instant,
+    pub filter_count: Option<usize>,
+}
+
+impl Default for UiCtxLog {
+    fn default() -> UiCtxLog {
+        UiCtxLog {
+            last_filter_count: Instant::now(),
+            cached_lines: Vec::new(),
+            cached_start_line: 0,
+            filter_count: None,
+        }
+    }
+}
+
 // Global state shared by all debugger UIs, passed to all rendere functions.
 //
 // This is useful for two main reasons:
@@ -44,6 +64,9 @@ pub(crate) struct UiCtx {
 
     // Disasm views
     pub disasm: HashMap<String, UiCtxDisasm>,
+
+    // Log view
+    pub logview: UiCtxLog,
 
     // Flash messages (auto-hide after 2s)
     pub flash_msg: Option<(String, Instant)>,

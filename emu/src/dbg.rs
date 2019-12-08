@@ -30,6 +30,8 @@ mod uictx;
 pub(crate) use self::uictx::*;
 mod miscview;
 pub(crate) use self::miscview::*;
+mod logview;
+pub use self::logview::*;
 
 pub trait DebuggerModel {
     /// Return a vector of the name of all CPUS.
@@ -79,13 +81,19 @@ pub struct DebuggerUI {
 
     pub dbg: Debugger,
     uictx: RefCell<UiCtx>,
+    logpool: LogPoolPtr,
 
     paused: bool,
     last_render: Instant, // last instant the debugger refreshed its UI
 }
 
 impl DebuggerUI {
-    pub(crate) fn new<T: DebuggerModel>(video: sdl2::VideoSubsystem, window: &sdl2::video::Window, producer: &mut T) -> Self {
+    pub fn new<T: DebuggerModel>(
+        video: sdl2::VideoSubsystem,
+        window: &sdl2::video::Window,
+        producer: &mut T,
+        logpool: LogPoolPtr,
+    ) -> Self {
         let hidpi_factor = 1.0;
 
         let mut imgui = imgui::Context::create();
@@ -109,6 +117,7 @@ impl DebuggerUI {
             imgui_sdl2,
             backend,
             hidpi_factor,
+            logpool,
             tex_screen: Texture::new(),
             screen_size: (320, 240),
             dbg: Debugger::new(&uictx.cpus),
@@ -118,15 +127,30 @@ impl DebuggerUI {
         }
     }
 
-    pub(crate) fn handle_event(&mut self, event: &sdl2::event::Event) {
+    // Handle an incoming SDL2 event within the debugger. Returns true if
+    // the event was internally handled and should not be further processed
+    // by caller.
+    //
+    // Example:
+    //   for event in event_pump.poll_iter() {
+    //       if dbgui.handle_event(event) {
+    //           continue;
+    //       }
+    //       match event {
+    //           [...]
+    //       }
+    //   }
+    //
+    pub fn handle_event(&mut self, event: &sdl2::event::Event) -> bool {
         let imgui = self.imgui.clone();
         let mut imgui = imgui.borrow_mut();
         self.imgui_sdl2.handle_event(&mut imgui, &event);
+        return self.imgui_sdl2.ignore_event(&event);
     }
 
     /// Run an emulator (DebuggerModel) under the debugger for a little while.
     /// Returns true if during this call the emulator completed a frame, or false otherwise.
-    pub(crate) fn trace<T: DebuggerModel, SF: SampleFormat>(
+    pub fn trace<T: DebuggerModel, SF: SampleFormat>(
         &mut self,
         producer: &mut T,
         screen: &mut GfxBufferMutLE<Rgb888>,
@@ -199,7 +223,7 @@ impl DebuggerUI {
     }
 
     /// Render the current debugger UI.
-    pub(crate) fn render<T: DebuggerModel>(
+    pub fn render<T: DebuggerModel>(
         &mut self,
         window: &sdl2::video::Window,
         event_pump: &sdl2::EventPump,
@@ -304,6 +328,7 @@ impl DebuggerUI {
             ));
         });
 
+        // Render screen (framebuffer)
         unsafe {
             // Set constraint to avoid distortion of the screen window
             igSetNextWindowSizeConstraints(
@@ -322,7 +347,11 @@ impl DebuggerUI {
                 image.build(ui);
             });
 
+        // Render CPU debugger
         self.dbg.render_main(ui, self.uictx.get_mut());
+
+        // Render logger
+        render_logview(ui, self.uictx.get_mut(), self.logpool.clone());
     }
 
     pub fn load_conf(

@@ -408,6 +408,7 @@ impl<RP: LogPrinter> LogDrain<RP> {
     }
 }
 
+// Create a colored logger to console
 pub fn new_console_logger() -> slog::Logger {
     let printer = ColorPrinter::new(std::io::stdout(), atty::is(atty::Stream::Stdout));
     let drain = LogDrain::new(printer).build().fuse();

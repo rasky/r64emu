@@ -4,7 +4,7 @@ mod input_mapping;
 use self::glutils::SurfaceRenderer;
 use self::input_mapping::{InputConfig, InputMapping};
 
-use crate::dbg::{DebuggerModel, DebuggerUI};
+use crate::dbg::{DebuggerModel, DebuggerUI, LogPoolPtr};
 use crate::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
 use crate::input::{InputEvent, InputManager};
 use crate::snd::{OwnedSndBuffer, SampleFormat, SampleInt, SndBuffer, SndBufferMut};
@@ -17,11 +17,11 @@ use sdl2::video::{GLContext, GLProfile, Window};
 use sdl2::{AudioSubsystem, VideoSubsystem};
 
 use std::marker::PhantomData;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
-use std::path::Path;
 
 pub struct VideoConfig {
     pub window_title: String,
@@ -249,8 +249,12 @@ impl Output {
         }
     }
 
-    pub fn run_and_debug<SI, SF, P>(&mut self, producer: &mut P, dbg_conf_filename: &Path)
-    where
+    pub fn run_and_debug<SI, SF, P>(
+        &mut self,
+        producer: &mut P,
+        dbg_conf_filename: &Path,
+        logpool: LogPoolPtr,
+    ) where
         SI: SampleInt + AudioFormatNum,
         SF: SampleFormat<SAMPLE = SI, ORDER = NativeEndian>,
         P: OutputProducer<AudioSampleFormat = SF> + DebuggerModel,
@@ -260,7 +264,7 @@ impl Output {
         assert_eq!(self.video.is_some(), true); // TODO: debugger could work without video as well
 
         let video = self.video.as_ref().unwrap();
-        let mut dbg_ui = DebuggerUI::new(video.video.clone(), &video.window, producer);
+        let mut dbg_ui = DebuggerUI::new(video.video.clone(), &video.window, producer, logpool);
         if dbg_conf_filename.exists() {
             dbg_ui.load_conf(dbg_conf_filename);
         }
