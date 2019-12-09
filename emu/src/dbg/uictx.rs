@@ -33,6 +33,9 @@ pub(crate) struct UiCtxLog {
     pub cached_start_line: usize,
     pub last_filter_count: Instant,
     pub filter_count: Option<usize>,
+    pub following: bool,
+    pub configured_columns: bool,
+    pub selected: String,
 }
 
 impl Default for UiCtxLog {
@@ -42,6 +45,9 @@ impl Default for UiCtxLog {
             cached_lines: Vec::new(),
             cached_start_line: 0,
             filter_count: None,
+            selected: String::new(),
+            following: true,
+            configured_columns: false,
         }
     }
 }

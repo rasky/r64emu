@@ -1,6 +1,7 @@
-use super::uisupport::ImGuiListClipper;
+use super::uisupport::{ctext, ImGuiListClipper};
 use super::UiCtx;
 use crate::log::{LogDrain, LogPrinter, LogRecordPrinter, ThreadSafeTimestampFn};
+use sdl2::keyboard::Scancode;
 
 use imgui::*;
 
@@ -276,7 +277,10 @@ impl LogRecordPrinter for DebugRecordPrinter {
     }
 
     fn print_kv<K: fmt::Display, V: fmt::Display>(&mut self, k: K, v: V) -> io::Result<()> {
-        write!(&mut self.kv, " {}={}", k, v)
+        if !self.kv.is_empty() {
+            write!(&mut self.kv, "\t")?;
+        }
+        write!(&mut self.kv, "{}={}", k, v)
     }
 
     fn finish(self) -> io::Result<()> {
@@ -330,6 +334,17 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
         .build(ui, || {
             let mut pool = pool.lock().unwrap();
             let mut update_filter = false;
+
+            // Activate / deactivate follow mode
+            let mut following_changed = ui.checkbox(im_str!("Follow"), &mut ctx.logview.following);
+            if ui.is_item_hovered() {
+                ui.tooltip_text(im_str!("Display new loglines as they arrive"));
+            }
+            if !ui.io().want_text_input && ui.is_key_pressed(Scancode::F as _) {
+                ctx.logview.following = !ctx.logview.following;
+                following_changed = true;
+            }
+            ui.same_line(0.0);
 
             // Select minimum visible logging level
             let levels: [&ImStr; 7] = [
@@ -444,6 +459,9 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                 }
                 update_filter = true;
             }
+            if ui.is_item_hovered() {
+                ui.tooltip_text(im_str!("Search within logs"));
+            }
 
             ui.separator();
 
@@ -454,11 +472,21 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                 .build(ui, || {
                     let mut ctx = &mut ctx.logview;
 
+                    // If the user scrolled up, automatically disable following. Just don't do
+                    // it on the very first frame in which following was turned on.
+                    if !following_changed && ctx.following && ui.scroll_y() != ui.scroll_max_y() {
+                        ctx.following = false;
+                    }
+
                     if update_filter {
                         pool.update_filter();
                         ctx.filter_count = None;
                         ctx.cached_lines.clear();
-                        ui.set_scroll_y(0.0);
+                        if !ctx.following {
+                            // TODO: here, we could try to keep the same position after
+                            // filter change.
+                            ui.set_scroll_y(0.0);
+                        }
                     }
 
                     // Refresh filter count every second or so, unless
@@ -476,12 +504,24 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                         Some(nl) => nl,
                     };
 
+                    let mut kv_popup = false;
+
+                    ui.columns(4, im_str!("##col"), true);
+                    if !ctx.configured_columns {
+                        ui.set_column_width(0, 50.0);
+                        ui.set_column_width(1, 140.0);
+                        ui.set_column_width(2, 260.0);
+                        ctx.configured_columns = true;
+                    }
                     ImGuiListClipper::new(num_lines)
                         .items_height(ui.text_line_height())
                         .build(|start, end| {
+                            // See if the lines that we need to draw are already in the cache
                             if ctx.cached_start_line > start as usize
                                 || ctx.cached_start_line + ctx.cached_lines.len() < end as usize
                             {
+                                // Extract some additional lines from the pool, so that we don't have
+                                // to query it anytime we change position a little bit.
                                 let (start, end) = (
                                     (start as usize).saturating_sub(64),
                                     (end as usize).saturating_add(64),
@@ -493,19 +533,77 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                             let first = start as usize - ctx.cached_start_line;
                             let last =
                                 (first + (end - start + 1) as usize).min(ctx.cached_lines.len());
-                            for v in ctx.cached_lines[first..last].iter() {
+                            for (idx, v) in ctx.cached_lines[first..last].iter().enumerate() {
+                                // ui.set_next_item_width(0.0);
+                                // if Selectable::new(im_str!("##sel"))
+                                //     .selected(ctx.selected == Some(idx + start as usize))
+                                //     .span_all_columns(true)
+                                //     .build(&ui)
+                                // {
+                                //     ctx.selected = Some(idx + start as usize);
+                                // }
+                                // ui.set_item_allow_overlap();
+                                // ui.same_line(0.0);
                                 ui.text_colored(
                                     LOG_LEVEL_COLOR[v.level as usize],
                                     im_str!("{}", LOG_LEVEL_SHORT_NAMES[v.level as usize]),
                                 );
-                                ui.same_line(40.0);
+                                ui.next_column();
+                                // ui.same_line(40.0);
                                 ui.text_colored(COLOR_MODULE, &pool.modules[v.module as usize]);
-                                ui.same_line(180.0);
+                                ui.next_column();
+                                // ui.same_line(180.0);
                                 ui.text(im_str!("{:80}", v.msg));
-                                ui.same_line(420.0);
-                                ui.text(im_str!("{}", v.kv));
+                                ui.next_column();
+                                // ui.same_line(420.0);
+                                ui.text(im_str!("{}", v.kv.replace("\t", " ")));
+                                if !ctx.following && ui.is_item_clicked(MouseButton::Left) {
+                                    ctx.selected = v.kv.clone();
+                                    kv_popup = true;
+                                }
+                                ui.next_column();
                             }
                         });
+
+                    if !ctx.following {
+                        if kv_popup {
+                            ui.open_popup(im_str!("##kv"));
+                        }
+                        ui.popup(im_str!("##kv"), || {
+                            ChildWindow::new(im_str!("##child"))
+                                .size([300.0, 200.0])
+                                .horizontal_scrollbar(true)
+                                .build(&ui, || {
+                                    ui.columns(2, im_str!("##col"), true);
+                                    if kv_popup {
+                                        // only when jsut opened, set column widths
+                                        ui.set_column_width(0, 50.0);
+                                        ui.set_column_width(1, 250.0);
+                                    }
+                                    ui.text(im_str!("Key"));
+                                    ui.next_column();
+                                    ui.text(im_str!("Value"));
+                                    ui.next_column();
+                                    ui.separator();
+                                    for (n, kv) in ctx.selected.split('\t').enumerate() {
+                                        let mut kv = kv.splitn(2, "=");
+                                        ctext(ui, &im_str!("{}", kv.next().unwrap()), (n * 2) as _);
+                                        // ui.text(im_str!("{}", kv.next().unwrap()));
+                                        ui.next_column();
+                                        ctext(
+                                            ui,
+                                            &im_str!("{}", kv.next().unwrap()),
+                                            (n * 2 + 1) as _,
+                                        );
+                                        // ui.text(im_str!("{}", kv.next().unwrap()));
+                                        ui.next_column();
+                                    }
+                                })
+                        });
+                    }
+                    if ctx.following {
+                        ui.set_scroll_here_y();
+                    }
                 });
         });
 }

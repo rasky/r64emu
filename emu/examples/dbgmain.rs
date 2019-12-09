@@ -35,8 +35,8 @@ impl dbg::DebuggerModel for FakeModel {
     fn render_debug<'a, 'ui>(&mut self, dr: &dbg::DebuggerRenderer<'a, 'ui>) {}
 }
 
-fn fake_logging(logger: &slog::Logger) {
-    info!(logger, "test info"; "a" => "b");
+fn fake_logging(logger: &slog::Logger, cnt: u32) {
+    info!(logger, "test info"; "a" => "b", "cnt" => cnt);
     warn!(logger, "test warn first"; "a" => "b");
     info!(logger, "test info"; "a" => "b");
     warn!(logger, "test warn second"; "a" => "b");
@@ -76,7 +76,7 @@ fn main() {
     let (logger, logpool) = dbg::new_debugger_logger();
 
     let mut dbgui = dbg::DebuggerUI::new(video, &window, &mut model, logpool);
-
+    let mut cnt = 0;
     'running: loop {
         use sdl2::event::Event;
         use sdl2::keyboard::Keycode;
@@ -96,7 +96,8 @@ fn main() {
             }
         }
 
-        fake_logging(&logger);
+        fake_logging(&logger, cnt);
+        cnt += 1;
         dbgui.render(&window, &event_pump, &mut model);
         window.gl_swap_window();
         ::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 30));

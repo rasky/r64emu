@@ -150,3 +150,17 @@ pub fn blink_color(base: [f32; 4], start: Instant) -> Option<[f32; 4]> {
         None
     }
 }
+
+pub fn ctext(ui: &Ui, text: &ImStr, id: i32) {
+    let pt = ui.push_id(id);
+    ui.text(text);
+    ui.popup(im_str!("##context"), || {
+        if MenuItem::new(im_str!("Copy")).build(&ui) {
+            println!("Copied: {}", text);
+        }
+    });
+    if ui.is_item_hovered() && ui.is_item_clicked(MouseButton::Right) {
+        ui.open_popup(im_str!("##context"));
+    }
+    pt.pop(&ui);
+}
