@@ -50,6 +50,7 @@ pub trait HexableInt: Copy + fmt::Display {
     const HEX_DIGITS: usize;
     fn format(self) -> String;
     fn parse(s: &str) -> Option<Self>;
+    fn as_i64(self) -> i64;
 }
 
 impl HexableInt for u8 {
@@ -60,6 +61,9 @@ impl HexableInt for u8 {
     fn parse(s: &str) -> Option<Self> {
         u8::from_str_radix(s, 16).ok()
     }
+    fn as_i64(self) -> i64 {
+        self as i8 as i64
+    }
 }
 impl HexableInt for u16 {
     const HEX_DIGITS: usize = 4;
@@ -68,6 +72,9 @@ impl HexableInt for u16 {
     }
     fn parse(s: &str) -> Option<Self> {
         u16::from_str_radix(s, 16).ok()
+    }
+    fn as_i64(self) -> i64 {
+        self as i16 as i64
     }
 }
 impl HexableInt for u32 {
@@ -78,6 +85,9 @@ impl HexableInt for u32 {
     fn parse(s: &str) -> Option<Self> {
         u32::from_str_radix(s, 16).ok()
     }
+    fn as_i64(self) -> i64 {
+        self as i32 as i64
+    }
 }
 impl HexableInt for u64 {
     const HEX_DIGITS: usize = 16;
@@ -86,6 +96,9 @@ impl HexableInt for u64 {
     }
     fn parse(s: &str) -> Option<Self> {
         u64::from_str_radix(s, 16).ok()
+    }
+    fn as_i64(self) -> i64 {
+        self as i64
     }
 }
 
@@ -118,6 +131,41 @@ pub fn imgui_input_hex<T: HexableInt>(
             *val = v;
             changed = true;
         }
+    }
+    if ui.is_item_hovered() {
+        let mut binary = String::new();
+        let mut ascii = String::new();
+        let v64 = val.as_i64();
+        for i in (0..T::HEX_DIGITS / 2).rev() {
+            if !binary.is_empty() {
+                binary += &format!("{:10}  ", " ");
+            }
+            let v8 = ((v64 >> (i * 8)) & 0xFF) as u8;
+            binary += &format!(
+                "{:04b} {:04b}  [{}..{}]\n",
+                v8 >> 4,
+                v8 & 0xF,
+                (i * 8) + 7,
+                (i * 8)
+            );
+            ascii.push(if v8.is_ascii_control() {
+                '.'
+            } else {
+                v8 as char
+            });
+        }
+
+        ui.tooltip_text(im_str!(
+            "{:10}: {}\n{:10}: {}\n{:10}: {}\n{:10}: {}\n",
+            "Unsigned",
+            val,
+            "Signed",
+            val.as_i64(),
+            "Ascii",
+            ascii,
+            "Binary",
+            binary,
+        ));
     }
 
     iw.pop(&ui);
