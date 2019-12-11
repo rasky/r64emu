@@ -38,6 +38,7 @@ directories = "1.0"
 indexmap = "1.0.2"
 serde_json = "1.0"
 rusqlite = { version="0.20.0", features=["bundled"] }
+tinyfiledialogs = "3.0"
 
 [dependencies.sdl2]
 version = "^0"

@@ -11,6 +11,7 @@ use imgui_sys::{igSetNextWindowSizeConstraints, ImGuiSizeCallbackData};
 use sdl2::keyboard::Scancode;
 mod uisupport;
 use serde_derive::Deserialize;
+use tinyfiledialogs::save_file_dialog_with_filter;
 
 use std::cell::RefCell;
 use std::fs;
@@ -126,7 +127,7 @@ impl DebuggerUI {
             paused: true,
             last_render: Instant::now(),
         };
-        dbg.new_log_window(); // immediately create and show at least one log window
+        dbg.logs_new_window(); // immediately create and show at least one log window
         dbg
     }
 
@@ -308,9 +309,12 @@ impl DebuggerUI {
                 }
             });
 
-            ui.menu(im_str!("Windows"), true, || {
-                if imgui::MenuItem::new(im_str!("New log window")).build(ui) {
-                    self.new_log_window();
+            ui.menu(im_str!("Logs"), true, || {
+                if imgui::MenuItem::new(im_str!("Save all to disk...")).build(ui) {
+                    self.logs_save(ui);
+                }
+                if imgui::MenuItem::new(im_str!("New window")).build(ui) {
+                    self.logs_new_window();
                 }
             });
 
@@ -365,9 +369,26 @@ impl DebuggerUI {
             render_logview(ui, &mut ctxlog, &mut logpool);
         }
         self.uictx.get_mut().logviews.retain(|view| view.opened);
+
+        // Error modal popup
+        unsafe {
+            imgui_sys::igSetNextWindowSize(imgui_sys::ImVec2 { x: 250.0, y: 150.0 }, 0);
+        }
+        ui.popup_modal(im_str!("Error")).build(|| {
+            let mut uictx = self.uictx.borrow_mut();
+            ui.text_wrapped(&im_str!("{}", uictx.error_msg.as_ref().unwrap()));
+            ui.separator();
+            if ui.button(im_str!("OK"), [0.0, 0.0]) {
+                uictx.error_msg = None;
+                ui.close_current_popup();
+            }
+        });
+        if self.uictx.borrow_mut().error_msg.is_some() {
+            ui.open_popup(im_str!("Error"));
+        }
     }
 
-    fn new_log_window(&mut self) {
+    fn logs_new_window(&mut self) {
         let view = self.logpool.lock().unwrap().new_view();
         let mut uictx = self.uictx.borrow_mut();
         let name = if uictx.logviews.len() == 0 {
@@ -378,6 +399,23 @@ impl DebuggerUI {
             format!("Logs #{}", uictx.logviewid)
         };
         uictx.logviews.push(UiCtxLog::new(view, &name));
+    }
+
+    fn logs_save(&mut self, ui: &imgui::Ui) {
+        if let Some(path) = save_file_dialog_with_filter(
+            "Save log file",
+            ".",
+            &vec![".log"],
+            "Save all the logs to disk",
+        ) {
+            match self.logpool.lock().unwrap().save(&path) {
+                Ok(()) => {}
+                Err(err) => {
+                    self.uictx.borrow_mut().error_msg =
+                        Some(format!("An error occurred while saving logs: {}", err))
+                }
+            };
+        }
     }
 
     pub fn load_conf(

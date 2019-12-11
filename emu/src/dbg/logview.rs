@@ -4,6 +4,7 @@ use crate::log::{LogPool, LogPoolPtr, LogView};
 use sdl2::keyboard::Scancode;
 
 use imgui::*;
+use tinyfiledialogs::save_file_dialog_with_filter;
 use slog::LOG_LEVEL_SHORT_NAMES;
 
 use std::time::Instant;
@@ -101,7 +102,7 @@ fn render_filter_by_modules<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView, pool: 
     update_filter
 }
 
-pub fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bool {
+fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bool {
     let mut update_filter = false;
     let mut text_filter = ImString::with_capacity(64);
     if let Some(ref text) = view.filter_text() {
@@ -123,6 +124,22 @@ pub fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bo
         ui.tooltip_text(im_str!("Search within logs"));
     }
     update_filter
+}
+
+fn render_save<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView, pool: &LogPool) {
+    if ui.button(im_str!("Save.."), [0.0,0.0]) {
+        if let Some(path) = save_file_dialog_with_filter(
+            "Save log file",
+            ".",
+            &vec![".log"],
+            "Save all the logs to disk",
+        ) {
+            view.save(&path, pool).unwrap();
+        }
+    }
+    if ui.is_item_hovered() {
+        ui.tooltip_text(im_str!("Save logs to disk (respecting current filters)"));
+    }
 }
 
 pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool: &mut LogPoolPtr) {
@@ -159,12 +176,16 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
             ui.same_line(0.0);
 
             // Full-text search in logs
-            let right_section = ui.window_size()[0] - 80.0;
+            let right_section = ui.window_size()[0] - 150.0;
             ui.set_next_item_width(200.0_f32.min(right_section - ui.cursor_pos()[0] - 20.0));
             if render_filter_by_text(ui, &mut ctx.view) {
                 update_filter = true;
             }
             ui.same_line(right_section);
+
+            // Save logs to disk
+            render_save(ui, &mut ctx.view, &pool);
+            ui.same_line(0.0);
 
             // Simple count of the displayed log-lines
             let numlines = ctx.filter_count.unwrap_or(0);

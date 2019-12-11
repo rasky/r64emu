@@ -10,7 +10,9 @@ use super::{
 use std::collections::hash_map::{Entry, HashMap};
 use std::convert::TryInto;
 use std::fmt;
+use std::fs;
 use std::io;
+use std::path::Path;
 use std::io::Write;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -36,6 +38,18 @@ impl LogLine {
             kv: row.get(5)?,
             location: None,
         })
+    }
+
+    /// Convert into a TSV string
+    fn serialize(&self, pool: &LogPool) -> String {
+        format!("{}\t{}\t{}\t{}\t{}\t{}\n",
+                slog::LOG_LEVEL_SHORT_NAMES[self.level as usize],
+                self.frame,
+                pool.modules[self.module as usize],
+                self.location.as_ref().map(|(sub,pc)| sub.clone()+&format!("@{:x}", pc)).unwrap_or("".into()),
+                self.msg,
+                self.kv
+        )
     }
 }
 
@@ -251,6 +265,22 @@ impl LogView {
     pub fn is_fast_count(&self) -> bool {
         self.text.is_none() && false
     }
+
+    /// Save the current view to disk. This function respects the current filter
+    /// (if any), so only displayed lines will be saved.
+    /// The written file will be a TSV (tab-separated value) file.
+    pub fn save<P: AsRef<Path>>(&mut self, path: P, pool: &LogPool) -> io::Result<()> {
+        let mut out = io::BufWriter::new(fs::File::create(path)?);
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT * FROM log_view ORDER BY id")
+            .unwrap();
+
+        for row in stmt.query_map(NO_PARAMS, LogLine::from_row).unwrap() {
+            write!(out, "{}", row.unwrap().serialize(pool))?;
+        }
+        Ok(())
+    }
 }
 
 /// LogPool is a in-memory log buffer that collects logs from slog and stores them
@@ -341,6 +371,13 @@ impl LogPool {
         if self.num_lines % 64 * 1204 == 0 {
             self.send_analyze.send(true).unwrap();
         }
+    }
+
+    /// Save the whole LogPool to disk into a TSV file.
+    /// This function behaves the same of [`LogView::save`](fn.LogView.save.html),
+    /// but writes the whole pool rather than just a view.
+    pub fn save<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        self.new_view().save(path, self)
     }
 
     /// Create a new [`LogView`](struct.LogView.html) that allows to filter and extract

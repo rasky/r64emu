@@ -84,6 +84,9 @@ pub(crate) struct UiCtx {
     // Flash messages (auto-hide after 2s)
     pub flash_msg: Option<(String, Instant)>,
 
+    // Error message that will be displayed in a modal
+    pub error_msg: Option<String>,
+
     // Popup "New breakpoint": local state
     pub new_bp_pc: u64,
     pub new_bp_desc: ImString,
