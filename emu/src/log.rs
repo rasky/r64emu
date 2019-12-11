@@ -1,4 +1,18 @@
-//! A module that implements common utilities for logging, using slog.
+//! A module that implements a structrued logging systems for emulators, using slog.
+//!
+//! `slog` is a crate for structure logging (key-value based). This module contains
+//! a custom log drain (in slog parlance, it is a log processor/printer) that prints
+//! a colored output on console, and esabilishes a few conventions that can be used
+//! to simplify logging in emulators.
+//!
+//! To use this module, call [`new_console_logger()`](fn.new_console_logger.html),
+//! which returns a `slog::Logger` instance that can be used according to standard
+//! `slog` documentation.
+//!
+//! TODO: explain conventions
+//! TODO: explain interaction with dbg
+//! TODO: explain interaction with sync
+//!
 use atty;
 use slog;
 use slog::*;
@@ -10,6 +24,26 @@ use std::panic::UnwindSafe;
 use std::result;
 use std::sync;
 use std::time::Instant;
+
+/// KEY_FRAME is the key that can be used to specifiy the number of the frame
+/// at which the logging was generated. Loggers can use this value specially.
+/// For instance, the console logger, created with [`new_console_logger()`](fn.new_console_logger.html),
+/// displayes the frame at the beginning of the logline in place of the timestamp,
+/// as this is usually a more useful time-based information in emulators.
+pub const KEY_FRAME: &'static str = "@f";
+
+// KEY_SUBSYSTEM is the key that can be used to specify the subsystem in which
+// the logging was generated. This could be one of the CPUs (in which case,
+// )
+pub const KEY_SUBSYSTEM: &'static str = "@sub";
+
+// KEY_PC is the key that can be used to specify the program counter at which
+// the logging was generated.
+pub const KEY_PC: &'static str = "@pc";
+
+// VALUE_NONE is the value that can be used to specify that one of the special
+// keys is not available.
+pub const VALUE_NONE: &'static str = "@none";
 
 /// Threadsafe timestamp formatting function type
 ///
@@ -72,6 +106,9 @@ impl<W: io::Write> LogPrinter for ColorPrinter<W> {
             io: self.w.clone(),
             buf: Vec::with_capacity(128),
             color: self.color,
+            ts_start: 0,
+            ts_end: 0,
+            frame: None,
         })
     }
 }
@@ -80,6 +117,9 @@ pub struct ColorRecordPrinter<W: io::Write> {
     io: sync::Arc<sync::Mutex<W>>,
     buf: Vec<u8>,
     color: bool,
+    ts_start: usize,
+    ts_end: usize,
+    frame: Option<String>,
 }
 
 impl<W: io::Write> LogRecordPrinter for ColorRecordPrinter<W> {
@@ -93,7 +133,9 @@ impl<W: io::Write> LogRecordPrinter for ColorRecordPrinter<W> {
         if self.color {
             write!(rd.w, "\x1b[34m")?;
         }
+        self.ts_start = rd.count();
         fn_timestamp(&mut rd)?;
+        self.ts_end = rd.count();
         write!(rd, " ")?;
 
         let level = record.level();
@@ -136,6 +178,13 @@ impl<W: io::Write> LogRecordPrinter for ColorRecordPrinter<W> {
     }
 
     fn print_kv<K: fmt::Display, V: fmt::Display>(&mut self, k: K, v: V) -> io::Result<()> {
+        // If the key is the special KEY_FRAME key, save the frame aside; we will reuse
+        // it later to substitute it to the timestamp.
+        let k = format!("{}", k);
+        if k == KEY_FRAME {
+            self.frame = Some(format!("{}", v).to_string());
+            return Ok(());
+        }
         write!(&mut self.buf, " {}=", k)?;
         if self.color {
             write!(&mut self.buf, "\x1b[37;1m")?;
@@ -158,7 +207,15 @@ impl<W: io::Write> LogRecordPrinter for ColorRecordPrinter<W> {
             .lock()
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "mutex locking error"))?;
 
-        io.write_all(&self.buf)?;
+        match self.frame {
+            Some(frame) => {
+                io.write(&self.buf[..self.ts_start])?;
+                io.write(frame.as_bytes())?;
+                io.write(&self.buf[self.ts_end..])?;
+            }
+            None => io.write_all(&self.buf)?,
+        };
+
         self.buf.clear();
         io.flush()
     }
