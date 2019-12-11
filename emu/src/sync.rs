@@ -2,6 +2,7 @@ use slog::*;
 
 use crate::dbg;
 use crate::int::Numerics;
+use crate::log::{KEY_FRAME, KEY_PC, KEY_SUBSYSTEM, VALUE_NONE};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Event {
@@ -81,20 +82,26 @@ impl<E: SyncEmu + 'static> Sync<E> {
     pub fn new_logger(&self) -> slog::Logger {
         let sync2: *const Self = &*self;
         let sync3: *const Self = &*self;
-        self.logger.new(o!("pc" => slog::FnValue(move |_| {
-            let sync2 = unsafe { &*sync2 };
-            sync2.current_pc().map_or("[none]".to_owned(), |pc| {
-                if (pc as u32).sx64() == pc {
-                    (pc as u32).hex()
-                } else {
-                    pc.hex()
-                }
-            })
-        }),
-        "sub" => slog::FnValue(move |_| {
-            let sync3 = unsafe { &*sync3 };
-            sync3.current_sub().map_or("[none]", |(s,_)| s.name())
-        }),
+        let sync4: *const Self = &*self;
+        self.logger.new(o!(
+            KEY_PC => slog::FnValue(move |_| {
+                let sync2 = unsafe { &*sync2 };
+                sync2.current_pc().map_or(VALUE_NONE.to_owned(), |pc| {
+                    if (pc as u32).sx64() == pc {
+                        (pc as u32).hex()
+                    } else {
+                        pc.hex()
+                    }
+                })
+            }),
+            KEY_SUBSYSTEM => slog::FnValue(move |_| {
+                let sync3 = unsafe { &*sync3 };
+                sync3.current_sub().map_or(VALUE_NONE, |(s,_)| s.name())
+            }),
+            KEY_FRAME => slog::FnValue(move |_| {
+                let sync4 = unsafe { &*sync4 };
+                sync4.frames()
+            }),
         ))
     }
 
