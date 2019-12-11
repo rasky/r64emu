@@ -1,6 +1,8 @@
 use super::uisupport::{ctext, ImGuiListClipper};
 use super::UiCtx;
-use crate::log::{LogDrain, LogPrinter, LogRecordPrinter, ThreadSafeTimestampFn};
+use crate::log::{
+    LogDrain, LogPrinter, LogRecordPrinter, ThreadSafeTimestampFn, KEY_FRAME, KEY_PC, KEY_SUBSYSTEM,
+};
 use sdl2::keyboard::Scancode;
 
 use imgui::*;
@@ -14,6 +16,7 @@ use std::convert::TryInto;
 use std::fmt;
 use std::io;
 use std::io::Write;
+use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -28,26 +31,40 @@ const LOG_LEVEL_COLOR: [[f32; 4]; 7] = [
 ];
 
 const COLOR_MODULE: [f32; 4] = [174.0 / 129.0, 129.0 / 255.0, 255.0 / 255.0, 255.0];
+const COLOR_FRAME: [f32; 4] = [95.0 / 129.0, 158.0 / 255.0, 160.0 / 255.0, 255.0];
 
 #[derive(Default)]
 pub(crate) struct LogLine {
     level: u8,
     frame: u32,
     module: u8,
+    location: Option<(String, u64)>,
     msg: String,
     kv: String,
+}
+
+impl LogLine {
+    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<LogLine> {
+        Ok(LogLine {
+            level: row.get(1)?,
+            frame: row.get(2)?,
+            module: row.get(3)?,
+            msg: row.get(4)?,
+            kv: row.get(5)?,
+            location: None,
+        })
+    }
 }
 
 // LogFilter is a filter in the logpool that allwos to extract a subset of logs
 #[derive(Default)]
 struct LogFilter {
-    min_level: Option<u8>,       // Minimum logging level to be displayed
-    max_level: Option<u8>,       // Maximum logging level to be displayed
-    min_frame: Option<u32>,      // Minimum frame to be displayed
-    max_frame: Option<u32>,      // Maximum frame to be displayed
-    modules: Option<Vec<u8>>,    // List of modules that must be displayed
-    notmodules: Option<Vec<u8>>, // List of modules that must NOT be displayed
-    text: Option<String>,        // Full text search in msg+kv
+    min_level: Option<u8>,    // Minimum logging level to be displayed
+    max_level: Option<u8>,    // Maximum logging level to be displayed
+    min_frame: Option<u32>,   // Minimum frame to be displayed
+    max_frame: Option<u32>,   // Maximum frame to be displayed
+    modules: Option<Vec<u8>>, // List of modules that must be displayed
+    text: Option<String>,     // Full text search in msg+kv
 }
 
 // LogPool is a in-memory log buffer that collects logs from slog and stores them
@@ -62,13 +79,16 @@ pub struct LogPool {
     num_lines: usize,
     filter: LogFilter,
     has_filter: bool,
+    last_count: usize,
+    last_count_rowid: i64,
+    send_analyze: Sender<bool>,
 }
 
 pub type LogPoolPtr = Arc<Mutex<Box<LogPool>>>;
 
 impl LogPool {
     fn new() -> LogPoolPtr {
-        let conn = Connection::open_in_memory().unwrap();
+        let conn = Connection::open("file:logpool1?mode=memory&cache=shared").unwrap();
         conn.execute(
             "CREATE TABLE log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,12 +101,26 @@ impl LogPool {
             NO_PARAMS,
         )
         .unwrap();
-        conn.execute("CREATE INDEX frames ON log (frame)", NO_PARAMS)
+        conn.execute("CREATE INDEX multi ON log (module,frame,level)", NO_PARAMS)
             .unwrap();
-        conn.execute("CREATE INDEX mods ON log (module)", NO_PARAMS)
-            .unwrap();
-        conn.execute("CREATE INDEX levels ON log (level)", NO_PARAMS)
-            .unwrap();
+
+        let (sender, receiver) = channel();
+        std::thread::spawn(move || {
+            let conn = Connection::open("file:logpool1?mode=memory&cache=shared").unwrap();
+            let mut last = Instant::now();
+            loop {
+                match receiver.recv() {
+                    Ok(_) => {
+                        // Debounce to avoid wasting too much CPU
+                        if last.elapsed().as_secs() > 5 {
+                            conn.execute("ANALYZE", NO_PARAMS).unwrap();
+                            last = Instant::now();
+                        }
+                    }
+                    Err(_) => return,
+                }
+            }
+        });
 
         let mut pool = LogPool {
             modidx: HashMap::new(),
@@ -94,7 +128,10 @@ impl LogPool {
             conn: conn,
             has_filter: false,
             num_lines: 0,
+            last_count: 0,
+            last_count_rowid: 0,
             filter: Default::default(),
+            send_analyze: sender,
         };
         pool.update_filter();
         Arc::new(Mutex::new(Box::new(pool)))
@@ -112,27 +149,12 @@ impl LogPool {
         // Now build all the filters in the WHERE clause.
         // Unfortunately, SQLite does not support params in view
         // statements, so we must manually interpolate the arguments.
+        let has_level = self.filter.min_level.is_some() || self.filter.max_level.is_some();
+        let has_module = self.filter.modules.is_some();
+        let has_frame = self.filter.min_frame.is_some() || self.filter.max_frame.is_some();
+
         let mut prefix = "WHERE ";
-        if let Some(min_level) = self.filter.min_level {
-            self.has_filter = true;
-            view = view + prefix + &format!("level >= {} ", min_level);
-            prefix = "AND ";
-        }
-        if let Some(max_level) = self.filter.max_level {
-            self.has_filter = true;
-            view = view + prefix + &format!("level <= {} ", max_level);
-            prefix = "AND ";
-        }
-        if let Some(min_frame) = self.filter.min_frame {
-            self.has_filter = true;
-            view = view + prefix + &format!("frame >= {} ", min_frame);
-            prefix = "AND ";
-        }
-        if let Some(max_frame) = self.filter.max_frame {
-            self.has_filter = true;
-            view = view + prefix + &format!("frame <= {} ", max_frame);
-            prefix = "AND ";
-        }
+
         if let Some(ref modules) = self.filter.modules {
             self.has_filter = true;
             view = view + prefix + "module IN (";
@@ -145,24 +167,37 @@ impl LogPool {
             view += ") ";
             prefix = "AND ";
         }
-        if let Some(ref notmodules) = self.filter.notmodules {
+
+        if let Some(min_frame) = self.filter.min_frame {
             self.has_filter = true;
-            view = view + prefix + "module NOT IN (";
-            for (n, m) in notmodules.iter().enumerate() {
-                if n != 0 {
-                    view += ",";
-                }
-                view += &format!("{}", (*m));
-            }
-            view += ") ";
+            view = view + prefix + &format!("frame >= {} ", min_frame);
             prefix = "AND ";
         }
+        if let Some(max_frame) = self.filter.max_frame {
+            self.has_filter = true;
+            view = view + prefix + &format!("frame <= {} ", max_frame);
+            prefix = "AND ";
+        }
+
+        if let Some(min_level) = self.filter.min_level {
+            self.has_filter = true;
+            view = view + prefix + &format!("level >= {} ", min_level);
+            prefix = "AND ";
+        }
+        if let Some(max_level) = self.filter.max_level {
+            self.has_filter = true;
+            view = view + prefix + &format!("level <= {} ", max_level);
+            prefix = "AND ";
+        }
+
         if let Some(ref text) = self.filter.text {
             self.has_filter = true;
             let text = text.replace("'", "''");
-            view = view + prefix + &format!("msg LIKE '%{}%' OR kv LIKE '%{}%'", text, text);
+            view = view + prefix + &format!("(msg LIKE '%{}%' OR kv LIKE '%{}%')", text, text);
         }
         self.conn.execute(&view, NO_PARAMS).unwrap();
+        self.last_count_rowid = 0;
+        self.last_count = 0;
     }
 
     fn log(&mut self, line: LogLine) {
@@ -178,44 +213,78 @@ impl LogPool {
             line.kv
         ])
         .unwrap();
-    }
 
-    fn query_rows<'s, 'a: 's>(stmt: &'a mut Statement, first: u32, count: u32) -> Vec<LogLine> {
-        let mut rows = stmt.query(params![count, first]).unwrap();
-        let mut lines = Vec::new();
-        while let Some(row) = rows.next().unwrap() {
-            lines.push(LogLine {
-                level: row.get_unwrap(1),
-                frame: row.get_unwrap(2),
-                module: row.get_unwrap(3),
-                msg: row.get_unwrap(4),
-                kv: row.get_unwrap(5),
-            });
+        // Run a background optimization every 64K lines.
+        self.num_lines += 1;
+        if self.num_lines % 64 * 1204 == 0 {
+            self.send_analyze.send(true).unwrap();
         }
-        lines
     }
 
+    // Returns loglines from the current filter; [first, last] is the inclusive range of
+    // loglines indices that specify which portion of the filtered lines will be extracted.
     fn filter_get(&mut self, first: u32, last: u32) -> Vec<LogLine> {
         let mut stmt = self
             .conn
             .prepare_cached("SELECT * FROM log_filter ORDER BY id LIMIT ? OFFSET ?")
             .unwrap();
-        Self::query_rows(&mut stmt, first, last - first + 1)
+        let mut lines = Vec::new();
+        for row in stmt
+            .query_map(params![last - first + 1, first], LogLine::from_row)
+            .unwrap()
+        {
+            lines.push(row.unwrap());
+        }
+        lines
     }
 
+    // Returns the last n lines of the filter, useful for "following" the loglines.
+    // This is semantically equivalent to `fiter_get(filter_count()-n, filter_count())`
+    // but it's much faster.
+    fn filter_last(&mut self, n: usize) -> Vec<LogLine> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT * FROM log_filter ORDER by id DESC LIMIT ?")
+            .unwrap();
+        let mut lines = Vec::new();
+        for row in stmt
+            .query_map(params![n as u32], LogLine::from_row)
+            .unwrap()
+        {
+            lines.push(row.unwrap());
+        }
+        lines.reverse();
+        lines
+    }
+
+    // Returns the number of loglines in the active filter.
+    // Since calculating the total count can be slow when the filter contains,
+    // many elements, this function works incrementally: it caches the last
+    // computed count, and updates it counting only the new loglines
+    // arrived since the previous call.
     fn filter_count(&mut self) -> usize {
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT COUNT(*) FROM log_filter")
+            .prepare_cached("SELECT COUNT(*) FROM log_filter WHERE id > ?")
+            .unwrap();
+        let mut rows = stmt.query(params![self.last_count_rowid]).unwrap();
+        let row = rows.next().unwrap().unwrap();
+        self.last_count += row.get_unwrap::<usize, u32>(0) as usize;
+
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT last_insert_rowid()")
             .unwrap();
         let mut rows = stmt.query(NO_PARAMS).unwrap();
         let row = rows.next().unwrap().unwrap();
-        return row.get_unwrap::<usize, u32>(0) as usize;
+        self.last_count_rowid = row.get_unwrap::<usize, i64>(0);
+
+        self.last_count
     }
 
     // Returns true if filter_count() is very fast
     fn fast_filter_count(&mut self) -> bool {
-        self.filter.text.is_none() && self.filter.modules.is_none()
+        self.filter.text.is_none() && false
     }
 
     fn last(&mut self) -> LogLine {
@@ -232,6 +301,7 @@ impl LogPool {
             module: row.get_unwrap(3),
             msg: row.get_unwrap(4),
             kv: row.get_unwrap(5),
+            location: None,
         }
     }
 }
@@ -240,6 +310,8 @@ struct DebugRecordPrinter {
     pool: LogPoolPtr,
 
     line: LogLine,
+    pc: Option<u64>,
+    sub: Option<String>,
     kv: Vec<u8>,
 }
 
@@ -277,16 +349,31 @@ impl LogRecordPrinter for DebugRecordPrinter {
     }
 
     fn print_kv<K: fmt::Display, V: fmt::Display>(&mut self, k: K, v: V) -> io::Result<()> {
-        if !self.kv.is_empty() {
-            write!(&mut self.kv, "\t")?;
-        }
-        write!(&mut self.kv, "{}={}", k, v)
+        let k = format!("{}", k);
+        let v = format!("{}", v);
+        match k.as_ref() {
+            KEY_FRAME => self.line.frame = u32::from_str_radix(&v, 10).unwrap_or(0),
+            KEY_PC => self.pc = u64::from_str_radix(&v, 16).ok(),
+            KEY_SUBSYSTEM => self.sub = Some(v),
+            _ => {
+                if !self.kv.is_empty() {
+                    write!(&mut self.kv, "\t")?;
+                }
+                write!(&mut self.kv, "{}={}", k, v)?;
+            }
+        };
+        Ok(())
     }
 
     fn finish(self) -> io::Result<()> {
         use std::str;
         let mut line = self.line;
         line.kv = str::from_utf8(&self.kv).unwrap().to_owned();
+        line.location = match (self.sub, self.pc) {
+            (Some(sub), Some(pc)) => Some((sub, pc)),
+            _ => None,
+        };
+
         self.pool.lock().unwrap().log(line);
         Ok(())
     }
@@ -313,13 +400,15 @@ impl LogPrinter for DebugPrinter {
             pool: self.pool.clone(),
             line: LogLine::default(),
             kv: Vec::new(),
+            pc: None,
+            sub: None,
         })
     }
 }
 
-// Create a logger whose output is piped into an in-memory buffer (LogPool).
-// This is useful to display the logging within the debugger, by passing
-// the logging pool to the debugger.
+/// Create a logger whose output is piped into an in-memory buffer (LogPool).
+/// This is useful to display the logging within the debugger, by passing
+/// the logging pool to the debugger.
 pub fn new_debugger_logger() -> (slog::Logger, LogPoolPtr) {
     let pool = LogPool::new();
     let printer = DebugPrinter::new(pool.clone());
@@ -395,11 +484,6 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                     for m in modules.iter() {
                         selected[*m as usize] = true;
                     }
-                } else if let Some(ref notmodules) = pool.filter.notmodules {
-                    selected.resize(pool.modules.len(), true);
-                    for m in notmodules.iter() {
-                        selected[*m as usize] = false;
-                    }
                 } else {
                     selected.resize(pool.modules.len(), true);
                 }
@@ -411,29 +495,15 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                     }
                 }
                 if changed {
-                    // Compose the filter given the selection. We choose filter.modules
-                    // or filter.notmodules depending on which creates the shorter list
-                    // as that it's faster for the database.
                     let numsel = selected.iter().filter(|v| **v).count();
                     if numsel == selected.len() {
                         pool.filter.modules = None;
-                        pool.filter.notmodules = None;
-                    } else if numsel < selected.len() / 2 {
-                        pool.filter.notmodules = None;
+                    } else {
                         pool.filter.modules = Some(
                             selected
                                 .iter()
                                 .enumerate()
                                 .filter_map(|(idx, v)| Some(idx as u8).filter(|_| *v))
-                                .collect(),
-                        );
-                    } else {
-                        pool.filter.modules = None;
-                        pool.filter.notmodules = Some(
-                            selected
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(idx, v)| Some(idx as u8).filter(|_| !*v))
                                 .collect(),
                         );
                     }
@@ -442,7 +512,10 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
             });
             ui.same_line(0.0);
 
+            let right_section = ui.window_size()[0] - 80.0;
+
             // Full-text search in logs
+            ui.set_next_item_width(200.0_f32.min(right_section - ui.cursor_pos()[0] - 20.0));
             let mut text_filter = ImString::with_capacity(64);
             if let Some(ref text) = pool.filter.text {
                 text_filter.push_str(&text);
@@ -461,6 +534,19 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
             }
             if ui.is_item_hovered() {
                 ui.tooltip_text(im_str!("Search within logs"));
+            }
+            ui.same_line(right_section);
+
+            // Simple count of the displayed log-lines
+            let numlines = ctx.logview.filter_count.unwrap_or(0);
+            if numlines >= 1000000 {
+                ui.text(im_str!("Logs: {:.1}M", numlines as f32 / 1000000.0));
+            } else if numlines >= 10000 {
+                ui.text(im_str!("Logs: {}K", numlines / 1000));
+            } else if numlines >= 1000 {
+                ui.text(im_str!("Logs: {:.1}K", numlines as f32 / 1000.0));
+            } else {
+                ui.text(im_str!("Logs: {}", numlines));
             }
 
             ui.separator();
@@ -506,56 +592,66 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
 
                     let mut kv_popup = false;
 
-                    ui.columns(4, im_str!("##col"), true);
+                    // Create a column grid. Imgui doesn't have helpers for configuring
+                    // it only the first time (and then let the user resize it), so we
+                    // need to handle that manually.
+                    ui.columns(5, im_str!("##col"), true);
                     if !ctx.configured_columns {
-                        ui.set_column_width(0, 50.0);
-                        ui.set_column_width(1, 140.0);
-                        ui.set_column_width(2, 260.0);
+                        ui.set_column_width(0, 50.0); // Frame number
+                        ui.set_column_width(1, 50.0); // Log Level
+                        ui.set_column_width(2, 140.0); // Module
+                        ui.set_column_width(3, 260.0); // Message
                         ctx.configured_columns = true;
                     }
+
+                    // Use a clipper to go through the grid and only draw visibile lines.
                     ImGuiListClipper::new(num_lines)
                         .items_height(ui.text_line_height())
                         .build(|start, end| {
-                            // See if the lines that we need to draw are already in the cache
-                            if ctx.cached_start_line > start as usize
-                                || ctx.cached_start_line + ctx.cached_lines.len() < end as usize
-                            {
-                                // Extract some additional lines from the pool, so that we don't have
-                                // to query it anytime we change position a little bit.
-                                let (start, end) = (
-                                    (start as usize).saturating_sub(64),
-                                    (end as usize).saturating_add(64),
-                                );
-                                ctx.cached_lines = pool.filter_get(start as u32, end as u32);
-                                ctx.cached_start_line = start;
-                            }
+                            let lines_iter = if ctx.following {
+                                // If we're in following mode, just cheat and always load from the
+                                // tail. We need to store the lines for borrowing rules, but let's always
+                                // invalidate it right away as we don't need to cache it: the logpool
+                                // query is very fast.
+                                ctx.cached_lines = pool.filter_last((end - start + 1) as usize);
+                                ctx.cached_start_line = usize::max_value();
+                                ctx.cached_lines.iter()
+                            } else {
+                                // Normal mode, we use a local cache to avoid querying the logpool too much.
+                                // See if the lines that we need to draw are already in the cache
+                                if ctx.cached_start_line > start as usize
+                                    || ctx.cached_start_line + ctx.cached_lines.len() < end as usize
+                                {
+                                    // Extract some additional lines from the pool, so that we don't have
+                                    // to query it anytime we change position a little bit.
+                                    let (start, end) = (
+                                        (start as usize).saturating_sub(64),
+                                        (end as usize).saturating_add(64),
+                                    );
+                                    ctx.cached_lines = pool.filter_get(start as u32, end as u32);
+                                    ctx.cached_start_line = start;
+                                }
 
-                            let first = start as usize - ctx.cached_start_line;
-                            let last =
-                                (first + (end - start + 1) as usize).min(ctx.cached_lines.len());
-                            for (idx, v) in ctx.cached_lines[first..last].iter().enumerate() {
-                                // ui.set_next_item_width(0.0);
-                                // if Selectable::new(im_str!("##sel"))
-                                //     .selected(ctx.selected == Some(idx + start as usize))
-                                //     .span_all_columns(true)
-                                //     .build(&ui)
-                                // {
-                                //     ctx.selected = Some(idx + start as usize);
-                                // }
-                                // ui.set_item_allow_overlap();
-                                // ui.same_line(0.0);
+                                let first = start as usize - ctx.cached_start_line;
+                                let last = (first + (end - start + 1) as usize)
+                                    .min(ctx.cached_lines.len());
+
+                                ctx.cached_lines[first..last].iter()
+                            };
+
+                            // Now go through the loglines and draw them.
+                            for v in lines_iter {
+                                ui.text_colored(COLOR_FRAME, im_str!("[{}]", v.frame));
+                                ui.next_column();
                                 ui.text_colored(
                                     LOG_LEVEL_COLOR[v.level as usize],
                                     im_str!("{}", LOG_LEVEL_SHORT_NAMES[v.level as usize]),
                                 );
                                 ui.next_column();
-                                // ui.same_line(40.0);
                                 ui.text_colored(COLOR_MODULE, &pool.modules[v.module as usize]);
                                 ui.next_column();
-                                // ui.same_line(180.0);
                                 ui.text(im_str!("{:80}", v.msg));
                                 ui.next_column();
-                                // ui.same_line(420.0);
                                 ui.text(im_str!("{}", v.kv.replace("\t", " ")));
                                 if !ctx.following && ui.is_item_clicked(MouseButton::Left) {
                                     ctx.selected = v.kv.clone();
@@ -587,15 +683,29 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                                     ui.separator();
                                     for (n, kv) in ctx.selected.split('\t').enumerate() {
                                         let mut kv = kv.splitn(2, "=");
-                                        ctext(ui, &im_str!("{}", kv.next().unwrap()), (n * 2) as _);
-                                        // ui.text(im_str!("{}", kv.next().unwrap()));
+                                        let k = kv.next().unwrap();
+                                        let v = kv.next().unwrap_or("");
+
+                                        ui.text(im_str!("{}", k));
                                         ui.next_column();
-                                        ctext(
-                                            ui,
-                                            &im_str!("{}", kv.next().unwrap()),
-                                            (n * 2 + 1) as _,
-                                        );
-                                        // ui.text(im_str!("{}", kv.next().unwrap()));
+
+                                        let mut buf = im_str!("{}", v).to_owned();
+                                        if v.len() > 32 {
+                                            ui.input_text_multiline(
+                                                &im_str!("##v{}", n),
+                                                &mut buf,
+                                                [240.0, 0.0],
+                                            )
+                                            .auto_select_all(true)
+                                            .read_only(true)
+                                            .build();
+                                        } else {
+                                            ui.set_next_item_width(240.0);
+                                            ui.input_text(&im_str!("##v{}", n), &mut buf)
+                                                .auto_select_all(true)
+                                                .read_only(true)
+                                                .build();
+                                        }
                                         ui.next_column();
                                     }
                                 })
