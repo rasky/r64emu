@@ -47,10 +47,9 @@ impl LogLine {
 /// will not be released until all views (and the LogPool itself) is destroyed.
 pub struct LogView {
     conn: Connection,
-    table: String,
 
-    min_level: Option<slog::Level>, // Minimum logging level to be displayed
-    max_level: Option<slog::Level>, // Maximum logging level to be displayed
+    min_level: Option<slog::FilterLevel>, // Minimum logging level to be displayed
+    max_level: Option<slog::FilterLevel>, // Maximum logging level to be displayed
     min_frame: Option<u32>,         // Minimum frame to be displayed
     max_frame: Option<u32>,         // Maximum frame to be displayed
     modules: Option<Vec<u8>>,       // List of modules that must be displayed
@@ -62,10 +61,9 @@ pub struct LogView {
 }
 
 impl LogView {
-    fn new(conn: Connection, table: &str) -> LogView {
+    fn new(conn: Connection) -> LogView {
         LogView {
             conn,
-            table: table.to_owned(),
             min_level: None,
             max_level: None,
             min_frame: None,
@@ -78,10 +76,10 @@ impl LogView {
         }
     }
 
-    pub fn filter_min_level(&self) -> Option<slog::Level> {
+    pub fn filter_min_level(&self) -> Option<slog::FilterLevel> {
         self.min_level
     }
-    pub fn filter_max_level(&self) -> Option<slog::Level> {
+    pub fn filter_max_level(&self) -> Option<slog::FilterLevel> {
         self.max_level
     }
     pub fn filter_min_frame(&self) -> Option<u32> {
@@ -96,11 +94,11 @@ impl LogView {
     pub fn filter_text(&self) -> Option<&String> {
         self.text.as_ref()
     }
-    pub fn set_filter_min_level(&mut self, level: Option<slog::Level>) {
+    pub fn set_filter_min_level(&mut self, level: Option<slog::FilterLevel>) {
         self.min_level = level;
         self.changed = true;
     }
-    pub fn set_filter_max_level(&mut self, level: Option<slog::Level>) {
+    pub fn set_filter_max_level(&mut self, level: Option<slog::FilterLevel>) {
         self.max_level = level;
         self.changed = true;
     }
@@ -127,13 +125,11 @@ impl LogView {
         }
         self.changed = false;
         self.conn
-            .execute(&format!("DROP VIEW IF EXISTS {}", self.table), NO_PARAMS)
+            .execute("DROP VIEW IF EXISTS log_view", NO_PARAMS)
             .unwrap();
-        let mut view = format!(
-            "CREATE VIEW {} AS SELECT
-            id, level, frame, module, msg, kv FROM log ",
-            self.table
-        );
+        let mut view = 
+            "CREATE TEMPORARY VIEW log_view AS SELECT
+            id, level, frame, module, msg, kv FROM log ".to_owned();
 
         // Now build all the filters in the WHERE clause.
         // Unfortunately, SQLite does not support params in view
@@ -189,7 +185,7 @@ impl LogView {
         self.update_filter();
         let mut stmt = self
             .conn
-            .prepare_cached(&format!("SELECT * FROM {} ORDER BY id LIMIT ? OFFSET ?", self.table))
+            .prepare_cached("SELECT * FROM log_view ORDER BY id LIMIT ? OFFSET ?")
             .unwrap();
         let mut lines = Vec::new();
         for row in stmt
@@ -208,7 +204,7 @@ impl LogView {
         self.update_filter();
         let mut stmt = self
             .conn
-            .prepare_cached(&format!("SELECT * FROM {} ORDER by id DESC LIMIT ?", self.table))
+            .prepare_cached("SELECT * FROM log_view ORDER by id DESC LIMIT ?")
             .unwrap();
         let mut lines = Vec::new();
         for row in stmt
@@ -233,7 +229,7 @@ impl LogView {
         // arrived since the previous call.
         let mut stmt = self
             .conn
-            .prepare_cached(&format!("SELECT COUNT(*) FROM {} WHERE id > ?", self.table))
+            .prepare_cached("SELECT COUNT(*) FROM log_view WHERE id > ?")
             .unwrap();
         let mut rows = stmt.query(params![self.last_count_rowid]).unwrap();
         let row = rows.next().unwrap().unwrap();
@@ -241,7 +237,7 @@ impl LogView {
 
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT last_insert_rowid()")
+            .prepare_cached("SELECT MAX(id) from log")
             .unwrap();
         let mut rows = stmt.query(NO_PARAMS).unwrap();
         let row = rows.next().unwrap().unwrap();
@@ -271,7 +267,6 @@ pub struct LogPool {
     conn: Connection,
     num_lines: usize,
     send_analyze: mpsc::Sender<bool>,
-    num_views: usize,
 }
 
 /// LogPoolPtr is a pointer that wraps [`LogPool`](struct.LogPool.html) for safe
@@ -322,7 +317,6 @@ impl LogPool {
             dburl,
             conn: conn,
             num_lines: 0,
-            num_views: 0,
             send_analyze: sender,
         };
         Arc::new(Mutex::new(Box::new(pool)))
@@ -353,11 +347,7 @@ impl LogPool {
     /// loglines from this pool. The `LogView` will implicitly share this logpool, so
     /// it will continue to work even if LogPool is dropped.
     pub fn new_view(&mut self) -> LogView {
-        self.num_views += 1; // just used to create a unique ID
-        LogView::new(
-            Connection::open(&self.dburl).unwrap(),
-            &format!("logpool_view_{}", self.num_views),
-        )
+        LogView::new(Connection::open(&self.dburl).unwrap())
     }
 }
 

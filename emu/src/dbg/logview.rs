@@ -41,7 +41,7 @@ fn render_filter_by_levels<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bool
         view.set_filter_max_level(if max_level == 0 {
             None
         } else {
-            Some(slog::Level::from_usize(max_level).unwrap())
+            Some(slog::FilterLevel::from_usize(max_level).unwrap())
         });
         update_filter = true;
     }
@@ -127,7 +127,8 @@ pub fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bo
 
 pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool: &mut LogPoolPtr) {
     let mut opened = ctx.opened;
-    Window::new(&im_str!("Logs"))
+
+    Window::new(&im_str!("{}", ctx.name))
         .size([500.0, 300.0], Condition::FirstUseEver)
         .opened(&mut opened)
         .build(ui, || {
@@ -250,6 +251,7 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
                                 if ctx.cached_start_line > start as usize
                                     || ctx.cached_start_line + ctx.cached_lines.len() < end as usize
                                 {
+                                    // println!("updating cache: numlines:{}, cache_start:{}, start:{}, cache_start+len:{}, end:{}", numlines, ctx.cached_start_line, start, ctx.cached_start_line+ctx.cached_lines.len(), end);
                                     // Extract some additional lines from the pool, so that we don't have
                                     // to query it anytime we change position a little bit.
                                     let (start, end) = (
@@ -258,12 +260,13 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
                                     );
                                     ctx.cached_lines = ctx.view.get(start as u32, end as u32);
                                     ctx.cached_start_line = start;
+                                    // println!("cache updated: cache_start:{}, cache_len:{}", ctx.cached_start_line, ctx.cached_lines.len());
                                 }
 
                                 let first = start as usize - ctx.cached_start_line;
-                                let last = (first + (end - start + 1) as usize)
-                                    .min(ctx.cached_lines.len());
+                                let last = first + ((end - start + 1) as usize).min(ctx.cached_lines.len());
 
+                                // println!("start:{}, end:{}, cache_start:{}, cache_len:{}, first:{}, last:{}", start, end, ctx.cached_start_line, ctx.cached_lines.len(), first, last);
                                 ctx.cached_lines[first..last].iter()
                             };
 

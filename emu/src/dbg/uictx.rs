@@ -30,6 +30,7 @@ pub(crate) struct UiCtxDisasm {
 // Global state for log view
 pub(crate) struct UiCtxLog {
     pub view: LogView,
+    pub name: String,
     pub cached_lines: Vec<LogLine>,
     pub cached_start_line: usize,
     pub last_filter_count: Instant,
@@ -41,9 +42,10 @@ pub(crate) struct UiCtxLog {
 }
 
 impl UiCtxLog {
-    pub(crate) fn new(view: LogView) -> Box<UiCtxLog> {
+    pub(crate) fn new(view: LogView, name: &str) -> Box<UiCtxLog> {
         Box::new(UiCtxLog {
             view,
+            name: name.to_owned(),
             last_filter_count: Instant::now(),
             cached_lines: Vec::new(),
             cached_start_line: 0,
@@ -77,6 +79,7 @@ pub(crate) struct UiCtx {
 
     // Log view
     pub logviews: Vec<Box<UiCtxLog>>,
+    pub logviewid: usize,
 
     // Flash messages (auto-hide after 2s)
     pub flash_msg: Option<(String, Instant)>,

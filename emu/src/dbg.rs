@@ -109,14 +109,11 @@ impl DebuggerUI {
             let name = &uictx.cpus[idx];
             uictx.disasm.insert(name.clone(), UiCtxDisasm::default());
         }
-        uictx
-            .logviews
-            .push(UiCtxLog::new(logpool.lock().unwrap().new_view()));
 
         // Initial event
         uictx.event = Some((box TraceEvent::Paused(), Instant::now()));
 
-        Self {
+        let mut dbg = Self {
             imgui: Rc::new(RefCell::new(imgui)),
             imgui_sdl2,
             backend,
@@ -128,7 +125,9 @@ impl DebuggerUI {
             uictx: RefCell::new(uictx),
             paused: true,
             last_render: Instant::now(),
-        }
+        };
+        dbg.new_log_window(); // immediately create and show at least one log window
+        dbg
     }
 
     // Handle an incoming SDL2 event within the debugger. Returns true if
@@ -309,6 +308,12 @@ impl DebuggerUI {
                 }
             });
 
+            ui.menu(im_str!("Windows"), true, || {
+                if imgui::MenuItem::new(im_str!("New log window")).build(ui) {
+                    self.new_log_window();
+                }
+            });
+
             ui.same_line(200.0);
             ui.text(im_str!("State:"));
             if self.paused {
@@ -356,10 +361,23 @@ impl DebuggerUI {
 
         // Render logger views
         let mut logpool = self.logpool.clone();
-        for (idx, mut ctxlog) in self.uictx.get_mut().logviews.iter_mut().enumerate() {
+        for mut ctxlog in self.uictx.get_mut().logviews.iter_mut() {
             render_logview(ui, &mut ctxlog, &mut logpool);
         }
         self.uictx.get_mut().logviews.retain(|view| view.opened);
+    }
+
+    fn new_log_window(&mut self) {
+        let view = self.logpool.lock().unwrap().new_view();
+        let mut uictx = self.uictx.borrow_mut();
+        let name = if uictx.logviews.len() == 0 {
+            uictx.logviewid = 1;
+            "Logs".to_owned()
+        } else {
+            uictx.logviewid += 1;
+            format!("Logs #{}", uictx.logviewid)
+        };
+        uictx.logviews.push(UiCtxLog::new(view, &name));
     }
 
     pub fn load_conf(
