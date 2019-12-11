@@ -39,15 +39,222 @@ impl LogLine {
     }
 }
 
-// LogFilter is a filter in the logpool that allwos to extract a subset of logs
-#[derive(Default)]
-pub(crate) struct LogFilter {
-    pub(crate) min_level: Option<u8>, // Minimum logging level to be displayed
-    pub(crate) max_level: Option<u8>, // Maximum logging level to be displayed
-    pub(crate) min_frame: Option<u32>, // Minimum frame to be displayed
-    pub(crate) max_frame: Option<u32>, // Maximum frame to be displayed
-    pub(crate) modules: Option<Vec<u8>>, // List of modules that must be displayed
-    pub(crate) text: Option<String>,  // Full text search in msg+kv
+/// LogView is a view into the logpool that allwos to extract/analyze the loglines
+/// possibly using filters.
+/// Create a LogView, use [`LogPool::new_view()`](fn.LogPool.new_view.html). The view
+/// keeps an (implicit) counting reference to the LogPool, so it continues to work
+/// even if LogPool is dropped. The underlying log buffer memory
+/// will not be released until all views (and the LogPool itself) is destroyed.
+pub struct LogView {
+    conn: Connection,
+    table: String,
+
+    min_level: Option<slog::Level>, // Minimum logging level to be displayed
+    max_level: Option<slog::Level>, // Maximum logging level to be displayed
+    min_frame: Option<u32>,         // Minimum frame to be displayed
+    max_frame: Option<u32>,         // Maximum frame to be displayed
+    modules: Option<Vec<u8>>,       // List of modules that must be displayed
+    text: Option<String>,           // Full text search in msg+kv
+
+    changed: bool,
+    last_count: usize,
+    last_count_rowid: i64,
+}
+
+impl LogView {
+    fn new(conn: Connection, table: &str) -> LogView {
+        LogView {
+            conn,
+            table: table.to_owned(),
+            min_level: None,
+            max_level: None,
+            min_frame: None,
+            max_frame: None,
+            modules: None,
+            text: None,
+            changed: true,
+            last_count: 0,
+            last_count_rowid: 0,
+        }
+    }
+
+    pub fn filter_min_level(&self) -> Option<slog::Level> {
+        self.min_level
+    }
+    pub fn filter_max_level(&self) -> Option<slog::Level> {
+        self.max_level
+    }
+    pub fn filter_min_frame(&self) -> Option<u32> {
+        self.min_frame
+    }
+    pub fn filter_max_frame(&self) -> Option<u32> {
+        self.max_frame
+    }
+    pub fn filter_modules(&self) -> Option<&Vec<u8>> {
+        self.modules.as_ref()
+    }
+    pub fn filter_text(&self) -> Option<&String> {
+        self.text.as_ref()
+    }
+    pub fn set_filter_min_level(&mut self, level: Option<slog::Level>) {
+        self.min_level = level;
+        self.changed = true;
+    }
+    pub fn set_filter_max_level(&mut self, level: Option<slog::Level>) {
+        self.max_level = level;
+        self.changed = true;
+    }
+    pub fn set_filter_min_frame(&mut self, frame: Option<u32>) {
+        self.min_frame = frame;
+        self.changed = true;
+    }
+    pub fn set_filter_max_frame(&mut self, frame: Option<u32>) {
+        self.max_frame = frame;
+        self.changed = true;
+    }
+    pub fn set_filter_modules(&mut self, modules: Option<Vec<u8>>) {
+        self.modules = modules;
+        self.changed = true;
+    }
+    pub fn set_filter_text(&mut self, text: Option<&str>) {
+        self.text = text.map(|s| s.to_owned());
+        self.changed = true;
+    }
+
+    fn update_filter(&mut self) {
+        if !self.changed {
+            return;
+        }
+        self.changed = false;
+        self.conn
+            .execute(&format!("DROP VIEW IF EXISTS {}", self.table), NO_PARAMS)
+            .unwrap();
+        let mut view = format!(
+            "CREATE VIEW {} AS SELECT
+            id, level, frame, module, msg, kv FROM log ",
+            self.table
+        );
+
+        // Now build all the filters in the WHERE clause.
+        // Unfortunately, SQLite does not support params in view
+        // statements, so we must manually interpolate the arguments.
+        let has_level = self.min_level.is_some() || self.max_level.is_some();
+        let has_module = self.modules.is_some();
+        let has_frame = self.min_frame.is_some() || self.max_frame.is_some();
+
+        let mut prefix = "WHERE ";
+
+        if let Some(ref modules) = self.modules {
+            view = view + prefix + "module IN (";
+            for (n, m) in modules.iter().enumerate() {
+                if n != 0 {
+                    view += ",";
+                }
+                view += &format!("{}", (*m));
+            }
+            view += ") ";
+            prefix = "AND ";
+        }
+
+        if let Some(min_frame) = self.min_frame {
+            view = view + prefix + &format!("frame >= {} ", min_frame);
+            prefix = "AND ";
+        }
+        if let Some(max_frame) = self.max_frame {
+            view = view + prefix + &format!("frame <= {} ", max_frame);
+            prefix = "AND ";
+        }
+
+        if let Some(min_level) = self.min_level {
+            view = view + prefix + &format!("level >= {} ", min_level.as_usize() as u8);
+            prefix = "AND ";
+        }
+        if let Some(max_level) = self.max_level {
+            view = view + prefix + &format!("level <= {} ", max_level.as_usize() as u8);
+            prefix = "AND ";
+        }
+
+        if let Some(ref text) = self.text {
+            let text = text.replace("'", "''");
+            view = view + prefix + &format!("(msg LIKE '%{}%' OR kv LIKE '%{}%')", text, text);
+        }
+        self.conn.execute(&view, NO_PARAMS).unwrap();
+        self.last_count_rowid = 0;
+        self.last_count = 0;
+    }
+
+    // Returns loglines from this view of the pool; [first, last] is the inclusive range of
+    // loglines indices that specify which portion of the filtered lines will be extracted.
+    pub fn get(&mut self, first: u32, last: u32) -> Vec<LogLine> {
+        self.update_filter();
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!("SELECT * FROM {} ORDER BY id LIMIT ? OFFSET ?", self.table))
+            .unwrap();
+        let mut lines = Vec::new();
+        for row in stmt
+            .query_map(params![last - first + 1, first], LogLine::from_row)
+            .unwrap()
+        {
+            lines.push(row.unwrap());
+        }
+        lines
+    }
+
+    // Returns the last n lines in this view of the pool, useful for "following" the loglines.
+    // This is semantically equivalent to `fiter_get(filter_count()-n, filter_count())`
+    // but it's much faster.
+    pub fn last(&mut self, n: usize) -> Vec<LogLine> {
+        self.update_filter();
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!("SELECT * FROM {} ORDER by id DESC LIMIT ?", self.table))
+            .unwrap();
+        let mut lines = Vec::new();
+        for row in stmt
+            .query_map(params![n as u32], LogLine::from_row)
+            .unwrap()
+        {
+            lines.push(row.unwrap());
+        }
+        lines.reverse();
+        lines
+    }
+
+    /// Returns the number of loglines in this view.
+    /// Note that this function might be slow depending on the exact filters being
+    /// activated and the size of the pool. Use (`is_fast_count()`)[fn.LogPool.is_fast_count.html]
+    /// to estimate the speed of this operation.
+    pub fn count(&mut self) -> usize {
+        self.update_filter();
+        // Since calculating the total count can be slow when the filter contains,
+        // many elements, this function works incrementally: it caches the last
+        // computed count, and updates it counting only the new loglines
+        // arrived since the previous call.
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!("SELECT COUNT(*) FROM {} WHERE id > ?", self.table))
+            .unwrap();
+        let mut rows = stmt.query(params![self.last_count_rowid]).unwrap();
+        let row = rows.next().unwrap().unwrap();
+        self.last_count += row.get_unwrap::<usize, u32>(0) as usize;
+
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT last_insert_rowid()")
+            .unwrap();
+        let mut rows = stmt.query(NO_PARAMS).unwrap();
+        let row = rows.next().unwrap().unwrap();
+        self.last_count_rowid = row.get_unwrap::<usize, i64>(0);
+
+        self.last_count
+    }
+
+    /// Returns true if [`fn.LogView.count.html`]() is supposed to be "fast".
+    /// Currently, this function returns true only when no filter is activated.
+    pub fn is_fast_count(&self) -> bool {
+        self.text.is_none() && false
+    }
 }
 
 /// LogPool is a in-memory log buffer that collects logs from slog and stores them
@@ -55,18 +262,16 @@ pub(crate) struct LogFilter {
 /// and analyzes them procedurally. For instance, it's used by emu::dbg to
 /// collect all the logs and display them in a log view.
 ///
-/// Use [`new_memory_logger()`](fn.new_memory_logger.html) to create a `LogPool` and
+/// Use [`new_pool_logger()`](fn.new_pool_logger.html) to create a `LogPool` and
 /// a `slog::Logger` connected to it.
 pub struct LogPool {
     pub(crate) modules: Vec<String>,
     modidx: HashMap<String, u8>,
+    dburl: String,
     conn: Connection,
     num_lines: usize,
-    pub(crate) filter: LogFilter,
-    has_filter: bool,
-    last_count: usize,
-    last_count_rowid: i64,
     send_analyze: mpsc::Sender<bool>,
+    num_views: usize,
 }
 
 /// LogPoolPtr is a pointer that wraps [`LogPool`](struct.LogPool.html) for safe
@@ -75,7 +280,8 @@ pub type LogPoolPtr = Arc<Mutex<Box<LogPool>>>;
 
 impl LogPool {
     fn new() -> LogPoolPtr {
-        let conn = Connection::open("file:logpool1?mode=memory&cache=shared").unwrap();
+        let dburl = format!("file:{}?mode=memory&cache=shared", "logpool1");
+        let conn = Connection::open(&dburl).unwrap();
         conn.execute(
             "CREATE TABLE log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,8 +298,9 @@ impl LogPool {
             .unwrap();
 
         let (sender, receiver) = mpsc::channel();
+        let dburl2 = dburl.clone();
         std::thread::spawn(move || {
-            let conn = Connection::open("file:logpool1?mode=memory&cache=shared").unwrap();
+            let conn = Connection::open(&dburl2).unwrap();
             let mut last = Instant::now();
             loop {
                 match receiver.recv() {
@@ -109,82 +316,16 @@ impl LogPool {
             }
         });
 
-        let mut pool = LogPool {
+        let pool = LogPool {
             modidx: HashMap::new(),
             modules: Vec::new(),
+            dburl,
             conn: conn,
-            has_filter: false,
             num_lines: 0,
-            last_count: 0,
-            last_count_rowid: 0,
-            filter: Default::default(),
+            num_views: 0,
             send_analyze: sender,
         };
-        pool.update_filter();
         Arc::new(Mutex::new(Box::new(pool)))
-    }
-
-    pub(crate) fn update_filter(&mut self) {
-        self.conn
-            .execute("DROP VIEW IF EXISTS log_filter", NO_PARAMS)
-            .unwrap();
-        let mut view = "CREATE VIEW log_filter AS SELECT
-            id, level, frame, module, msg, kv FROM log "
-            .to_string();
-        self.has_filter = false;
-
-        // Now build all the filters in the WHERE clause.
-        // Unfortunately, SQLite does not support params in view
-        // statements, so we must manually interpolate the arguments.
-        let has_level = self.filter.min_level.is_some() || self.filter.max_level.is_some();
-        let has_module = self.filter.modules.is_some();
-        let has_frame = self.filter.min_frame.is_some() || self.filter.max_frame.is_some();
-
-        let mut prefix = "WHERE ";
-
-        if let Some(ref modules) = self.filter.modules {
-            self.has_filter = true;
-            view = view + prefix + "module IN (";
-            for (n, m) in modules.iter().enumerate() {
-                if n != 0 {
-                    view += ",";
-                }
-                view += &format!("{}", (*m));
-            }
-            view += ") ";
-            prefix = "AND ";
-        }
-
-        if let Some(min_frame) = self.filter.min_frame {
-            self.has_filter = true;
-            view = view + prefix + &format!("frame >= {} ", min_frame);
-            prefix = "AND ";
-        }
-        if let Some(max_frame) = self.filter.max_frame {
-            self.has_filter = true;
-            view = view + prefix + &format!("frame <= {} ", max_frame);
-            prefix = "AND ";
-        }
-
-        if let Some(min_level) = self.filter.min_level {
-            self.has_filter = true;
-            view = view + prefix + &format!("level >= {} ", min_level);
-            prefix = "AND ";
-        }
-        if let Some(max_level) = self.filter.max_level {
-            self.has_filter = true;
-            view = view + prefix + &format!("level <= {} ", max_level);
-            prefix = "AND ";
-        }
-
-        if let Some(ref text) = self.filter.text {
-            self.has_filter = true;
-            let text = text.replace("'", "''");
-            view = view + prefix + &format!("(msg LIKE '%{}%' OR kv LIKE '%{}%')", text, text);
-        }
-        self.conn.execute(&view, NO_PARAMS).unwrap();
-        self.last_count_rowid = 0;
-        self.last_count = 0;
     }
 
     pub fn log(&mut self, line: LogLine) {
@@ -208,88 +349,15 @@ impl LogPool {
         }
     }
 
-    // Returns loglines from the current filter; [first, last] is the inclusive range of
-    // loglines indices that specify which portion of the filtered lines will be extracted.
-    pub fn filter_get(&mut self, first: u32, last: u32) -> Vec<LogLine> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT * FROM log_filter ORDER BY id LIMIT ? OFFSET ?")
-            .unwrap();
-        let mut lines = Vec::new();
-        for row in stmt
-            .query_map(params![last - first + 1, first], LogLine::from_row)
-            .unwrap()
-        {
-            lines.push(row.unwrap());
-        }
-        lines
-    }
-
-    // Returns the last n lines of the filter, useful for "following" the loglines.
-    // This is semantically equivalent to `fiter_get(filter_count()-n, filter_count())`
-    // but it's much faster.
-    pub fn filter_last(&mut self, n: usize) -> Vec<LogLine> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT * FROM log_filter ORDER by id DESC LIMIT ?")
-            .unwrap();
-        let mut lines = Vec::new();
-        for row in stmt
-            .query_map(params![n as u32], LogLine::from_row)
-            .unwrap()
-        {
-            lines.push(row.unwrap());
-        }
-        lines.reverse();
-        lines
-    }
-
-    // Returns the number of loglines in the active filter.
-    // Since calculating the total count can be slow when the filter contains,
-    // many elements, this function works incrementally: it caches the last
-    // computed count, and updates it counting only the new loglines
-    // arrived since the previous call.
-    pub fn filter_count(&mut self) -> usize {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT COUNT(*) FROM log_filter WHERE id > ?")
-            .unwrap();
-        let mut rows = stmt.query(params![self.last_count_rowid]).unwrap();
-        let row = rows.next().unwrap().unwrap();
-        self.last_count += row.get_unwrap::<usize, u32>(0) as usize;
-
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT last_insert_rowid()")
-            .unwrap();
-        let mut rows = stmt.query(NO_PARAMS).unwrap();
-        let row = rows.next().unwrap().unwrap();
-        self.last_count_rowid = row.get_unwrap::<usize, i64>(0);
-
-        self.last_count
-    }
-
-    // Returns true if filter_count() is very fast
-    pub fn fast_filter_count(&mut self) -> bool {
-        self.filter.text.is_none() && false
-    }
-
-    pub fn last(&mut self) -> LogLine {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT MAX(id), level, frame, module, msg, kv FROM log")
-            .unwrap();
-        let mut rows = stmt.query(NO_PARAMS).unwrap();
-        let row = rows.next().unwrap().unwrap();
-
-        LogLine {
-            level: row.get_unwrap(1),
-            frame: row.get_unwrap(2),
-            module: row.get_unwrap(3),
-            msg: row.get_unwrap(4),
-            kv: row.get_unwrap(5),
-            location: None,
-        }
+    /// Create a new [`LogView`](struct.LogView.html) that allows to filter and extract
+    /// loglines from this pool. The `LogView` will implicitly share this logpool, so
+    /// it will continue to work even if LogPool is dropped.
+    pub fn new_view(&mut self) -> LogView {
+        self.num_views += 1; // just used to create a unique ID
+        LogView::new(
+            Connection::open(&self.dburl).unwrap(),
+            &format!("logpool_view_{}", self.num_views),
+        )
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::gfx::{GfxBufferMutLE, Rgb888};
 use crate::hw::glutils::Texture;
+use crate::log::LogPoolPtr;
 use crate::snd::{SampleFormat, SndBufferMut};
 
 use imgui;
@@ -108,6 +109,9 @@ impl DebuggerUI {
             let name = &uictx.cpus[idx];
             uictx.disasm.insert(name.clone(), UiCtxDisasm::default());
         }
+        uictx
+            .logviews
+            .push(UiCtxLog::new(logpool.lock().unwrap().new_view()));
 
         // Initial event
         uictx.event = Some((box TraceEvent::Paused(), Instant::now()));
@@ -350,8 +354,12 @@ impl DebuggerUI {
         // Render CPU debugger
         self.dbg.render_main(ui, self.uictx.get_mut());
 
-        // Render logger
-        render_logview(ui, self.uictx.get_mut(), self.logpool.clone());
+        // Render logger views
+        let mut logpool = self.logpool.clone();
+        for (idx, mut ctxlog) in self.uictx.get_mut().logviews.iter_mut().enumerate() {
+            render_logview(ui, &mut ctxlog, &mut logpool);
+        }
+        self.uictx.get_mut().logviews.retain(|view| view.opened);
     }
 
     pub fn load_conf(

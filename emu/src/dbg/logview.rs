@@ -1,6 +1,6 @@
 use super::uisupport::{ctext, ImGuiListClipper};
-use super::UiCtx;
-use crate::log::{LogPool, LogPoolPtr};
+use super::{UiCtx, UiCtxLog};
+use crate::log::{LogPool, LogPoolPtr, LogView};
 use sdl2::keyboard::Scancode;
 
 use imgui::*;
@@ -21,7 +21,7 @@ const LOG_LEVEL_COLOR: [[f32; 4]; 7] = [
 const COLOR_MODULE: [f32; 4] = [174.0 / 129.0, 129.0 / 255.0, 255.0 / 255.0, 255.0];
 const COLOR_FRAME: [f32; 4] = [95.0 / 129.0, 158.0 / 255.0, 160.0 / 255.0, 255.0];
 
-fn render_filter_by_levels<'a, 'ui>(ui: &'a Ui<'ui>, pool: &mut LogPool) -> bool {
+fn render_filter_by_levels<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bool {
     let mut update_filter = false;
     let levels: [&ImStr; 7] = [
         im_str!("Off (ALL)"),
@@ -32,17 +32,17 @@ fn render_filter_by_levels<'a, 'ui>(ui: &'a Ui<'ui>, pool: &mut LogPool) -> bool
         im_str!("Debug (DEBG)"),
         im_str!("Trace (TRCE)"),
     ];
-    let mut max_level = match pool.filter.max_level {
+    let mut max_level = match view.filter_max_level() {
         None => 0,
         Some(ml) => ml as usize,
     };
     ui.set_next_item_width(130.0);
     if ComboBox::new(im_str!("##level")).build_simple_string(&ui, &mut max_level, &levels) {
-        if max_level == 0 {
-            pool.filter.max_level = None;
+        view.set_filter_max_level(if max_level == 0 {
+            None
         } else {
-            pool.filter.max_level = Some(max_level as u8);
-        }
+            Some(slog::Level::from_usize(max_level).unwrap())
+        });
         update_filter = true;
     }
     if ui.is_item_hovered() {
@@ -51,7 +51,7 @@ fn render_filter_by_levels<'a, 'ui>(ui: &'a Ui<'ui>, pool: &mut LogPool) -> bool
     update_filter
 }
 
-fn render_filter_by_modules<'a, 'ui>(ui: &'a Ui<'ui>, pool: &mut LogPool) -> bool {
+fn render_filter_by_modules<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView, pool: &LogPool) -> bool {
     let mut update_filter = false;
     if ui.button(im_str!("Modules.."), [0.0, 0.0]) {
         ui.open_popup(im_str!("##modules"));
@@ -61,14 +61,13 @@ fn render_filter_by_modules<'a, 'ui>(ui: &'a Ui<'ui>, pool: &mut LogPool) -> boo
     }
     ui.popup(im_str!("##modules"), || {
         if ui.button(im_str!("Show all"), [ui.window_content_region_width(), 0.0]) {
-            pool.filter.modules = None;
-            update_filter = true;
+            view.set_filter_modules(None);
             ui.close_current_popup();
         }
         ui.separator();
 
         let mut selected = Vec::with_capacity(pool.modules.len());
-        if let Some(ref modules) = pool.filter.modules {
+        if let Some(ref modules) = view.filter_modules() {
             selected.resize(pool.modules.len(), false);
             for m in modules.iter() {
                 selected[*m as usize] = true;
@@ -85,27 +84,27 @@ fn render_filter_by_modules<'a, 'ui>(ui: &'a Ui<'ui>, pool: &mut LogPool) -> boo
         }
         if changed {
             let numsel = selected.iter().filter(|v| **v).count();
-            if numsel == selected.len() {
-                pool.filter.modules = None;
+            view.set_filter_modules(if numsel == selected.len() {
+                None
             } else {
-                pool.filter.modules = Some(
+                Some(
                     selected
                         .iter()
                         .enumerate()
                         .filter_map(|(idx, v)| Some(idx as u8).filter(|_| *v))
                         .collect(),
-                );
-            }
+                )
+            });
             update_filter = true;
         }
     });
     update_filter
 }
 
-pub fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, pool: &mut LogPool) -> bool {
+pub fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bool {
     let mut update_filter = false;
     let mut text_filter = ImString::with_capacity(64);
-    if let Some(ref text) = pool.filter.text {
+    if let Some(ref text) = view.filter_text() {
         text_filter.push_str(&text);
     }
     if InputText::new(ui, im_str!("##textfilter"), &mut text_filter)
@@ -113,11 +112,11 @@ pub fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, pool: &mut LogPool) -> bo
         //.hint(im_str!("search..."))   // FIXME: not implemented yet
         .build()
     {
-        if text_filter.to_str().len() == 0 {
-            pool.filter.text = None;
+        view.set_filter_text(if text_filter.to_str().len() == 0 {
+            None
         } else {
-            pool.filter.text = Some(text_filter.to_str().to_string());
-        }
+            Some(text_filter.to_str())
+        });
         update_filter = true;
     }
     if ui.is_item_hovered() {
@@ -126,32 +125,34 @@ pub fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, pool: &mut LogPool) -> bo
     update_filter
 }
 
-pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: LogPoolPtr) {
+pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool: &mut LogPoolPtr) {
+    let mut opened = ctx.opened;
     Window::new(&im_str!("Logs"))
         .size([500.0, 300.0], Condition::FirstUseEver)
+        .opened(&mut opened)
         .build(ui, || {
-            let mut pool = pool.lock().unwrap();
+            let pool = pool.lock().unwrap();
             let mut update_filter = false;
 
             // Activate / deactivate follow mode
-            let mut following_changed = ui.checkbox(im_str!("Follow"), &mut ctx.logview.following);
+            let mut following_changed = ui.checkbox(im_str!("Follow"), &mut ctx.following);
             if ui.is_item_hovered() {
                 ui.tooltip_text(im_str!("Display new loglines as they arrive"));
             }
             if !ui.io().want_text_input && ui.is_key_pressed(Scancode::F as _) {
-                ctx.logview.following = !ctx.logview.following;
+                ctx.following = !ctx.following;
                 following_changed = true;
             }
             ui.same_line(0.0);
 
             // Select minimum visible logging level
-            if render_filter_by_levels(ui, &mut pool) {
+            if render_filter_by_levels(ui, &mut ctx.view) {
                 update_filter = true;
             }
             ui.same_line(0.0);
 
             // Filter by module
-            if render_filter_by_modules(ui, &mut pool) {
+            if render_filter_by_modules(ui, &mut ctx.view, &pool) {
                 update_filter = true;
             }
             ui.same_line(0.0);
@@ -159,13 +160,13 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
             // Full-text search in logs
             let right_section = ui.window_size()[0] - 80.0;
             ui.set_next_item_width(200.0_f32.min(right_section - ui.cursor_pos()[0] - 20.0));
-            if render_filter_by_text(ui, &mut pool) {
+            if render_filter_by_text(ui, &mut ctx.view) {
                 update_filter = true;
             }
             ui.same_line(right_section);
 
             // Simple count of the displayed log-lines
-            let numlines = ctx.logview.filter_count.unwrap_or(0);
+            let numlines = ctx.filter_count.unwrap_or(0);
             if numlines >= 1000000 {
                 ui.text(im_str!("Logs: {:.1}M", numlines as f32 / 1000000.0));
             } else if numlines >= 10000 {
@@ -184,8 +185,6 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                 .always_horizontal_scrollbar(true)
                 .always_vertical_scrollbar(true)
                 .build(ui, || {
-                    let mut ctx = &mut ctx.logview;
-
                     // If the user scrolled up, automatically disable following. Just don't do
                     // it on the very first frame in which following was turned on.
                     if !following_changed && ctx.following && ui.scroll_y() != ui.scroll_max_y() {
@@ -195,7 +194,6 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                     // If the filter was just updated, we need to inform the logpool
                     // and clear our internal caches.
                     if update_filter {
-                        pool.update_filter();
                         ctx.filter_count = None;
                         ctx.cached_lines.clear();
                         if !ctx.following {
@@ -207,12 +205,12 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
 
                     // Refresh filter count every second or so, unless
                     // it's very fast to do so.
-                    if pool.fast_filter_count() || ctx.last_filter_count.elapsed().as_secs() >= 1 {
+                    if ctx.view.is_fast_count() || ctx.last_filter_count.elapsed().as_secs() >= 1 {
                         ctx.filter_count = None;
                     }
                     let num_lines = match ctx.filter_count {
                         None => {
-                            let nl = pool.filter_count();
+                            let nl = ctx.view.count();
                             ctx.filter_count = Some(nl);
                             ctx.last_filter_count = Instant::now();
                             nl
@@ -243,7 +241,7 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                                 // tail. We need to store the lines for borrowing rules, but let's always
                                 // invalidate it right away as we don't need to cache it: the logpool
                                 // query is very fast.
-                                ctx.cached_lines = pool.filter_last((end - start + 1) as usize);
+                                ctx.cached_lines = ctx.view.last((end - start + 1) as usize);
                                 ctx.cached_start_line = usize::max_value();
                                 ctx.cached_lines.iter()
                             } else {
@@ -258,7 +256,7 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                                         (start as usize).saturating_sub(64),
                                         (end as usize).saturating_add(64),
                                     );
-                                    ctx.cached_lines = pool.filter_get(start as u32, end as u32);
+                                    ctx.cached_lines = ctx.view.get(start as u32, end as u32);
                                     ctx.cached_start_line = start;
                                 }
 
@@ -346,4 +344,5 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtx, pool: Lo
                     }
                 });
         });
+    ctx.opened = opened;
 }

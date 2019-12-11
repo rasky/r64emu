@@ -1,5 +1,5 @@
 use super::TraceEvent;
-use crate::log::LogLine;
+use crate::log::{LogLine, LogView};
 use imgui::ImString;
 
 use std::collections::HashMap;
@@ -29,6 +29,7 @@ pub(crate) struct UiCtxDisasm {
 
 // Global state for log view
 pub(crate) struct UiCtxLog {
+    pub view: LogView,
     pub cached_lines: Vec<LogLine>,
     pub cached_start_line: usize,
     pub last_filter_count: Instant,
@@ -36,11 +37,13 @@ pub(crate) struct UiCtxLog {
     pub following: bool,
     pub configured_columns: bool,
     pub selected: String,
+    pub opened: bool,
 }
 
-impl Default for UiCtxLog {
-    fn default() -> UiCtxLog {
-        UiCtxLog {
+impl UiCtxLog {
+    pub(crate) fn new(view: LogView) -> Box<UiCtxLog> {
+        Box::new(UiCtxLog {
+            view,
             last_filter_count: Instant::now(),
             cached_lines: Vec::new(),
             cached_start_line: 0,
@@ -48,7 +51,8 @@ impl Default for UiCtxLog {
             selected: String::new(),
             following: true,
             configured_columns: false,
-        }
+            opened: true,
+        })
     }
 }
 
@@ -72,7 +76,7 @@ pub(crate) struct UiCtx {
     pub disasm: HashMap<String, UiCtxDisasm>,
 
     // Log view
-    pub logview: UiCtxLog,
+    pub logviews: Vec<Box<UiCtxLog>>,
 
     // Flash messages (auto-hide after 2s)
     pub flash_msg: Option<(String, Instant)>,
