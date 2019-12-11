@@ -1,5 +1,6 @@
 use emu::dbg;
 use emu::gfx::{GfxBufferMutLE, Rgb888};
+use emu::log;
 use emu::snd::{SampleFormat, SndBufferMut};
 use slog;
 use slog::*;
@@ -36,14 +37,14 @@ impl dbg::DebuggerModel for FakeModel {
 }
 
 fn fake_logging(logger: &slog::Logger, cnt: u32) {
-    info!(logger, "test info"; "a" => "b", "cnt" => cnt);
-    warn!(logger, "test warn first"; "a" => "b");
-    info!(logger, "test info"; "a" => "b");
-    warn!(logger, "test warn second"; "a" => "b");
-    error!(logger, "test error 1"; "a" => "b");
-    warn!(logger, "test warn third"; "a" => "b");
-    error!(logger, "test error 2"; "a" => "b");
-    info!(logger, "test info"; "a" => "b");
+    info!(logger, "test info"; "a" => "b", "cnt" => cnt, "@f" => cnt);
+    warn!(logger, #"foo", "test warn first"; "a" => "b", "@f" => cnt);
+    info!(logger, "test info"; "a" => "b", "@f" => cnt);
+    warn!(logger, #"bar", "test warn second"; "a" => "b", "@f" => cnt);
+    error!(logger, "test error 1"; "a" => "b", "@f" => cnt);
+    warn!(logger, #"foo", "test warn third"; "a" => "b", "@f" => cnt);
+    error!(logger, "test error 2"; "a" => "b", "@f" => cnt);
+    info!(logger, #"foo", "test info"; "a" => "b", "@f" => cnt);
 }
 
 fn main() {
@@ -73,7 +74,7 @@ fn main() {
 
     let mut model = FakeModel { curframe: 0 };
 
-    let (logger, logpool) = dbg::new_debugger_logger();
+    let (logger, logpool) = log::new_pool_logger();
 
     let mut dbgui = dbg::DebuggerUI::new(video, &window, &mut model, logpool);
     let mut cnt = 0;
@@ -96,7 +97,9 @@ fn main() {
             }
         }
 
-        fake_logging(&logger, cnt);
+        for i in 0..100 {
+            fake_logging(&logger, cnt);
+        }
         cnt += 1;
         dbgui.render(&window, &event_pump, &mut model);
         window.gl_swap_window();

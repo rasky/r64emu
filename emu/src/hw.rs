@@ -4,9 +4,10 @@ mod input_mapping;
 use self::glutils::SurfaceRenderer;
 use self::input_mapping::{InputConfig, InputMapping};
 
-use crate::dbg::{DebuggerModel, DebuggerUI, LogPoolPtr};
+use crate::dbg::{DebuggerModel, DebuggerUI};
 use crate::gfx::{GfxBufferLE, GfxBufferMutLE, OwnedGfxBufferLE, Rgb888};
 use crate::input::{InputEvent, InputManager};
+use crate::log::LogPoolPtr;
 use crate::snd::{OwnedSndBuffer, SampleFormat, SampleInt, SndBuffer, SndBufferMut};
 
 use byteorder::NativeEndian;

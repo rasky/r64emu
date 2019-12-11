@@ -1,5 +1,5 @@
-use super::LogLine;
 use super::TraceEvent;
+use crate::log::LogLine;
 use imgui::ImString;
 
 use std::collections::HashMap;

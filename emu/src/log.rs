@@ -25,6 +25,9 @@ use std::result;
 use std::sync;
 use std::time::Instant;
 
+mod logpool;
+pub use logpool::*;
+
 /// KEY_FRAME is the key that can be used to specifiy the number of the frame
 /// at which the logging was generated. Loggers can use this value specially.
 /// For instance, the console logger, created with [`new_console_logger()`](fn.new_console_logger.html),
@@ -380,7 +383,7 @@ impl<W: io::Write> io::Write for CountingWriter<W> {
     }
 }
 
-pub struct LogDrain<RP>
+pub(crate) struct LogDrain<RP>
 where
     RP: LogPrinter,
 {
@@ -389,7 +392,7 @@ where
     use_original_order: bool,
 }
 
-pub struct LogDrainBuilder<RP>
+pub(crate) struct LogDrainBuilder<RP>
 where
     RP: LogPrinter,
 {
@@ -465,7 +468,7 @@ impl<RP: LogPrinter> LogDrain<RP> {
     }
 }
 
-// Create a colored logger to console
+/// Create a slog::Logger that ouputs to the console. The output will be colored.
 pub fn new_console_logger() -> slog::Logger {
     let printer = ColorPrinter::new(std::io::stdout(), atty::is(atty::Stream::Stdout));
     let drain = LogDrain::new(printer).build().fuse();

@@ -58,7 +58,7 @@ fn run() -> Result<()> {
     out.enable_audio()?;
 
     if args.debugger {
-        let (logger, logpool) = dbg::new_debugger_logger();
+        let (logger, logpool) = log::new_pool_logger();
         let mut n64 = create_n64(&args.rom, &args.bios, logger).unwrap();
         let mut dbgconfig = args.rom.clone();
         dbgconfig.set_extension("dbg");
