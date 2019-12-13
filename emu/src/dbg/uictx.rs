@@ -37,7 +37,7 @@ pub(crate) struct UiCtxLog {
     pub filter_count: Option<usize>,
     pub following: bool,
     pub configured_columns: bool,
-    pub selected: String,
+    pub selected: LogLine,
     pub opened: bool,
 }
 
@@ -50,7 +50,7 @@ impl UiCtxLog {
             cached_lines: Vec::new(),
             cached_start_line: 0,
             filter_count: None,
-            selected: String::new(),
+            selected: LogLine::default(),
             following: true,
             configured_columns: false,
             opened: true,

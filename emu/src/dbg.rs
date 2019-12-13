@@ -364,9 +364,10 @@ impl DebuggerUI {
         self.dbg.render_main(ui, self.uictx.get_mut());
 
         // Render logger views
+        let numframes = model.frames();
         let mut logpool = self.logpool.clone();
         for mut ctxlog in self.uictx.get_mut().logviews.iter_mut() {
-            render_logview(ui, &mut ctxlog, &mut logpool);
+            render_logview(ui, &mut ctxlog, &mut logpool, numframes);
         }
         self.uictx.get_mut().logviews.retain(|view| view.opened);
 
@@ -404,7 +405,7 @@ impl DebuggerUI {
     fn logs_save(&mut self, ui: &imgui::Ui) {
         if let Some(path) = save_file_dialog_with_filter(
             "Save log file",
-            ".",
+            "emu.log",
             &vec![".log"],
             "Save all the logs to disk",
         ) {

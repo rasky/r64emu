@@ -4,8 +4,8 @@ use crate::log::{LogPool, LogPoolPtr, LogView};
 use sdl2::keyboard::Scancode;
 
 use imgui::*;
-use tinyfiledialogs::save_file_dialog_with_filter;
 use slog::LOG_LEVEL_SHORT_NAMES;
+use tinyfiledialogs::save_file_dialog_with_filter;
 
 use std::time::Instant;
 
@@ -22,7 +22,7 @@ const LOG_LEVEL_COLOR: [[f32; 4]; 7] = [
 const COLOR_MODULE: [f32; 4] = [174.0 / 129.0, 129.0 / 255.0, 255.0 / 255.0, 255.0];
 const COLOR_FRAME: [f32; 4] = [95.0 / 129.0, 158.0 / 255.0, 160.0 / 255.0, 255.0];
 
-fn render_filter_by_levels<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bool {
+fn render_filter_by_levels(ui: &Ui, view: &mut LogView) -> bool {
     let mut update_filter = false;
     let levels: [&ImStr; 7] = [
         im_str!("Off (ALL)"),
@@ -52,7 +52,7 @@ fn render_filter_by_levels<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bool
     update_filter
 }
 
-fn render_filter_by_modules<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView, pool: &LogPool) -> bool {
+fn render_filter_by_modules(ui: &Ui, view: &mut LogView, pool: &LogPool) -> bool {
     let mut update_filter = false;
     if ui.button(im_str!("Modules.."), [0.0, 0.0]) {
         ui.open_popup(im_str!("##modules"));
@@ -64,6 +64,7 @@ fn render_filter_by_modules<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView, pool: 
         if ui.button(im_str!("Show all"), [ui.window_content_region_width(), 0.0]) {
             view.set_filter_modules(None);
             ui.close_current_popup();
+            update_filter = true;
         }
         ui.separator();
 
@@ -102,7 +103,177 @@ fn render_filter_by_modules<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView, pool: 
     update_filter
 }
 
-fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bool {
+#[derive(Copy, Clone, PartialEq)]
+enum RangeType {
+    None = 0,
+    Since = 1,
+    First = 2,
+    Single = 3,
+    Interval = 4,
+}
+
+impl From<usize> for RangeType {
+    fn from(val: usize) -> RangeType {
+        match val {
+            0 => RangeType::None,
+            1 => RangeType::Since,
+            2 => RangeType::First,
+            3 => RangeType::Single,
+            4 => RangeType::Interval,
+            _ => unreachable!(),
+        }
+    }
+}
+
+fn render_filter_by_frame(ui: &Ui, view: &mut LogView, num_frames: i64) -> bool {
+    let mut update_filter = false;
+    let num_frames = num_frames as i32;
+    if ui.button(im_str!("Frames.."), [0.0, 0.0]) {
+        ui.open_popup(im_str!("##frames"));
+    }
+    if ui.is_item_hovered() {
+        ui.tooltip_text(im_str!("Show/hide specific frame ranges"));
+    }
+    ui.popup(im_str!("##frames"), || {
+        ui.separator();
+
+        let mut range_type = match (view.filter_min_frame(), view.filter_max_frame()) {
+            (None, None) => RangeType::None,
+            (Some(_), None) => RangeType::Since,
+            (None, Some(_)) => RangeType::First,
+            (Some(f1), Some(f2)) if f1 == f2 => RangeType::Single,
+            (Some(f1), Some(f2)) if f1 != f2 => RangeType::Interval,
+            _ => unreachable!(),
+        };
+
+        let any_frame_first = view
+            .filter_min_frame()
+            .unwrap_or(view.filter_max_frame().unwrap_or(0));
+        let mut any_frame_last = view
+            .filter_max_frame()
+            .unwrap_or(view.filter_min_frame().unwrap_or(0));
+
+        let mut range_val = range_type as usize;
+        if ComboBox::new(im_str!("")).build_simple_string(
+            ui,
+            &mut range_val,
+            &vec![
+                im_str!("Show all"),
+                im_str!("Since Nth frame"),
+                im_str!("Up to Nth frame"),
+                im_str!("Single frame"),
+                im_str!("Specific interval"),
+            ],
+        ) {
+            range_type = range_val.into();
+            match range_type {
+                RangeType::None => {
+                    view.set_filter_min_frame(None);
+                    view.set_filter_max_frame(None);
+                }
+                RangeType::Since => {
+                    view.set_filter_min_frame(Some(any_frame_first));
+                    view.set_filter_max_frame(None);
+                }
+                RangeType::First => {
+                    view.set_filter_min_frame(None);
+                    view.set_filter_max_frame(Some(any_frame_last));
+                }
+                RangeType::Single => {
+                    view.set_filter_min_frame(Some(any_frame_first));
+                    view.set_filter_max_frame(Some(any_frame_first));
+                }
+                RangeType::Interval => {
+                    if any_frame_first == any_frame_last {
+                        any_frame_last += 1;
+                    }
+                    view.set_filter_min_frame(Some(any_frame_first));
+                    view.set_filter_max_frame(Some(any_frame_last));
+                }
+            }
+            update_filter = true;
+        }
+
+        match range_type {
+            RangeType::None => {}
+            RangeType::Since => {
+                let mut val = view.filter_min_frame().unwrap() as i32;
+                if ui
+                    .drag_int(im_str!("##last"), &mut val)
+                    .min(0)
+                    .max(num_frames)
+                    .display_format(im_str!("Frames: %d"))
+                    .build()
+                {
+                    view.set_filter_min_frame(Some(val as u32));
+                    update_filter = true;
+                }
+            }
+            RangeType::First => {
+                let mut val = view.filter_max_frame().unwrap() as i32;
+                if ui
+                    .drag_int(im_str!("##first"), &mut val)
+                    .min(0)
+                    .max(num_frames)
+                    .display_format(im_str!("Frames: %d"))
+                    .build()
+                {
+                    view.set_filter_max_frame(Some(val as u32));
+                    update_filter = true;
+                }
+            }
+            RangeType::Single => {
+                let mut val = view.filter_min_frame().unwrap() as i32;
+                if ui
+                    .drag_int(im_str!("##single"), &mut val)
+                    .min(0)
+                    .max(num_frames)
+                    .display_format(im_str!("Frame: %d"))
+                    .build()
+                {
+                    view.set_filter_min_frame(Some(val as u32));
+                    view.set_filter_max_frame(Some(val as u32));
+                    update_filter = true;
+                }
+            }
+            RangeType::Interval => {
+                let mut val1 = view.filter_min_frame().unwrap() as i32;
+                let mut val2 = view.filter_max_frame().unwrap() as i32;
+                if ui
+                    .drag_int(im_str!("##start"), &mut val1)
+                    .min(0)
+                    .max(val2 - 1)
+                    .display_format(im_str!("Start: %d"))
+                    .build()
+                {
+                    view.set_filter_min_frame(Some(val1 as u32));
+                    update_filter = true;
+                }
+                if ui
+                    .drag_int(im_str!("##end"), &mut val2)
+                    .min(val1 + 1)
+                    .max(num_frames)
+                    .display_format(im_str!("End: %d"))
+                    .build()
+                {
+                    view.set_filter_max_frame(Some(val2 as u32));
+                    update_filter = true;
+                }
+            }
+        }
+        if range_type != RangeType::None {
+            ui.text_disabled("Hold SHIFT to change faster");
+        }
+
+        ui.separator();
+        if ui.button(im_str!("Close"), [ui.window_content_region_width(), 0.0]) {
+            ui.close_current_popup();
+        }
+    });
+    update_filter
+}
+
+fn render_filter_by_text(ui: &Ui, view: &mut LogView) -> bool {
     let mut update_filter = false;
     let mut text_filter = ImString::with_capacity(64);
     if let Some(ref text) = view.filter_text() {
@@ -127,7 +298,7 @@ fn render_filter_by_text<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView) -> bool {
 }
 
 fn render_save<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView, pool: &LogPool) {
-    if ui.button(im_str!("Save.."), [0.0,0.0]) {
+    if ui.button(im_str!("Save.."), [0.0, 0.0]) {
         if let Some(path) = save_file_dialog_with_filter(
             "Save log file",
             ".",
@@ -142,7 +313,12 @@ fn render_save<'a, 'ui>(ui: &'a Ui<'ui>, view: &mut LogView, pool: &LogPool) {
     }
 }
 
-pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool: &mut LogPoolPtr) {
+pub(crate) fn render_logview<'a, 'ui>(
+    ui: &'a Ui<'ui>,
+    ctx: &mut UiCtxLog,
+    pool: &mut LogPoolPtr,
+    num_frames: i64,
+) {
     let mut opened = ctx.opened;
 
     Window::new(&im_str!("{}", ctx.name))
@@ -175,6 +351,12 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
             }
             ui.same_line(0.0);
 
+            // Filter by frame
+            if render_filter_by_frame(ui, &mut ctx.view, num_frames) {
+                update_filter = true;
+            }
+            ui.same_line(0.0);
+
             // Full-text search in logs
             let right_section = ui.window_size()[0] - 150.0;
             ui.set_next_item_width(200.0_f32.min(right_section - ui.cursor_pos()[0] - 20.0));
@@ -201,6 +383,17 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
 
             ui.separator();
 
+            // Function to clear the internal line cache (after a filter update)
+            let clear_line_cache = |ctx: &mut UiCtxLog| {
+                ctx.filter_count = None;
+                ctx.cached_lines.clear();
+                if !ctx.following {
+                    // TODO: here, we could try to keep the same position after
+                    // filter change.
+                    ui.set_scroll_y(0.0);
+                }
+            };
+
             // Childwindow with scrolling bars that contains the loglines grid
             ChildWindow::new(&im_str!("##scrolling"))
                 .size([0.0, 0.0])
@@ -216,13 +409,7 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
                     // If the filter was just updated, we need to inform the logpool
                     // and clear our internal caches.
                     if update_filter {
-                        ctx.filter_count = None;
-                        ctx.cached_lines.clear();
-                        if !ctx.following {
-                            // TODO: here, we could try to keep the same position after
-                            // filter change.
-                            ui.set_scroll_y(0.0);
-                        }
+                        clear_line_cache(ctx);
                     }
 
                     // Refresh filter count every second or so, unless
@@ -240,6 +427,7 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
                         Some(nl) => nl,
                     };
 
+                    let mut line_popup = false;
                     let mut kv_popup = false;
 
                     // Create a column grid. Imgui doesn't have helpers for configuring
@@ -263,7 +451,7 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
                                 // tail. We need to store the lines for borrowing rules, but let's always
                                 // invalidate it right away as we don't need to cache it: the logpool
                                 // query is very fast.
-                                ctx.cached_lines = ctx.view.last((end - start + 1) as usize);
+                                ctx.cached_lines = ctx.view.last((end - start) as usize);
                                 ctx.cached_start_line = usize::max_value();
                                 ctx.cached_lines.iter()
                             } else {
@@ -285,14 +473,35 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
                                 }
 
                                 let first = start as usize - ctx.cached_start_line;
-                                let last = first + ((end - start + 1) as usize).min(ctx.cached_lines.len());
+                                let last =
+                                    first + ((end - start) as usize).min(ctx.cached_lines.len());
 
                                 // println!("start:{}, end:{}, cache_start:{}, cache_len:{}, first:{}, last:{}", start, end, ctx.cached_start_line, ctx.cached_lines.len(), first, last);
                                 ctx.cached_lines[first..last].iter()
                             };
 
                             // Now go through the loglines and draw them.
-                            for v in lines_iter {
+                            for (idx, v) in lines_iter.enumerate() {
+                                let mouse_y = ui.io().mouse_pos[1] - ui.cursor_screen_pos()[1];
+                                let hovered = mouse_y >= 0.0 && mouse_y < ui.text_line_height();
+
+                                if !ctx.following {
+                                    // Use a selectable to show a colored background over the whole
+                                    // row (this seems the only available option right now).
+                                    // Don't bother trying to use it for clicking, as we're not
+                                    // actually using its logic.
+                                    let ct = ui.push_style_color(
+                                        StyleColor::HeaderHovered,
+                                        [0.2, 0.2, 0.2, 1.0],
+                                    );
+                                    Selectable::new(im_str!("##sel"))
+                                        .span_all_columns(true)
+                                        .build(ui);
+                                    ui.set_item_allow_overlap();
+                                    ct.pop(ui);
+                                    ui.same_line(0.0);
+                                }
+
                                 ui.text_colored(COLOR_FRAME, im_str!("[{}]", v.frame));
                                 ui.next_column();
                                 ui.text_colored(
@@ -305,19 +514,60 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
                                 ui.text(im_str!("{:80}", v.msg));
                                 ui.next_column();
                                 ui.text(im_str!("{}", v.kv.replace("\t", " ")));
-                                if !ctx.following && ui.is_item_clicked(MouseButton::Left) {
-                                    ctx.selected = v.kv.clone();
-                                    kv_popup = true;
-                                }
                                 ui.next_column();
+
+                                if !ctx.following
+                                    && hovered
+                                    && ui.is_mouse_clicked(MouseButton::Right)
+                                {
+                                    ctx.selected = v.clone();
+                                    line_popup = true;
+                                }
                             }
                         });
 
                     if !ctx.following {
-                        if kv_popup {
-                            ui.open_popup(im_str!("##kv"));
+                        if line_popup {
+                            ui.open_popup(im_str!("##line_popup"))
                         }
-                        ui.popup(im_str!("##kv"), || {
+                        ui.popup(im_str!("##line_popup"), || {
+                            if MenuItem::new(&im_str!("Show only frame {}", ctx.selected.frame))
+                                .build(ui)
+                            {
+                                ctx.view.set_filter_min_frame(Some(ctx.selected.frame));
+                                ctx.view.set_filter_max_frame(Some(ctx.selected.frame));
+                                clear_line_cache(ctx);
+                            }
+                            if MenuItem::new(&im_str!(
+                                "Show only module {}",
+                                pool.modules[ctx.selected.module as usize]
+                            ))
+                            .build(ui)
+                            {
+                                ctx.view.set_filter_modules(Some(vec![ctx.selected.module]));
+                                clear_line_cache(ctx);
+                            }
+                            if MenuItem::new(&im_str!(
+                                "Show only messages \"{}\"",
+                                if ctx.selected.msg.len() > 10 {
+                                    ctx.selected.msg[0..10].to_owned() + "[..]"
+                                } else {
+                                    ctx.selected.msg.clone()
+                                }
+                            ))
+                            .build(ui)
+                            {
+                                ctx.view.set_filter_text(Some(&ctx.selected.msg));
+                                clear_line_cache(ctx);
+                            }
+                            if MenuItem::new(im_str!("Expand key/values..")).build(ui) {
+                                kv_popup = true;
+                            }
+                        });
+                        if kv_popup {
+                            ui.open_popup(im_str!("##kv_popup"));
+                        }
+                        ui.popup(im_str!("##kv_popup"), || {
                             ChildWindow::new(im_str!("##child"))
                                 .size([300.0, 200.0])
                                 .horizontal_scrollbar(true)
@@ -333,7 +583,7 @@ pub(crate) fn render_logview<'a, 'ui>(ui: &'a Ui<'ui>, ctx: &mut UiCtxLog, pool:
                                     ui.text(im_str!("Value"));
                                     ui.next_column();
                                     ui.separator();
-                                    for (n, kv) in ctx.selected.split('\t').enumerate() {
+                                    for (n, kv) in ctx.selected.kv.split('\t').enumerate() {
                                         let mut kv = kv.splitn(2, "=");
                                         let k = kv.next().unwrap();
                                         let v = kv.next().unwrap_or("");

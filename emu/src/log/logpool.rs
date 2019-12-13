@@ -12,13 +12,13 @@ use std::convert::TryInto;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::path::Path;
 use std::io::Write;
+use std::path::Path;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct LogLine {
     pub(crate) level: u8,
     pub(crate) frame: u32,
@@ -42,13 +42,17 @@ impl LogLine {
 
     /// Convert into a TSV string
     fn serialize(&self, pool: &LogPool) -> String {
-        format!("{}\t{}\t{}\t{}\t{}\t{}\n",
-                slog::LOG_LEVEL_SHORT_NAMES[self.level as usize],
-                self.frame,
-                pool.modules[self.module as usize],
-                self.location.as_ref().map(|(sub,pc)| sub.clone()+&format!("@{:x}", pc)).unwrap_or("".into()),
-                self.msg,
-                self.kv
+        format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            slog::LOG_LEVEL_SHORT_NAMES[self.level as usize],
+            self.frame,
+            pool.modules[self.module as usize],
+            self.location
+                .as_ref()
+                .map(|(sub, pc)| sub.clone() + &format!("@{:x}", pc))
+                .unwrap_or("".into()),
+            self.msg,
+            self.kv
         )
     }
 }
@@ -64,10 +68,10 @@ pub struct LogView {
 
     min_level: Option<slog::FilterLevel>, // Minimum logging level to be displayed
     max_level: Option<slog::FilterLevel>, // Maximum logging level to be displayed
-    min_frame: Option<u32>,         // Minimum frame to be displayed
-    max_frame: Option<u32>,         // Maximum frame to be displayed
-    modules: Option<Vec<u8>>,       // List of modules that must be displayed
-    text: Option<String>,           // Full text search in msg+kv
+    min_frame: Option<u32>,               // Minimum frame to be displayed
+    max_frame: Option<u32>,               // Maximum frame to be displayed
+    modules: Option<Vec<u8>>,             // List of modules that must be displayed
+    text: Option<String>,                 // Full text search in msg+kv
 
     changed: bool,
     last_count: usize,
@@ -141,9 +145,9 @@ impl LogView {
         self.conn
             .execute("DROP VIEW IF EXISTS log_view", NO_PARAMS)
             .unwrap();
-        let mut view = 
-            "CREATE TEMPORARY VIEW log_view AS SELECT
-            id, level, frame, module, msg, kv FROM log ".to_owned();
+        let mut view = "CREATE TEMPORARY VIEW log_view AS SELECT
+            id, level, frame, module, msg, kv FROM log "
+            .to_owned();
 
         // Now build all the filters in the WHERE clause.
         // Unfortunately, SQLite does not support params in view
@@ -193,9 +197,9 @@ impl LogView {
         self.last_count = 0;
     }
 
-    // Returns loglines from this view of the pool; [first, last] is the inclusive range of
+    // Returns loglines from this view of the pool; [start, end[ is the range of
     // loglines indices that specify which portion of the filtered lines will be extracted.
-    pub fn get(&mut self, first: u32, last: u32) -> Vec<LogLine> {
+    pub fn get(&mut self, start: u32, end: u32) -> Vec<LogLine> {
         self.update_filter();
         let mut stmt = self
             .conn
@@ -203,7 +207,7 @@ impl LogView {
             .unwrap();
         let mut lines = Vec::new();
         for row in stmt
-            .query_map(params![last - first + 1, first], LogLine::from_row)
+            .query_map(params![end - start, start], LogLine::from_row)
             .unwrap()
         {
             lines.push(row.unwrap());
@@ -249,10 +253,7 @@ impl LogView {
         let row = rows.next().unwrap().unwrap();
         self.last_count += row.get_unwrap::<usize, u32>(0) as usize;
 
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT MAX(id) from log")
-            .unwrap();
+        let mut stmt = self.conn.prepare_cached("SELECT MAX(id) from log").unwrap();
         let mut rows = stmt.query(NO_PARAMS).unwrap();
         let row = rows.next().unwrap().unwrap();
         self.last_count_rowid = row.get_unwrap::<usize, i64>(0);
