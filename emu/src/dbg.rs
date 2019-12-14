@@ -365,11 +365,27 @@ impl DebuggerUI {
 
         // Render logger views
         let numframes = model.frames();
+        let mut logviewcmd = None;
         let mut logpool = self.logpool.clone();
         for mut ctxlog in self.uictx.get_mut().logviews.iter_mut() {
-            render_logview(ui, &mut ctxlog, &mut logpool, numframes);
+            let cmd = render_logview(ui, &mut ctxlog, &mut logpool, numframes);
+            logviewcmd = logviewcmd.or(cmd);
         }
         self.uictx.get_mut().logviews.retain(|view| view.opened);
+
+        // Apply logview commands (if any)
+        match logviewcmd {
+            Some(LogViewCommand::ShowPc(cpu, pc)) => {
+                match self.uictx.get_mut().disasm.get_mut(&cpu) {
+                    Some(cctx) => {
+                        cctx.force_pc = Some(pc);
+                        cctx.blink_pc = Some((pc, Instant::now()));
+                    }
+                    None => {} // Requested CPU does not exist? Ignore
+                }
+            }
+            None => {}
+        };
 
         // Error modal popup
         unsafe {

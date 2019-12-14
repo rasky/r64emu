@@ -1,5 +1,5 @@
 use super::uisupport::{ctext, ImGuiListClipper};
-use super::{UiCtx, UiCtxLog};
+use super::{LogViewCommand, UiCtx, UiCtxLog};
 use crate::log::{LogPool, LogPoolPtr, LogView};
 use sdl2::keyboard::Scancode;
 
@@ -318,11 +318,12 @@ pub(crate) fn render_logview<'a, 'ui>(
     ctx: &mut UiCtxLog,
     pool: &mut LogPoolPtr,
     num_frames: i64,
-) {
+) -> Option<LogViewCommand> {
     let mut opened = ctx.opened;
+    let mut force_loc = None;
 
     Window::new(&im_str!("{}", ctx.name))
-        .size([500.0, 300.0], Condition::FirstUseEver)
+        .size([600.0, 300.0], Condition::FirstUseEver)
         .opened(&mut opened)
         .build(ui, || {
             let pool = pool.lock().unwrap();
@@ -435,8 +436,8 @@ pub(crate) fn render_logview<'a, 'ui>(
                     // need to handle that manually.
                     ui.columns(5, im_str!("##col"), true);
                     if !ctx.configured_columns {
-                        ui.set_column_width(0, 50.0); // Frame number
-                        ui.set_column_width(1, 50.0); // Log Level
+                        ui.set_column_width(0, 60.0); // Frame number
+                        ui.set_column_width(1, 46.0); // Log Level
                         ui.set_column_width(2, 140.0); // Module
                         ui.set_column_width(3, 260.0); // Message
                         ctx.configured_columns = true;
@@ -481,7 +482,7 @@ pub(crate) fn render_logview<'a, 'ui>(
                             };
 
                             // Now go through the loglines and draw them.
-                            for (idx, v) in lines_iter.enumerate() {
+                            for v in lines_iter {
                                 let mouse_y = ui.io().mouse_pos[1] - ui.cursor_screen_pos()[1];
                                 let hovered = mouse_y >= 0.0 && mouse_y < ui.text_line_height();
 
@@ -499,9 +500,21 @@ pub(crate) fn render_logview<'a, 'ui>(
                                         .build(ui);
                                     ui.set_item_allow_overlap();
                                     ct.pop(ui);
-                                    ui.same_line(0.0);
+                                    ui.same_line(-1.0);
                                 }
 
+                                if v.location.is_some() {
+                                    ui.text_disabled("*");
+                                    if !ctx.following && ui.is_item_hovered() {
+                                        ui.tooltip_text(im_str!(
+                                            "Generated at: {}",
+                                            v.location.as_ref().unwrap()
+                                        ));
+                                    }
+                                } else {
+                                    ui.text_disabled(" ");
+                                }
+                                ui.same_line(0.0);
                                 ui.text_colored(COLOR_FRAME, im_str!("[{}]", v.frame));
                                 ui.next_column();
                                 ui.text_colored(
@@ -559,6 +572,17 @@ pub(crate) fn render_logview<'a, 'ui>(
                             {
                                 ctx.view.set_filter_text(Some(&ctx.selected.msg));
                                 clear_line_cache(ctx);
+                            }
+                            ui.separator();
+                            if let Some(loc) = ctx.selected.location() {
+                                if MenuItem::new(&im_str!(
+                                    "Go to {}..",
+                                    ctx.selected.location.as_ref().unwrap()
+                                ))
+                                .build(ui)
+                                {
+                                    force_loc = Some(loc);
+                                }
                             }
                             if MenuItem::new(im_str!("Expand key/values..")).build(ui) {
                                 kv_popup = true;
@@ -618,5 +642,11 @@ pub(crate) fn render_logview<'a, 'ui>(
                     }
                 });
         });
+
     ctx.opened = opened;
+
+    if let Some((cpu, pc)) = force_loc {
+        return Some(LogViewCommand::ShowPc(cpu, pc));
+    }
+    return None;
 }

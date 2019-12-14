@@ -18,8 +18,15 @@ pub trait DisasmView {
     /// Return the current program counter.
     fn pc(&self) -> u64;
 
-    /// Return the currently-valid range for the program counter.
-    fn pc_range(&self) -> (u64, u64);
+    /// "Mask" a PC value to consttain it within the currently-valid
+    /// range. The disassembly view will only display opcodes within
+    /// the range [pc_mask(0)..pc_mask(u64::max_value())].
+    ///
+    /// Most architectures need to implement this function to constraint
+    /// the range within the actual bus size. For instance, a 8-bit architecture
+    /// with a 14 bit memory bus might want to implement this masking the value
+    /// with 0x3FFF.
+    fn pc_mask(&self, pc: u64) -> u64;
 
     /// Disassemble a single instruction at the specified program counter;
     /// Returns the bytes composing the instruction and the string representation.
@@ -50,6 +57,14 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
     let cur_pc = v.pc();
     let mut set_command: Option<UiCommand> = None;
     let dctx = ctx.disasm.get_mut(&cpu_name).unwrap();
+
+    // If we were asked to show a certain PC, then also get focus
+    // as the user probably wants to see this window.
+    if dctx.force_pc.is_some() {
+        unsafe {
+            imgui_sys::igSetNextWindowFocus();
+        }
+    }
 
     // Process current event (if any)
     match ctx.event {
@@ -187,7 +202,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                 .always_vertical_scrollbar(true)
                 .build(ui, || {
                     // Get the full extent of PC. Notice that the range is *inclusive*.
-                    let mut pc_range = v.pc_range();
+                    let mut pc_range = (v.pc_mask(u64::min_value()), v.pc_mask(u64::max_value()));
 
                     // Calculate a range of PC that will be used in the disasm
                     // view, that could be smaller than the full extent. We select
@@ -204,7 +219,8 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                     if let Some(force_pc) = dctx.force_pc {
                         let size = ui.content_region_avail();
                         let row_height = ui.text_line_height_with_spacing();
-                        let scroll_y = unsafe { imgui_sys::igGetScrollY() };
+                        let scroll_y = ui.scroll_y();
+                        let force_pc = v.pc_mask(force_pc);
 
                         let first_pc = pc_range
                             .0
@@ -218,11 +234,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                                 .saturating_sub(10 * 4)
                                 .max(pc_range.0)
                                 .min(pc_range.1);
-                            unsafe {
-                                imgui_sys::igSetScrollY(
-                                    row_height * ((start_pc - pc_range.0) / 4) as f32,
-                                );
-                            }
+                            ui.set_scroll_y(row_height * ((start_pc - pc_range.0) / 4) as f32);
                         }
                     }
 
@@ -279,7 +291,7 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
 
                                 // See if we need to do a blink animation over this PC
                                 if let Some((bpc, bwhen)) = blink_pc {
-                                    if bpc == pc {
+                                    if v.pc_mask(bpc) == pc {
                                         match blink_color(bkg_color, bwhen) {
                                             Some(c1) => {
                                                 let wsize = ui.content_region_avail();
@@ -327,6 +339,8 @@ pub(crate) fn render_disasmview<'a, 'ui, DV: DisasmView>(
                     })
                 })
         });
+
+    dctx.force_pc = None;
 
     // See if we need to set a UiCommand into the context.
     if set_command.is_some() {

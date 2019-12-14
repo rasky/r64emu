@@ -35,6 +35,13 @@ pub(crate) struct UiCtxDisasm {
     pub regs_highlight: HashMap<&'static str, RegHighlight>,
 }
 
+// A command that can be requested by a log view (returned
+// by the render function).
+pub(crate) enum LogViewCommand {
+    // User requested to see a certain PC in a specific CPU
+    ShowPc(String, u64),
+}
+
 // Global state for log view
 pub(crate) struct UiCtxLog {
     pub view: LogView,

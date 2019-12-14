@@ -3,7 +3,9 @@ use super::mmu::Mmu;
 use super::{Arch, Config, Cop, Cop0};
 
 use emu::bus::be::{Bus, MemIoR};
-use emu::dbg::{DebuggerRenderer, DisasmView, DecodedInsn, RegisterSize, RegisterView, Result, Tracer};
+use emu::dbg::{
+    DebuggerRenderer, DecodedInsn, DisasmView, RegisterSize, RegisterView, Result, Tracer,
+};
 use emu::int::Numerics;
 use emu::memint::MemInt;
 use emu::state::Field;
@@ -391,7 +393,8 @@ impl<C: Config> Cpu<C> {
                 0x2E if h("dsub") => check_overflow_sub!(op, *op.mrd64(), op.irs64(), op.irt64()), // DSUB
                 0x2F if h("dsubu") => *op.mrd64() = op.rs64() - op.rt64(), // DSUBU
 
-                0x34 if h("teq") => { // TEQ
+                0x34 if h("teq") => {
+                    // TEQ
                     if op.rs64() == op.rt64() {
                         op.cpu.exception(Exception::Trap)
                     }
@@ -621,14 +624,24 @@ impl<C: Config> Cpu<C> {
         let val = self
             .bus
             .read::<U>(C::addr_mask(addr) & !(U::SIZE as u32 - 1));
-        t.trace_mem_read(&self.name, C::addr_mask(addr).into(), U::ACCESS_SIZE, val.into())?;
+        t.trace_mem_read(
+            &self.name,
+            C::addr_mask(addr).into(),
+            U::ACCESS_SIZE,
+            val.into(),
+        )?;
         Ok(val)
     }
 
     fn write<U: MemInt>(&mut self, addr: u32, val: U, t: &Tracer) -> Result<()> {
         self.bus
             .write::<U>(C::addr_mask(addr) & !(U::SIZE as u32 - 1), val);
-        t.trace_mem_write(&self.name, C::addr_mask(addr).into(), U::ACCESS_SIZE, val.into())
+        t.trace_mem_write(
+            &self.name,
+            C::addr_mask(addr).into(),
+            U::ACCESS_SIZE,
+            val.into(),
+        )
     }
 
     pub fn run(&mut self, until: i64, t: &Tracer) -> Result<()> {
@@ -736,7 +749,12 @@ impl<C: Config> RegisterView for Cpu<C> {
         use self::RegisterSize::*;
         match col {
             0 | 1 => {
-                for (n, v) in REG_NAMES.iter().zip(&mut self.ctx.regs).skip(col * 16).take(16) {
+                for (n, v) in REG_NAMES
+                    .iter()
+                    .zip(&mut self.ctx.regs)
+                    .skip(col * 16)
+                    .take(16)
+                {
                     visit(n, Reg64(v), None);
                 }
             }
@@ -764,11 +782,15 @@ impl<C: Config> DisasmView for Cpu<C> {
         C::pc_mask(self.ctx.pc as u32).into()
     }
 
-    fn pc_range(&self) -> (u64, u64) {
-        (C::pc_mask(0x0).into(), C::pc_mask(0xFFFF_FFFF).into())
+    fn pc_mask(&self, v: u64) -> u64 {
+        C::pc_mask(v as u32) as u64
     }
 
-    fn disasm_block<Func: FnMut(u64, &[u8], &DecodedInsn)>(&self, pc_range: (u64, u64), mut f: Func) {
+    fn disasm_block<Func: FnMut(u64, &[u8], &DecodedInsn)>(
+        &self,
+        pc_range: (u64, u64),
+        mut f: Func,
+    ) {
         let mut buf = vec![0u8, 0u8, 0u8, 0u8];
         let mut pc = pc_range.0 as u32;
 

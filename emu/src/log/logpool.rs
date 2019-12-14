@@ -23,7 +23,7 @@ pub struct LogLine {
     pub(crate) level: u8,
     pub(crate) frame: u32,
     pub(crate) module: u8,
-    pub(crate) location: Option<(String, u64)>,
+    pub(crate) location: Option<String>,
     pub(crate) msg: String,
     pub(crate) kv: String,
 }
@@ -34,9 +34,27 @@ impl LogLine {
             level: row.get(1)?,
             frame: row.get(2)?,
             module: row.get(3)?,
-            msg: row.get(4)?,
-            kv: row.get(5)?,
-            location: None,
+            location: row.get(4)?,
+            msg: row.get(5)?,
+            kv: row.get(6)?,
+        })
+    }
+
+    pub(crate) fn location(&self) -> Option<(String, u64)> {
+        self.location.as_ref().map(|l| {
+            let v: Vec<&str> = l.splitn(2, "@").collect();
+            (
+                v[0].to_owned(),
+                u64::from_str_radix(
+                    if v[1].starts_with("0x") {
+                        &v[1][2..]
+                    } else {
+                        &v[1]
+                    },
+                    16,
+                )
+                .unwrap(),
+            )
         })
     }
 
@@ -47,10 +65,7 @@ impl LogLine {
             slog::LOG_LEVEL_SHORT_NAMES[self.level as usize],
             self.frame,
             pool.modules[self.module as usize],
-            self.location
-                .as_ref()
-                .map(|(sub, pc)| sub.clone() + &format!("@{:x}", pc))
-                .unwrap_or("".into()),
+            self.location.as_ref().unwrap_or(&"".to_owned()),
             self.msg,
             self.kv
         )
@@ -146,7 +161,7 @@ impl LogView {
             .execute("DROP VIEW IF EXISTS log_view", NO_PARAMS)
             .unwrap();
         let mut view = "CREATE TEMPORARY VIEW log_view AS SELECT
-            id, level, frame, module, msg, kv FROM log "
+            id, level, frame, module, location, msg, kv FROM log "
             .to_owned();
 
         // Now build all the filters in the WHERE clause.
@@ -314,6 +329,7 @@ impl LogPool {
             level INTEGER,
             frame INTEGER,
             module INTEGER,
+            location TEXT,
             msg TEXT NOT NULL,
             kv TEXT NOT NULL
         )",
@@ -356,12 +372,15 @@ impl LogPool {
     pub fn log(&mut self, line: LogLine) {
         let mut stmt = self
             .conn
-            .prepare_cached("INSERT INTO log (level, frame, module, msg, kv) VALUES (?,?,?,?,?)")
+            .prepare_cached(
+                "INSERT INTO log (level, frame, module, location, msg, kv) VALUES (?,?,?,?,?,?)",
+            )
             .unwrap();
         stmt.execute(params![
             line.level,
             line.frame,
             line.module,
+            line.location,
             line.msg,
             line.kv
         ])
@@ -435,7 +454,10 @@ impl LogRecordPrinter for PoolRecordPrinter {
         let v = format!("{}", v);
         match k.as_ref() {
             KEY_FRAME => self.line.frame = u32::from_str_radix(&v, 10).unwrap_or(0),
-            KEY_PC => self.pc = u64::from_str_radix(&v, 16).ok(),
+            KEY_PC => {
+                self.pc =
+                    u64::from_str_radix(if v.starts_with("0x") { &v[2..] } else { &v }, 16).ok()
+            }
             KEY_SUBSYSTEM => self.sub = Some(v),
             _ => {
                 if !self.kv.is_empty() {
@@ -451,8 +473,8 @@ impl LogRecordPrinter for PoolRecordPrinter {
         use std::str;
         let mut line = self.line;
         line.kv = str::from_utf8(&self.kv).unwrap().to_owned();
-        line.location = match (self.sub, self.pc) {
-            (Some(sub), Some(pc)) => Some((sub, pc)),
+        line.location = match (&self.sub, &self.pc) {
+            (Some(sub), Some(pc)) => Some(format!("{}@{:x}", sub, pc)),
             _ => None,
         };
 

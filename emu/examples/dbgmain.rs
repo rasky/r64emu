@@ -41,7 +41,7 @@ fn fake_logging(logger: &slog::Logger, cnt: u32) {
     warn!(logger, #"foo", "test warn first"; "a" => "b", "@f" => cnt);
     info!(logger, "test info"; "a" => "b", "@f" => cnt);
     warn!(logger, #"bar", "test warn second"; "a" => "b", "@f" => cnt);
-    error!(logger, "test error 1"; "a" => "b", "@f" => cnt);
+    error!(logger, "test error 1"; "a" => "b", "@f" => cnt, "@pc" => "0x1234", "@sub" => "mips");
     warn!(logger, #"foo", "test warn third"; "a" => "b", "@f" => cnt);
     error!(logger, "test error 2"; "a" => "b", "@f" => cnt);
     info!(logger, #"foo", "test info"; "a" => "b", "@f" => cnt);
