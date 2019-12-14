@@ -21,9 +21,17 @@ pub(crate) enum RegHighlight {
 // Global state for a disasm view
 #[derive(Default)]
 pub(crate) struct UiCtxDisasm {
-    pub blink_pc: Option<(u64, Instant)>,
-    pub cursor_pc: Option<u64>,
+    // Current PC on this CPU (copied here from emulator).
     pub cur_pc: Option<u64>,
+    // Display a blinking effect over this PC; initialize with Instant::now.
+    // NOTE: this only works if this PC is visible (within the scrolling area), otherwise
+    // the animation is not performed.
+    pub blink_pc: Option<(u64, Instant)>,
+    // PC being currently selected by the user using cursor keys / mouse.
+    pub cursor_pc: Option<u64>,
+    // If set, the disasmview will automatically scroll to display this PC
+    pub force_pc: Option<u64>,
+    // Map of registers that must be highlighted (because are involved in cur_pc's opcode).
     pub regs_highlight: HashMap<&'static str, RegHighlight>,
 }
 
