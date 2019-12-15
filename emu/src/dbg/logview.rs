@@ -335,7 +335,7 @@ pub(crate) fn render_logview<'a, 'ui>(
             if ui.is_item_hovered() {
                 ui.tooltip_text(im_str!("Display new loglines as they arrive"));
             }
-            if !ui.io().want_text_input && ui.is_key_pressed(Scancode::F as _) {
+            if is_shortcut_pressed(ui, Scancode::F as _) {
                 ctx.following = !ctx.following;
                 following_changed = true;
             }
