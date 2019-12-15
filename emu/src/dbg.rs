@@ -34,6 +34,8 @@ mod miscview;
 pub(crate) use self::miscview::*;
 mod logview;
 pub use self::logview::*;
+mod memoryview;
+pub use self::memoryview::*;
 
 pub trait DebuggerModel {
     /// Return a vector of the name of all CPUS.
@@ -471,5 +473,12 @@ impl<'a, 'ui> DebuggerRenderer<'a, 'ui> {
     }
     pub fn render_disasmview<V: DisasmView>(&self, v: &mut V) {
         render_disasmview(self.ui, &mut self.ctx.borrow_mut(), v)
+    }
+    pub fn render_memoryview<V: MemoryView>(&self, v: &mut V) {
+        let mut ctx = self.ctx.borrow_mut();
+        ctx.memviews
+            .entry(v.name().to_string())
+            .or_insert_with(|| MemWindow::default())
+            .render(self.ui, v);
     }
 }

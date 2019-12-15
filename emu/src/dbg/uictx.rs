@@ -1,4 +1,4 @@
-use super::TraceEvent;
+use super::{MemWindow, TraceEvent};
 use crate::log::{LogLine, LogView};
 use imgui::ImString;
 
@@ -95,6 +95,9 @@ pub(crate) struct UiCtx {
     // Log view
     pub logviews: Vec<Box<UiCtxLog>>,
     pub logviewid: usize,
+
+    // Memory views
+    pub memviews: HashMap<String, MemWindow>,
 
     // Flash messages (auto-hide after 2s)
     pub flash_msg: Option<(String, Instant)>,

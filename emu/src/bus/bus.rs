@@ -243,6 +243,14 @@ pub(crate) fn unmapped_area_w() -> HwIoW {
     HwIoW::Func(FN.with(|c| c.clone()))
 }
 
+pub struct MemoryDesc {
+    pub name: String,
+    pub begin: u64,
+    pub end: u64,
+    pub readable: bool,
+    pub writeable: bool,
+}
+
 pub struct Bus<Order: ByteOrderCombiner> {
     reads: EnumMap<AccessSize, Box<RadixTree<HwIoR>>>,
     writes: EnumMap<AccessSize, Box<RadixTree<HwIoW>>>,
@@ -252,6 +260,7 @@ pub struct Bus<Order: ByteOrderCombiner> {
     unmap_w: HwIoW,
 
     logger: slog::Logger,
+    mems: Vec<MemoryDesc>, // List of mapped memory areas (for debugging)
 
     phantom: PhantomData<Order>,
 }
@@ -281,6 +290,7 @@ where
             unmap_r: unmapped_area_r(),
             unmap_w: unmapped_area_w(),
             logger: logger,
+            mems: Vec::new(),
             phantom: PhantomData,
         })
     }
@@ -473,6 +483,15 @@ where
         self.writes[Size32].insert_range(begin, end, mem.hwio_w::<Order, u32>(), false)?;
         self.writes[Size64].insert_range(begin, end, mem.hwio_w::<Order, u64>(), false)?;
 
+        // Keep a cache of descriptions to implement mapped_mems().
+        self.mems.push(MemoryDesc {
+            name: mem.name().to_owned(),
+            begin: begin as u64,
+            end: end as u64,
+            readable: mem.can_read(),
+            writeable: mem.can_write(),
+        });
+
         return Ok(());
     }
 
@@ -526,6 +545,12 @@ where
         )?;
 
         Ok(())
+    }
+
+    /// Return a description of all memory areas that have been mapped to this bus.
+    /// This can be useful for inspection and debugging.
+    pub fn mapped_mems(&self) -> &Vec<MemoryDesc> {
+        &self.mems
     }
 }
 

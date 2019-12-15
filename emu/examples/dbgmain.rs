@@ -7,6 +7,36 @@ use slog::*;
 
 struct FakeModel {
     curframe: i64,
+    ram: Vec<u8>,
+    rom: Vec<u8>,
+}
+
+impl dbg::MemoryView for FakeModel {
+    fn name(&self) -> &str {
+        return "Fake";
+    }
+    fn banks(&self) -> Vec<dbg::MemoryBank> {
+        vec![
+            dbg::MemoryBank::new("RAM", 0, 1024 * 1024 - 1, true),
+            dbg::MemoryBank::new("ROM", 0xFFFF_0000, 0xFFFF_0000 + 64 * 1024 - 1, false),
+        ]
+    }
+
+    fn mem_slice<'a>(&'a self, bank_idx: usize, start: u64, end: u64) -> &'a [u8] {
+        match bank_idx {
+            0 => &self.ram[start as usize..=end as usize],
+            1 => &self.rom[(start - 0xFFFF_0000) as usize..=(end - 0xFFFF_0000) as usize],
+            _ => unreachable!(),
+        }
+    }
+
+    fn mem_slice_mut<'a>(&'a mut self, bank_idx: usize, start: u64, end: u64) -> &'a mut [u8] {
+        match bank_idx {
+            0 => &mut self.ram[start as usize..=end as usize],
+            1 => &mut self.rom[(start - 0xFFFF_0000) as usize..=(end - 0xFFFF_0000) as usize],
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl dbg::DebuggerModel for FakeModel {
@@ -33,7 +63,10 @@ impl dbg::DebuggerModel for FakeModel {
         Ok(())
     }
     fn reset(&mut self, hard: bool) {}
-    fn render_debug<'a, 'ui>(&mut self, dr: &dbg::DebuggerRenderer<'a, 'ui>) {}
+
+    fn render_debug<'a, 'ui>(&mut self, dr: &dbg::DebuggerRenderer<'a, 'ui>) {
+        dr.render_memoryview(self);
+    }
 }
 
 fn fake_logging(logger: &slog::Logger, cnt: u32) {
@@ -45,6 +78,15 @@ fn fake_logging(logger: &slog::Logger, cnt: u32) {
     warn!(logger, #"foo", "test warn third"; "a" => "b", "@f" => cnt);
     error!(logger, "test error 2"; "a" => "b", "@f" => cnt);
     info!(logger, #"foo", "test info"; "a" => "b", "@f" => cnt);
+}
+
+fn rand(state: &mut u64) -> u32 {
+    let mut x = *state;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *state = x;
+    x as u32
 }
 
 fn main() {
@@ -72,7 +114,21 @@ fn main() {
         .expect("Couldn't create GL context");
     gl::load_with(|s| video.gl_get_proc_address(s) as _);
 
-    let mut model = FakeModel { curframe: 0 };
+    let mut model = FakeModel {
+        curframe: 0,
+        ram: Vec::new(),
+        rom: Vec::new(),
+    };
+
+    model.ram.resize(1024 * 1024, 0);
+    model.rom.resize(1024 * 1024, 0);
+    let mut state = 0x12345678;
+    for i in 4 * 1024..32 * 1024 {
+        model.ram[i] = rand(&mut state) as u8;
+    }
+    for i in 0..1024 * 1024 {
+        model.rom[i] = rand(&mut state) as u8;
+    }
 
     let (logger, logpool) = log::new_pool_logger();
 

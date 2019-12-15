@@ -8,6 +8,51 @@ pub(crate) struct ImGuiListClipper {
     items_height: f32,
 }
 
+pub(crate) struct ImGuiListClipperToken {
+    clip: sys::ImGuiListClipper,
+    end: bool,
+}
+
+impl ImGuiListClipperToken {
+    pub(crate) fn display_start(&self) -> usize {
+        return self.clip.DisplayStart as usize;
+    }
+    pub(crate) fn display_end(&self) -> usize {
+        return self.clip.DisplayEnd as usize;
+    }
+
+    pub(crate) fn step(&mut self) -> bool {
+        unsafe { sys::ImGuiListClipper_Step(&mut self.clip) }
+    }
+
+    pub(crate) fn run<F: FnMut(isize, isize)>(&mut self, mut f: F) {
+        loop {
+            if !self.step() {
+                break;
+            }
+            f(
+                self.clip.DisplayStart as isize,
+                self.clip.DisplayEnd as isize,
+            );
+        }
+    }
+
+    pub(crate) fn end(mut self) {
+        unsafe {
+            sys::ImGuiListClipper_End(&mut self.clip);
+        }
+        self.end = true;
+    }
+}
+
+impl Drop for ImGuiListClipperToken {
+    fn drop(&mut self) {
+        if !self.end {
+            panic!("A ImGuiListClipperToken was leaked. Did you call .end()?");
+        }
+    }
+}
+
 impl ImGuiListClipper {
     pub(crate) fn new(items_count: usize) -> Self {
         Self {
@@ -26,23 +71,18 @@ impl ImGuiListClipper {
         self
     }
 
-    pub(crate) fn build<F: FnMut(isize, isize)>(self, mut f: F) {
+    pub(crate) fn begin(self) -> ImGuiListClipperToken {
         let mut clip: sys::ImGuiListClipper = unsafe { ::std::mem::uninitialized() };
         unsafe {
             sys::ImGuiListClipper_Begin(&mut clip, self.items_count as _, self.items_height as _);
         }
+        ImGuiListClipperToken { clip, end: false }
+    }
 
-        loop {
-            let done = unsafe { sys::ImGuiListClipper_Step(&mut clip) };
-            if !done {
-                break;
-            }
-            f(clip.DisplayStart as isize, clip.DisplayEnd as isize);
-        }
-
-        unsafe {
-            sys::ImGuiListClipper_End(&mut clip);
-        }
+    pub(crate) fn build<F: FnMut(isize, isize)>(self, f: F) {
+        let mut tok = self.begin();
+        tok.run(f);
+        tok.end();
     }
 }
 

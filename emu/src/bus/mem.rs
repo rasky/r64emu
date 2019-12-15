@@ -65,6 +65,16 @@ impl Mem {
         }
     }
 
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+    pub fn can_read(&self) -> bool {
+        self.flags.contains(MemFlags::READACCESS)
+    }
+    pub fn can_write(&self) -> bool {
+        self.flags.contains(MemFlags::WRITEACCESS)
+    }
+
     pub fn len(&self) -> usize {
         self.buf.len()
     }
