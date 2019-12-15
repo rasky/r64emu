@@ -67,9 +67,26 @@ pub trait MemoryView {
     fn banks(&self) -> Vec<MemoryBank>;
 
     /// Get a non mutable reference to a slice of one of the memory banks.
+    /// `bank_idx` is the index of the bank in the vector returned by
+    /// [`banks`](fn.MemoryView.banks.html). `start` and `end` are the
+    /// *inclusive* interval of memory addresses to access. Notice that
+    /// these are not byte offsets within the banks, but memory addresses
+    /// compatible with the `MemoryBank::start` and `MemoryBank::end`.
+    ///
+    /// In fact, if all banks are non-overlapping, `bank_idx` is superfluous
+    /// as the address range should be enough to identify the bank being accessed.
+    ///
+    /// Since the debugger will only request intervals that are fully within a
+    /// memory bank, this function should never fail: an implementation might
+    /// panic if the input arguments are wrong (which might only happen in case
+    /// of a bug in the debugger itself).
+    ///
+    /// An implementation is allowed to return a slice which is smaller than
+    /// the requested interval, as long as it begins at `start`. The debugger will then request the
     fn mem_slice<'a>(&'a self, bank_idx: usize, start: u64, end: u64) -> &'a [u8];
 
     /// Get a mutable reference to a slice of one of the memory banks.
+    /// See [`mem_slice`](fn.MemoryView.mem_slice.html) for more details.
     fn mem_slice_mut<'a>(&'a mut self, bank_idx: usize, start: u64, end: u64) -> &'a mut [u8];
 }
 
@@ -127,6 +144,32 @@ impl MemWindow {
         return s;
     }
 
+    fn draw_highlight_rect(
+        &self,
+        ui: &Ui,
+        dl: &WindowDrawList,
+        s: &Sizes,
+        n: usize,
+        ncells: usize,
+    ) {
+        let color_highlight = [1.0, 1.0, 1.0, 0.2];
+        let pos = ui.cursor_screen_pos();
+        let has_mid = (n < NUM_COLUMNS / 2) && (n + ncells > NUM_COLUMNS / 2);
+        let width = ncells as f32 * s.hex_cell_width - s.hex_cell_spacing
+            + if has_mid {
+                s.spacing_between_mid_cols
+            } else {
+                0.0
+            };
+        dl.add_rect(
+            pos,
+            [pos[0] + width, pos[1] + s.line_height],
+            color_highlight,
+        )
+        .filled(true)
+        .build();
+    }
+
     pub(crate) fn render(&mut self, ui: &Ui, memview: &mut dyn MemoryView) {
         let banks = memview.banks();
         let bank = &banks[self.curr_bank];
@@ -140,12 +183,17 @@ impl MemWindow {
                 let mut curr_bank = self.curr_bank;
 
                 ui.set_next_item_width(130.0);
-                ComboBox::new(im_str!("")).build_simple(
+                if ComboBox::new(im_str!("")).build_simple(
                     ui,
                     &mut curr_bank,
                     &banks,
                     &|b: &MemoryBank| Cow::Owned(im_str!("{}", b.name)),
-                );
+                ) {
+                    self.edit_addr = None;
+                    self.edit_addr_focus = false;
+                    self.highlight_addr = None;
+                    self.inspect_addr = None;
+                }
                 ui.same_line(0.0);
 
                 if ui.button(im_str!("Goto.."), [0.0, 0.0]) {
@@ -191,7 +239,6 @@ impl MemWindow {
         let color_disabled = ui.style_color(StyleColor::TextDisabled);
         let color_text = ui.style_color(StyleColor::Text);
         let color_border = ui.style_color(StyleColor::Border);
-        let color_hightlight = [1.0, 1.0, 1.0, 0.2];
 
         footer_height += height_separator + ui.frame_height_with_spacing(); // options
         footer_height += height_separator
@@ -300,14 +347,14 @@ impl MemWindow {
                 )
                 .build();
 
+                let mut write_data = None;
                 clip.run(|start, end| {
                     for line in start..end {
                         let line_addr_start = bank.begin + (line as u64 * NUM_COLUMNS as u64);
                         let line_addr_end =
                             (line_addr_start + (NUM_COLUMNS as u64) - 1).min(bank.end);
 
-                        let mem =
-                            memview.mem_slice_mut(self.curr_bank, line_addr_start, line_addr_end);
+                        let mem = memview.mem_slice(self.curr_bank, line_addr_start, line_addr_end);
                         ui.text_colored(
                             color(174, 129, 255),
                             &im_str!("{:01$X}", line_addr_start, s.addr_digits_count),
@@ -324,25 +371,16 @@ impl MemWindow {
                             // Start of highlighting
                             if let Some((h1, h2)) = self.highlight_addr {
                                 if addr == h1 {
+                                    // Draw the the highlight section
                                     let hsize = (h2 - h1 + 1) as usize;
-                                    let pos = ui.cursor_screen_pos();
                                     let ncells = hsize.min(NUM_COLUMNS - n);
-                                    let has_mid =
-                                        (n < NUM_COLUMNS / 2) && (n + ncells > NUM_COLUMNS / 2);
-                                    let width = ncells as f32 * s.hex_cell_width
-                                        - s.hex_cell_spacing
-                                        + if has_mid {
-                                            s.spacing_between_mid_cols
-                                        } else {
-                                            0.0
-                                        };
-                                    dl.add_rect(
-                                        pos,
-                                        [pos[0] + width, pos[1] + s.line_height],
-                                        color_hightlight,
-                                    )
-                                    .filled(true)
-                                    .build();
+                                    self.draw_highlight_rect(ui, &dl, &s, n, ncells);
+                                } else if n == 0 && addr <= h2 && addr > h1 {
+                                    // The highlight section might span across two lines.
+                                    // Draw the remainder if so
+                                    let hsize = (h2 - addr + 1) as usize;
+                                    let ncells = hsize.min(NUM_COLUMNS - n);
+                                    self.draw_highlight_rect(ui, &dl, &s, n, ncells);
                                 }
                             }
 
@@ -371,8 +409,10 @@ impl MemWindow {
                                     .resize_buffer(false)
                                     .build()
                                 {
-                                    mem[n] =
-                                        u8::from_str_radix(self.edit_buf.to_str(), 16).unwrap();
+                                    write_data = Some((
+                                        addr,
+                                        u8::from_str_radix(self.edit_buf.to_str(), 16).unwrap(),
+                                    ));
                                     self.edit_addr = Some(self.edit_addr.unwrap() + 1);
                                     self.edit_addr_focus = true;
                                 }
@@ -386,17 +426,16 @@ impl MemWindow {
                                 } else {
                                     ui.text(&im_str!("{:02X}", mem[n]));
                                 }
-                                if bank.rw
-                                    && ui.is_item_hovered()
-                                    && ui.is_mouse_clicked(MouseButton::Left)
-                                {
+                                if ui.is_item_hovered() && ui.is_mouse_clicked(MouseButton::Left) {
                                     self.inspect_addr = Some(addr);
-                                    self.edit_addr = Some(addr);
-                                    self.edit_addr_focus = true;
                                     self.highlight_addr = Some((
                                         addr,
                                         addr.saturating_add(self.inspect_size as u64 - 1),
                                     ));
+                                    if bank.rw {
+                                        self.edit_addr = Some(addr);
+                                        self.edit_addr_focus = true;
+                                    }
                                 }
                             }
                         }
@@ -423,6 +462,12 @@ impl MemWindow {
                 });
                 clip.end();
                 st.pop(&ui);
+
+                // If the user performed a memory write, execute it now.
+                if let Some((addr, val)) = write_data {
+                    let wmem = memview.mem_slice_mut(self.curr_bank, addr, addr);
+                    wmem[0] = val;
+                }
             });
     }
 
@@ -442,7 +487,11 @@ impl MemWindow {
         let mut update_highlight = false;
 
         ui.align_text_to_frame_padding();
-        ui.text(im_str!("Inspect as:"));
+        if let Some(addr) = self.inspect_addr {
+            ui.text(im_str!("Inspect {:01$X} as:", addr, s.addr_digits_count));
+        } else {
+            ui.text(im_str!("Inspect as:"));
+        }
         ui.same_line(0.0);
         ui.set_next_item_width(
             s.glyph_width * 10.0 + style.frame_padding[0] * 2.0 + style.item_inner_spacing[0],
