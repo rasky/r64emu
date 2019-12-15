@@ -4,7 +4,8 @@ use super::{Arch, Config, Cop, Cop0};
 
 use emu::bus::be::{Bus, MemIoR};
 use emu::dbg::{
-    DebuggerRenderer, DecodedInsn, DisasmView, RegisterSize, RegisterView, Result, Tracer,
+    BusMemoryView, DebuggerRenderer, DecodedInsn, DisasmView, MemoryBank, RegisterSize,
+    RegisterView, Result, Tracer,
 };
 use emu::int::Numerics;
 use emu::memint::MemInt;
@@ -714,6 +715,7 @@ impl<C: Config> Cpu<C> {
     pub fn render_debug<'a, 'ui>(&mut self, dr: &DebuggerRenderer<'a, 'ui>) {
         dr.render_disasmview(self);
         dr.render_regview(self);
+        dr.render_memoryview(self);
 
         if !self.cop0.is_null_obj() {
             self.cop0.render_debug(dr);
@@ -821,5 +823,20 @@ impl<C: Config> DisasmView for Cpu<C> {
                 pc += 4;
             }
         }
+    }
+}
+
+impl<C: Config> BusMemoryView for Cpu<C> {
+    type Order = byteorder::BigEndian;
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn bus(&self) -> &Bus {
+        &self.bus
+    }
+    fn bus_mut(&mut self) -> &mut Bus {
+        &mut self.bus
     }
 }
