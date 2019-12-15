@@ -401,6 +401,7 @@ pub(crate) fn render_logview<'a, 'ui>(
                 .size([0.0, 0.0])
                 .always_horizontal_scrollbar(true)
                 .always_vertical_scrollbar(true)
+                .content_size([3000.0, 0.0])
                 .build(ui, || {
                     // If the user scrolled up, automatically disable following. Just don't do
                     // it on the very first frame in which following was turned on.
