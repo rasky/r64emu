@@ -1,10 +1,11 @@
-use super::uisupport::{ctext, ImGuiListClipper};
+use super::uisupport::{ctext, is_shortcut_pressed, ImGuiListClipper};
 use super::{LogViewCommand, UiCtx, UiCtxLog};
 use crate::log::{LogPool, LogPoolPtr, LogView};
 use sdl2::keyboard::Scancode;
 
 use imgui::*;
 use slog::LOG_LEVEL_SHORT_NAMES;
+use textwrap;
 use tinyfiledialogs::save_file_dialog_with_filter;
 
 use std::time::Instant;
@@ -157,7 +158,7 @@ fn render_filter_by_frame(ui: &Ui, view: &mut LogView, num_frames: i64) -> bool 
         if ComboBox::new(im_str!("")).build_simple_string(
             ui,
             &mut range_val,
-            &vec![
+            &[
                 im_str!("Show all"),
                 im_str!("Since Nth frame"),
                 im_str!("Up to Nth frame"),
@@ -602,6 +603,11 @@ pub(crate) fn render_logview<'a, 'ui>(
                                         ui.set_column_width(0, 50.0);
                                         ui.set_column_width(1, 250.0);
                                     }
+                                    let style = ui.clone_style();
+                                    let glyph_width =
+                                        ui.calc_text_size(im_str!("F"), false, 0.0)[0];
+                                    let vchars = (ui.column_width(1) - style.item_spacing[0] * 2.0)
+                                        / glyph_width;
                                     ui.text(im_str!("Key"));
                                     ui.next_column();
                                     ui.text(im_str!("Value"));
@@ -615,7 +621,9 @@ pub(crate) fn render_logview<'a, 'ui>(
                                         ui.text(im_str!("{}", k));
                                         ui.next_column();
 
-                                        let mut buf = im_str!("{}", v).to_owned();
+                                        let mut buf =
+                                            im_str!("{}", textwrap::fill(v, vchars as usize))
+                                                .to_owned();
                                         if v.len() > 32 {
                                             ui.input_text_multiline(
                                                 &im_str!("##v{}", n),

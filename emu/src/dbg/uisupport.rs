@@ -199,6 +199,12 @@ pub fn blink_color(base: [f32; 4], start: Instant) -> Option<[f32; 4]> {
     }
 }
 
+pub fn is_shortcut_pressed(ui: &Ui, key: u32) -> bool {
+    !ui.io().want_text_input
+        && ui.is_window_focused_with_flags(WindowFocusedFlags::ROOT_AND_CHILD_WINDOWS)
+        && ui.is_key_pressed(key)
+}
+
 pub fn ctext(ui: &Ui, text: &ImStr, id: i32) {
     let pt = ui.push_id(id);
     ui.text(text);
