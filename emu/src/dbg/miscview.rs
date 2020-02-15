@@ -80,7 +80,7 @@ pub(crate) fn render_flash_msgs(ui: &Ui<'_>, ctx: &mut UiCtx) {
         );
         igSetNextWindowBgAlpha(0.5);
     }
-    Window::new(&im_str!(""))
+    Window::new(&im_str!("##flash"))
         .resizable(false)
         .movable(false)
         .collapsible(false)

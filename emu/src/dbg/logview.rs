@@ -155,7 +155,7 @@ fn render_filter_by_frame(ui: &Ui, view: &mut LogView, num_frames: i64) -> bool 
             .unwrap_or(view.filter_min_frame().unwrap_or(0));
 
         let mut range_val = range_type as usize;
-        if ComboBox::new(im_str!("")).build_simple_string(
+        if ComboBox::new(im_str!("##cb")).build_simple_string(
             ui,
             &mut range_val,
             &[

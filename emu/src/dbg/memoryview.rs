@@ -183,7 +183,7 @@ impl MemWindow {
                 let mut curr_bank = self.curr_bank;
 
                 ui.set_next_item_width(130.0);
-                if ComboBox::new(im_str!("")).build_simple(
+                if ComboBox::new(im_str!("##cb")).build_simple(
                     ui,
                     &mut curr_bank,
                     &banks,
