@@ -703,7 +703,7 @@ fn write_partial_left<B: ByteOrder>(dst: &mut [u8], src: u128, skip_bits: usize)
 
 fn write_partial_right<B: ByteOrder>(dst: &mut [u8], src: u128, skip_bits: usize, nbits: usize) {
     let mask = !0u128;
-    let mask = mask & (!0u128 << nbits);
+    let mask = mask << (128 - nbits);
     let mask = if skip_bits < 128 {
         mask >> skip_bits
     } else {

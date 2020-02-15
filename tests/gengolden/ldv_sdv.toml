@@ -1,5 +1,6 @@
 input_desc = [
   "v128:data",
+  "v128:prev",
   "u32:offset",
   "u32:dummy",
 ]
@@ -42,33 +43,32 @@ output_desc = [
 rsp_code = """
   li a0,$0
   li a1,$800
-  lw t4,$10(a0) // input: offset
+  lqv v0[e0],$10(a0) // input: prev
+  lqv v1[e0],$10(a0) // input: prev
+  lqv v2[e0],$10(a0) // input: prev
+  lqv v3[e0],$10(a0) // input: prev
+  lqv v4[e0],$10(a0) // input: prev
+  lqv v5[e0],$10(a0) // input: prev
+  lqv v6[e0],$10(a0) // input: prev
+  lqv v7[e0],$10(a0) // input: prev
+  lqv v8[e0],$10(a0) // input: prev
+  lqv v9[e0],$10(a0) // input: prev
+  lqv v10[e0],$10(a0) // input: prev
+  lqv v11[e0],$10(a0) // input: prev
+  lqv v12[e0],$10(a0) // input: prev
+  lqv v13[e0],$10(a0) // input: prev
+  lqv v14[e0],$10(a0) // input: prev
+  lqv v15[e0],$10(a0) // input: prev
+  lw t4,$20(a0) // input: offset
 
   // This test is very sensitive to possible read/write mistakes to memory
   // and we want to make sure that writes actually happen.
-  // So clear all registers and also output memory area to make sure
-  // tests do not shadow previous results.
-  vxor v0,v0
-  vxor v1,v1
-  vxor v2,v2
-  vxor v3,v3
-  vxor v4,v4
-  vxor v5,v5
-  vxor v6,v6
-  vxor v7,v7
-  vxor v8,v8
-  vxor v9,v9
-  vxor v10,v10
-  vxor v11,v11
-  vxor v12,v12
-  vxor v13,v13
-  vxor v14,v14
-  vxor v15,v15
+  vxor v31,v31
 
   add a2,a1,0
   addi a2,$1F0
 ClearLoop:
-  sqv v0[e0],$00(a2)
+  sqv v31[e0],$00(a2)
   bne a1,a2,ClearLoop
   subi a2,$10
 
@@ -135,6 +135,7 @@ ClearLoop:
 name = "offset0"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   0, # offset
   0, # dummy
 ]
@@ -142,6 +143,7 @@ input = [
 name = "offset1"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   1, # offset
   0, # dummy
 ]
@@ -149,6 +151,7 @@ input = [
 name = "offset2"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   2, # offset
   0, # dummy
 ]
@@ -156,6 +159,7 @@ input = [
 name = "offset3"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   3, # offset
   0, # dummy
 ]
@@ -163,6 +167,7 @@ input = [
 name = "offset4"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   4, # offset
   0, # dummy
 ]
@@ -170,6 +175,7 @@ input = [
 name = "offset5"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   5, # offset
   0, # dummy
 ]
@@ -177,6 +183,7 @@ input = [
 name = "offset6"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   6, # offset
   0, # dummy
 ]
@@ -184,6 +191,7 @@ input = [
 name = "offset7"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   7, # offset
   0, # dummy
 ]
@@ -191,6 +199,7 @@ input = [
 name = "offset8"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   8, # offset
   0, # dummy
 ]
@@ -198,6 +207,7 @@ input = [
 name = "offset9"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   9, # offset
   0, # dummy
 ]
@@ -205,6 +215,7 @@ input = [
 name = "offset10"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   10, # offset
   0, # dummy
 ]
@@ -212,6 +223,7 @@ input = [
 name = "offset11"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   11, # offset
   0, # dummy
 ]
@@ -219,6 +231,7 @@ input = [
 name = "offset12"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   12, # offset
   0, # dummy
 ]
@@ -226,6 +239,7 @@ input = [
 name = "offset13"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   13, # offset
   0, # dummy
 ]
@@ -233,6 +247,7 @@ input = [
 name = "offset14"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   14, # offset
   0, # dummy
 ]
@@ -240,6 +255,7 @@ input = [
 name = "offset15"
 input = [
   0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FFAB, # v0
+  0x1234_5678, 0x9ABC_DEF0, 0x2143_6587, 0xA9CB_ED0F, # prev
   15, # offset
   0, # dummy
 ]
