@@ -815,6 +815,20 @@ impl Cop for SpCop2 {
                     self.ctx.vregs[vtidx].setlane(e, ((mem & 0xFF) << 8) as u16);
                 }
             }
+            0x07 => {
+                // LUV
+                let ea = ((base + (offset << 3)) & 0xFFF) as usize;
+                let qw_start = ea & !0x7;
+                let ea_idx = ea & 0x7;
+
+                let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
+                mem = mem.rotate_right(element * 8);
+                mem = mem.rotate_left((ea_idx as u32) * 8);
+                for e in 0..8 {
+                    mem = mem.rotate_left(8);
+                    self.ctx.vregs[vtidx].setlane(e, ((mem & 0xFF) << 7) as u16);
+                }
+            }
             0x0B => {
                 // LTV
                 let ea = (base + (offset << 4)) & 0xFFF;
@@ -879,13 +893,21 @@ impl Cop for SpCop2 {
             0x06 => {
                 // SPV
                 let ea = ((base + (offset << 3)) & 0xFFF) as usize;
-                let qw_start = ea & !0xF;
-                let ea_idx = ea & 0xF;
 
                 let memptr = &mut dmem[ea..ea + 0x10];
                 for e in 0 as usize..8 as usize {
                     let eidx = (e + element as usize) & 0xF;
                     memptr[e] = ((vt.lane(eidx & 0x7) << (eidx >> 3)) >> 8) as u8;
+                }
+            }
+            0x07 => {
+                // SUV
+                let ea = ((base + (offset << 3)) & 0xFFF) as usize;
+
+                let memptr = &mut dmem[ea..ea + 0x10];
+                for e in 0 as usize..8 as usize {
+                    let eidx = (e + element as usize) & 0xF;
+                    memptr[e] = ((vt.lane(eidx & 0x7) >> (eidx >> 3)) >> 7) as u8;
                 }
             }
             0x0A => {
