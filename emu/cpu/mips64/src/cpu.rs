@@ -586,7 +586,7 @@ impl<C: Config> Cpu<C> {
                 let sximm32 = (opcode & 0xffff) as i16 as i32;
                 let rs = ((opcode >> 21) & 0x1f) as usize;
                 let ea = self.ctx.regs[rs] as u32 + sximm32 as u32;
-                let mem = self.bus.fetch_read_nolog::<u32>(C::addr_mask(ea));
+                let mem = self.bus.fetch_read_nolog::<u32>(C::addr_mask::<u32>(ea));
                 return mem.is_mem();
             }
             0x28 | 0x29 | 0x2A | 0x2B | 0x2E => {
@@ -595,7 +595,7 @@ impl<C: Config> Cpu<C> {
                 let sximm32 = (opcode & 0xffff) as i16 as i32;
                 let rs = ((opcode >> 21) & 0x1f) as usize;
                 let ea = self.ctx.regs[rs] as u32 + sximm32 as u32;
-                let mem = self.bus.fetch_write_nolog::<u32>(C::addr_mask(ea));
+                let mem = self.bus.fetch_write_nolog::<u32>(C::addr_mask::<u32>(ea));
                 return mem.is_mem();
             }
             // All other opcodes by default are unstable
@@ -622,27 +622,16 @@ impl<C: Config> Cpu<C> {
     }
 
     fn read<U: MemInt>(&self, addr: u32, t: &Tracer) -> Result<U> {
-        let val = self
-            .bus
-            .read::<U>(C::addr_mask(addr) & !(U::SIZE as u32 - 1));
-        t.trace_mem_read(
-            &self.name,
-            C::addr_mask(addr).into(),
-            U::ACCESS_SIZE,
-            val.into(),
-        )?;
+        let addr = C::addr_mask::<U>(addr);
+        let val = self.bus.read::<U>(addr);
+        t.trace_mem_read(&self.name, addr.into(), U::ACCESS_SIZE, val.into())?;
         Ok(val)
     }
 
     fn write<U: MemInt>(&mut self, addr: u32, val: U, t: &Tracer) -> Result<()> {
-        self.bus
-            .write::<U>(C::addr_mask(addr) & !(U::SIZE as u32 - 1), val);
-        t.trace_mem_write(
-            &self.name,
-            C::addr_mask(addr).into(),
-            U::ACCESS_SIZE,
-            val.into(),
-        )
+        let addr = C::addr_mask::<U>(addr);
+        self.bus.write::<U>(addr, val);
+        t.trace_mem_write(&self.name, addr.into(), U::ACCESS_SIZE, val.into())
     }
 
     pub fn run(&mut self, until: i64, t: &Tracer) -> Result<()> {

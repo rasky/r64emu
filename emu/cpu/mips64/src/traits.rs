@@ -1,6 +1,7 @@
 use super::{CpuContext, Exception};
 use emu::bus::be::Bus;
 use emu::dbg::{DebuggerRenderer, DecodedInsn, Result, Tracer};
+use emu::memint::MemInt;
 
 /// Arch is a trait that allows to customise the MIPS core at the opcode level.
 /// It is used to implement different MIPS variants (architecture levels).
@@ -35,8 +36,8 @@ pub trait Config {
     // Mask addresses before reading/writing from the bus. This should be reimplemented
     // by architectures that do not have a full 64-bit bus to simplify
     // bus mapping.
-    fn addr_mask(addr: u32) -> u32 {
-        addr & 0x1FFF_FFFF
+    fn addr_mask<U: MemInt>(addr: u32) -> u32 {
+        addr & 0x1FFF_FFFF & !(U::SIZE as u32 - 1)
     }
 }
 

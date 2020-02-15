@@ -5,6 +5,7 @@ use super::cop2::SpCop2;
 use crate::errors::*;
 use emu::bus::be::{Bus, Device, Mem, Reg32};
 use emu::int::Numerics;
+use emu::memint::MemInt;
 use mips64;
 
 use slog;
@@ -57,7 +58,9 @@ impl mips64::Config for RSPCPUConfig {
     fn pc_mask(pc: u32) -> u32 {
         (pc & 0xFFF) | 0x1000
     }
-    fn addr_mask(addr: u32) -> u32 {
+    fn addr_mask<U: MemInt>(addr: u32) -> u32 {
+        // SP can access its internal DMEM at unaligned address, so
+        // do not mask lower bits here
         addr & 0xFFF
     }
 }
