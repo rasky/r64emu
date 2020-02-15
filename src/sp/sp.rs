@@ -114,9 +114,13 @@ impl DerefMut for RSPCPU {
 
 #[derive(DeviceBE)]
 pub struct Sp {
-    #[mem(bank = 0, offset = 0x0000, size = 4096)]
+    // SP DMEM (4K)
+    // NOTE: we allocate a little bit more to simplify implementation of
+    // load opcodes with wrap-around.
+    #[mem(bank = 0, offset = 0x0000, vsize = 4096, size = 4112)]
     pub dmem: Mem,
 
+    // SP IMEM (4K)
     #[mem(bank = 0, offset = 0x1000, size = 4096)]
     pub imem: Mem,
 

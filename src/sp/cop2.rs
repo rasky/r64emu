@@ -94,8 +94,8 @@ impl SpCop2 {
         let vt = ((op >> 16) & 0x1F) as usize;
         let opcode = (op >> 11) & 0x1F;
         let element = (op >> 7) & 0xF;
-        let offset = op & 0x7F;
-        (base, vt, opcode, element, offset)
+        let offset = (((op as i32) & 0x7F) << 25) >> 25;
+        (base, vt, opcode, element, offset as u32)
     }
 }
 
@@ -717,8 +717,15 @@ fn write_partial_right<B: ByteOrder>(dst: &mut [u8], src: u128, skip_bits: usize
 }
 
 // Plain "load vector subword from memory"
-fn lxv<T: MemInt>(reg: &mut VectorReg, element: usize, dmem: &[u8], base: u32, offset: u32) {
+fn lxv<T: MemInt>(reg: &mut VectorReg, element: usize, dmem: &mut [u8], base: u32, offset: u32) {
     let ea = ((base + (offset << T::SIZE_LOG)) & 0xFFF) as usize;
+    if ea + T::SIZE > 0x1000 {
+        for i in 0..16 {
+            // Mirror the beginning of DMEM after the end (using excess memory that
+            // was allocated for this scope).
+            dmem[0x1000 + i] = dmem[i];
+        }
+    }
     let mem64: u64 = T::endian_read_from::<BigEndian>(&dmem[ea..ea + T::SIZE]).into();
     let mut mem: u128 = mem64.into();
     mem <<= 128 - T::SIZE * 8;
@@ -773,14 +780,14 @@ impl Cop for SpCop2 {
         t: &dbg::Tracer,
     ) -> dbg::Result<()> {
         let sp = Sp::get_mut();
-        let dmem = &mut sp.dmem;
+        let mut dmem = &mut sp.dmem;
         let (base, vtidx, op, element, offset) = SpCop2::oploadstore(op, ctx);
         let vt = &mut self.ctx.vregs[vtidx];
         match op {
-            0x00 => lxv::<u8>(vt, element as usize, &dmem, base, offset), // LBV
-            0x01 => lxv::<u16>(vt, element as usize, &dmem, base, offset), // LSV
-            0x02 => lxv::<u32>(vt, element as usize, &dmem, base, offset), // LLV
-            0x03 => lxv::<u64>(vt, element as usize, &dmem, base, offset), // LDV
+            0x00 => lxv::<u8>(vt, element as usize, &mut dmem, base, offset), // LBV
+            0x01 => lxv::<u16>(vt, element as usize, &mut dmem, base, offset), // LSV
+            0x02 => lxv::<u32>(vt, element as usize, &mut dmem, base, offset), // LLV
+            0x03 => lxv::<u64>(vt, element as usize, &mut dmem, base, offset), // LDV
             0x04 => {
                 // LQV
                 let ea = ((base + (offset << 4)) & 0xFFF) as usize;
@@ -805,35 +812,41 @@ impl Cop for SpCop2 {
                 // LPV
                 let ea = ((base + (offset << 3)) & 0xFFF) as usize;
                 let qw_start = ea & !0x7;
-                let ea_idx = ea & 0x7;
+                let mut ea_idx = ea & 7;
 
-                let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
-                mem = mem.rotate_right(element * 8);
-                mem = mem.rotate_left((ea_idx as u32) * 8);
+                ea_idx = (ea_idx - element as usize) & 0xF;
                 for e in 0..8 {
-                    mem = mem.rotate_left(8);
-                    self.ctx.vregs[vtidx].setlane(e, ((mem & 0xFF) << 8) as u16);
+                    let mem = dmem[(qw_start + ea_idx) & 0xFFF] as u16;
+                    self.ctx.vregs[vtidx].setlane(e, mem << 8);
+                    ea_idx += 1;
+                    ea_idx &= 0xF;
                 }
             }
             0x07 => {
                 // LUV
                 let ea = ((base + (offset << 3)) & 0xFFF) as usize;
                 let qw_start = ea & !0x7;
-                let ea_idx = ea & 0x7;
+                let mut ea_idx = ea & 7;
 
-                let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
-                mem = mem.rotate_right(element * 8);
-                mem = mem.rotate_left((ea_idx as u32) * 8);
+                ea_idx = (ea_idx - element as usize) & 0xF;
                 for e in 0..8 {
-                    mem = mem.rotate_left(8);
-                    self.ctx.vregs[vtidx].setlane(e, ((mem & 0xFF) << 7) as u16);
+                    let mem = dmem[(qw_start + ea_idx) & 0xFFF] as u16;
+                    self.ctx.vregs[vtidx].setlane(e, mem << 7);
+                    ea_idx += 1;
+                    ea_idx &= 0xF;
                 }
             }
             0x0B => {
                 // LTV
                 let ea = (base + (offset << 4)) & 0xFFF;
                 let qw_start = ea as usize & !0x7;
-                let mut mem = BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10]);
+                let mut mem = if qw_start != 0xFF8 {
+                    BigEndian::read_u128(&dmem[qw_start..qw_start + 0x10])
+                } else {
+                    // Handle wrap around in DMEM
+                    ((BigEndian::read_u64(&dmem[0xFF8..0x1000]) as u128) << 64)
+                        | BigEndian::read_u64(&dmem[0x0..0x8]) as u128
+                };
 
                 let vtbase = vtidx & !7;
                 let mut vtoff = element as usize >> 1;
