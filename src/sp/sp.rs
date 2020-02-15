@@ -350,6 +350,9 @@ impl Sp {
     }
 
     fn cb_write_reg_dma_rd_len(&self, _old: u32, val: u32) {
+        // All DMA transfers are at least 8 bytes, and the RSP basically
+        // ignores the last 3 bits.
+        let val = val | 0x7;
         let width = (val & 0xFFF) as usize + 1;
         let count = ((val >> 12) & 0xFF) as usize + 1;
         let skip = ((val >> 20) & 0xFFF) as usize;
@@ -370,6 +373,9 @@ impl Sp {
     }
 
     fn cb_write_reg_dma_wr_len(&self, _old: u32, val: u32) {
+        // All DMA transfers are at least 8 bytes, and the RSP basically
+        // ignores the last 3 bits.
+        let val = val | 0x7;
         let width = (val & 0xFFF) as usize + 1;
         let count = ((val >> 12) & 0xFF) as usize + 1;
         let skip = ((val >> 20) & 0xFFF) as usize;
