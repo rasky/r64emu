@@ -160,8 +160,10 @@ fn test_golden(testname: &str) {
             main_bus.write::<u32>(0x0404_0010, 1 << 0); // REG_STATUS = release halt
 
             let cpu = RSPCPU::get_mut();
-            let clock = cpu.ctx().clock;
-            cpu.run(clock + 1000, &Tracer::null()).unwrap();
+            while main_bus.read::<u32>(0x0404_0010) & 1 == 0 {
+                let clock = cpu.ctx().clock;
+                cpu.run(clock + 1000, &Tracer::null()).unwrap();
+            }
         }
 
         // Read the results
