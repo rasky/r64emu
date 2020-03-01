@@ -836,6 +836,51 @@ impl Cop for SpCop2 {
                     ea_idx &= 0xF;
                 }
             }
+            0x08 => {
+                // LHV
+                let ea = ((base + (offset << 4)) & 0xFFF) as usize;
+                let qw_start = ea & !0x7;
+                let mut ea_idx = ea & 0x7;
+
+                ea_idx = (ea_idx - element as usize) & 0xF;
+                for e in 0..8 {
+                    let mem = dmem[(qw_start + ea_idx) & 0xFFF] as u16;
+                    self.ctx.vregs[vtidx].setlane(e, mem << 7);
+                    ea_idx += 2;
+                    ea_idx &= 0xF;
+                }
+            }
+            0x09 => {
+                // LFV
+                let ea = ((base + (offset << 4)) & 0xFFF) as usize;
+                let qw_start = ea & !0x7;
+
+                let mut high: u64 = 0;
+                let mut ea_idx = ((ea & 0x7) - element as usize) & 0xF;
+                for e in 0..4 {
+                    let mem = dmem[(qw_start + ea_idx) & 0xFFF] as u64;
+                    high <<= 16;
+                    high |= mem << 7;
+                    ea_idx += 4;
+                    ea_idx &= 0xF;
+                }
+
+                let mut low: u64 = 0;
+                let mut ea_idx = ((ea & 0x7) - element as usize + 8) & 0xF;
+                for e in 0..4 {
+                    let mem = dmem[(qw_start + ea_idx) & 0xFFF] as u64;
+                    low <<= 16;
+                    low |= mem << 7;
+                    ea_idx += 4;
+                    ea_idx &= 0xF;
+                }
+
+                let new = ((high as u128) << 64) | low as u128;
+
+                let mask: u128 = (0xFFFFFFFFFFFFFFFF0000000000000000) >> (element * 8);
+                let r = self.ctx.vregs[vtidx].u128();
+                self.ctx.vregs[vtidx].setu128((r & !mask) | (new & mask));
+            }
             0x0B => {
                 // LTV
                 let ea = (base + (offset << 4)) & 0xFFF;
@@ -921,6 +966,59 @@ impl Cop for SpCop2 {
                 for e in 0 as usize..8 as usize {
                     let eidx = (e + element as usize) & 0xF;
                     memptr[e] = ((vt.lane(eidx & 0x7) >> (eidx >> 3)) >> 7) as u8;
+                }
+            }
+            0x08 => {
+                // SHV
+                let ea = ((base + (offset << 4)) & 0xFFF) as usize;
+                let qw_start = ea as usize & !0x7;
+                let ea_idx = ea & 0x7;
+
+                let memptr = &mut dmem[qw_start..qw_start + 0x10];
+                for e in 0 as usize..8 as usize {
+                    let eidx = (e * 2 + element as usize) & 0xF;
+                    let midx = (e * 2 + ea_idx) & 0xF;
+                    let v = ((vt.byte(eidx) as u16) << 8) | vt.byte((eidx + 1) & 0xF) as u16;
+                    memptr[midx] = (v >> 7) as u8;
+                }
+            }
+            0x09 => {
+                // SFV
+                // FIXME: this is dumped through experimentation. Surely there's no
+                // table in the silicon... figure it out the pattern and the logic.
+                const LANES: [[isize; 4]; 16] = [
+                    [0, 1, 2, 3],     // e0
+                    [6, 7, 4, 5],     // e1
+                    [-1, -1, -1, -1], // e2
+                    [-1, -1, -1, -1], // e3
+                    [1, 2, 3, 0],     // e4
+                    [7, 4, 5, 6],     // e5
+                    [-1, -1, -1, -1], // e6
+                    [-1, -1, -1, -1], // e7
+                    [4, 5, 6, 7],     // e8
+                    [-1, -1, -1, -1], // e9
+                    [-1, -1, -1, -1], // e10
+                    [3, 0, 1, 2],     // e11
+                    [5, 6, 7, 4],     // e12
+                    [-1, -1, -1, -1], // e13
+                    [-1, -1, -1, -1], // e14
+                    [0, 1, 2, 3],     // e15
+                ];
+
+                let ea = ((base + (offset << 4)) & 0xFFF) as usize;
+                let qw_start = ea as usize & !0x7;
+                let ea_idx = ea & 0x7;
+
+                let memptr = &mut dmem[qw_start..qw_start + 0x10];
+                for e in 0 as usize..4 as usize {
+                    let eidx = LANES[element as usize][e];
+                    let v = if eidx < 0 {
+                        0 as u16
+                    } else {
+                        vt.lane(eidx as usize) as u16
+                    };
+                    let midx = (e * 4 + ea_idx) & 0xF;
+                    memptr[midx] = (v >> 7) as u8;
                 }
             }
             0x0A => {

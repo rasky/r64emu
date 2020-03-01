@@ -78,6 +78,24 @@ output_desc = [
   "v128:ltv_6",
   "v128:ltv_7",
 
+  "v128:lhv_0",
+  "v128:lhv_1",
+  "v128:lhv_2",
+  "v128:lhv_3",
+  "v128:lhv_4",
+  "v128:lhv_5",
+  "v128:lhv_6",
+  "v128:lhv_7",
+
+  "v128:lfv_0",
+  "v128:lfv_1",
+  "v128:lfv_2",
+  "v128:lfv_3",
+  "v128:lfv_4",
+  "v128:lfv_5",
+  "v128:lfv_6",
+  "v128:lfv_7",
+
   "u32:lw_0",
   "u32:lw_1",
   "u32:lw_2",
@@ -295,6 +313,48 @@ ltv:
     ltv v5[e0],$1(s0)
     ltv v6[e0],$2(s0)
     ltv v7[e0],$3(s0)
+
+    sqv v0[e0],$00(a1)
+    sqv v1[e0],$10(a1)
+    sqv v2[e0],$20(a1)
+    sqv v3[e0],$30(a1)
+    sqv v4[e0],$40(a1)
+    sqv v5[e0],$50(a1)
+    sqv v6[e0],$60(a1)
+    sqv v7[e0],$70(a1)
+
+    addi a1, $80
+
+lhv:
+    lhv v0[e0],-$4(s0)
+    lhv v1[e0],-$3(s0)
+    lhv v2[e0],-$2(s0)
+    lhv v3[e0],-$1(s0)
+    lhv v4[e0],$0(s0)
+    lhv v5[e0],$1(s0)
+    lhv v6[e0],$2(s0)
+    lhv v7[e0],$3(s0)
+
+    sqv v0[e0],$00(a1)
+    sqv v1[e0],$10(a1)
+    sqv v2[e0],$20(a1)
+    sqv v3[e0],$30(a1)
+    sqv v4[e0],$40(a1)
+    sqv v5[e0],$50(a1)
+    sqv v6[e0],$60(a1)
+    sqv v7[e0],$70(a1)
+
+    addi a1, $80
+
+lfv:
+    lfv v0[e0],-$4(s0)
+    lfv v1[e0],-$3(s0)
+    lfv v2[e0],-$2(s0)
+    lfv v3[e0],-$1(s0)
+    lfv v4[e0],$0(s0)
+    lfv v5[e0],$1(s0)
+    lfv v6[e0],$2(s0)
+    lfv v7[e0],$3(s0)
 
     sqv v0[e0],$00(a1)
     sqv v1[e0],$10(a1)

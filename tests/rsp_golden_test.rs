@@ -206,6 +206,8 @@ define_golden_test!(golden_mtc2, "mtc2.toml");
 define_golden_test!(golden_vmrg, "vmrg.toml");
 define_golden_test!(golden_lpvspv, "lpv_spv.toml");
 define_golden_test!(golden_luvsuv, "luv_suv.toml");
+define_golden_test!(golden_lhvshv, "lhv_shv.toml");
+define_golden_test!(golden_lfvsfv, "lfv_sfv.toml");
 
 #[test]
 fn golden_lqv_sqv() {
