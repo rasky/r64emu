@@ -13,6 +13,7 @@ pub(crate) const VREG_NAMES: [&'static str; 32] = [
 pub(crate) const ACC_NAMES: [&str; 3] = ["acc_lo", "acc_md", "acc_hi"];
 
 const VMEM_FMT: &'static str = "{}[e{}],{}({})";
+const VMOV_FMT: &'static str = "{}[e{}],{}[e{}]";
 const VREG2_FMT: &'static str = "{},{}[e{}]";
 const VREG3_FMT: &'static str = "{},{},{}[e{}]";
 
@@ -116,7 +117,14 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                     0x30 => vreg2insn_new("vrcp"),
                     0x31 => vreg2insn_new("vrcpl"),
                     0x32 => vreg2insn_new("vrcph"),
-                    0x33 => vreg2insn_new("vmov"),
+                    0x33 => DecodedInsn::new4(
+                        "vmov",
+                        IOReg(vrd),
+                        Imm8(rsx as u8 & 0xF),
+                        IReg(vrt),
+                        Imm8(e),
+                    )
+                    .with_fmt(VMOV_FMT),
                     0x34 => vreg2insn_new("vsqr"),
                     0x35 => vreg2insn_new("vsqrl"),
                     0x36 => vreg2insn_new("vsqrh"),
@@ -149,7 +157,8 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
             let oploadstore = (opcode >> 11) & 0x1F;
             let e = ((opcode >> 7) & 0xF) as u8;
             let base = REG_NAMES[((opcode >> 21) & 0x1F) as usize];
-            let off = (opcode & 0x7F) as u16;
+            let off = (opcode & 0x7F) as i32;
+            let off = ((off << 25) >> 25) as u16;
 
             let vloadinsn_new = |name, off| {
                 DecodedInsn::new4(name, OReg(vrt), Imm8(e), Imm16(off), IReg(base))
@@ -163,6 +172,9 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                 0x04 => vloadinsn_new("lqv", off * 16),
                 0x05 => vloadinsn_new("lrv", off * 16),
                 0x06 => vloadinsn_new("lpv", off * 8),
+                0x07 => vloadinsn_new("luv", off * 8),
+                0x08 => vloadinsn_new("lhv", off * 16),
+                0x09 => vloadinsn_new("lfv", off * 16),
                 0x0B => vloadinsn_new("ltv", off * 16),
                 _ => DecodedInsn::new1("lwc2", Imm32(oploadstore)),
             }
@@ -185,6 +197,9 @@ pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
                 0x04 => vstoreinsn_new("sqv", off * 16),
                 0x05 => vstoreinsn_new("srv", off * 16),
                 0x06 => vstoreinsn_new("spv", off * 8),
+                0x07 => vstoreinsn_new("suv", off * 8),
+                0x08 => vstoreinsn_new("shv", off * 16),
+                0x09 => vstoreinsn_new("sfv", off * 16),
                 0x0A => vstoreinsn_new("swv", off * 16),
                 0x0B => vstoreinsn_new("stv", off * 16),
                 _ => DecodedInsn::new1("swc2", Imm32(oploadstore)),
