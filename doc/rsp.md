@@ -99,7 +99,7 @@ Loads and stores
 The instructions perform a load/store from DMEM into/from a vector register.
 
 * `base` is the index of a scalar register used as base for the memory access
-* `offset` is an unsigned offset added to the value of the base register (with
+* `offset` is an signed offset added to the value of the base register (with
 some scaling, depending on the actual instruction).
 * `vt` is the vector register.
 * `element` is used to index a specific byte/word within the vector register,
@@ -148,8 +148,8 @@ vector:
 
 | Insn | `opcode` | Desc |
 | :---: | :---: | --- |
-| LQV | 0x04 | load (up to) 16 bytes into vector, left-aligned |
-| LRV | 0x05 | load (up to) 16 bytes into vector, right-aligned |
+| `LQV` | 0x04 | load (up to) 16 bytes into vector, left-aligned |
+| `LRV` | 0x05 | load (up to) 16 bytes into vector, right-aligned |
 
 Roughly, these functions behave like `LWL` and `LWR`: combined, they allow to
 read 128 bits of data into a vector register, irrespective of the alignment. For
@@ -186,8 +186,8 @@ vector:
 
 | Insn | `opcode` | Desc |
 | :---: | :---: | --- |
-| SQV | 0x04 | store (up to) 16 bytes into vector, left-aligned |
-| SRV | 0x05 | store (up to) 16 bytes into vector, right-aligned |
+| `SQV` | 0x04 | store (up to) 16 bytes into vector, left-aligned |
+| `SRV` | 0x05 | store (up to) 16 bytes into vector, right-aligned |
 
 These instructions behave like `SWL` and `SWR` and are thus the counterpart
 to `LQV` and `LRV`. For instance:
@@ -202,8 +202,8 @@ always perform a full-width write (128-bit in total when used together), and
 the data is fetched from `VPR[vt][element..element+16]` wrapping around the
 vector. For instance:
 
-    SQV v1[e4],$08(a0)     // write bytes $08(a0)-$0F(a0) from VPR[vt][4..11]
-    SRV v1[e4],$18(a0)     // write bytes $10(a0)-$17(a0) from VPR[vt][12..15,0..3]
+    SQV v1[e4],$08(a0)     // write bytes $08(a0)-$0F(a0) from VPR[1][4..11]
+    SRV v1[e4],$18(a0)     // write bytes $10(a0)-$17(a0) from VPR[1][12..15,0..3]
 
 128-bit vector transpose
 ------------------------
@@ -212,8 +212,8 @@ to help implementing the transposition of a matrix:
 
 | Insn | `opcode` | Desc |
 | :---: | :---: | --- |
-| LTV | 0x08 | load 8 lanes from 8 different registers |
-| STV | 0x08 | store 8 lanes to 8 different registers  |
+| `LTV` | 0x08 | load 8 lanes from 8 different registers |
+| `STV` | 0x08 | store 8 lanes to 8 different registers  |
 
 The 8-registers group is identified by `vt`, ignoring the last 3 bits. This means
 that the 32 registers are logically divided into 4 groups (0-7, 8-15, 16-23, 24-31).
@@ -262,22 +262,38 @@ the following sequence transposes it:
     LTV v0[e12],$6c(a0)  // load back diagonal 6 into diagonal 2
     LTV v0[e14],$7e(a0)  // load back diagonal 7 into diagonal 1
 
-128-bit vector rotated store
-----------------------------
+8-bit packed loads and stores
+-----------------------------
+These instructions can be used to load or store distinct 8-bit signed/unsigned values
+into a vector register, moving each 8-bit value into/from each own lane.
 
-Haven't implemented it yet.
+| Insn | `opcode` | Desc |
+| :---: | :---: | --- |
+| `LPV` | 0x06 | load 8 signed 8-bit values into 8 lanes |
+| `LUV` | 0x07 | load 8 unsigned 8-bit values into 8 lanes |
+| `SPV` | 0x06 | store 8 signed 8-bit values from 8 lanes |
+| `SUV` | 0x07 | store 8 unsigned 8-bit values from 8 lanes |
 
+The only difference between the signed and unsigned versions is how the 8-bit values are
+mapped into the 16-bit lanes. Signed opcodes (`LPV`, `SPV`) map the value to bits `(15..8)`
+(effectively producing a signed number), while unsigned opcodes (`LUV`, `SUV`) map the
+value to bits `(14..7)`. Load instructions zero the bits outside the mapped range, while
+store instructions effectively ignore the other bits.
 
-Packed vector loads and stores
-------------------------------
+The actual bytes accessed in DMEM start at `GPR[base] + (offset * 8)`, but they wrap around
+at the 64-bit (8-byte) boundary. `element` is used to select the first lane being accessed
+by the instruction (lane accesses also wrap around). 
 
-The instructions load a vector register from a memory location in a particular
-strided pattern. The `lpv` and `spv` instructions are probably easiest to explain.
-`lpv` loads 8 consecutive bytes in memory into the 8 lanes of a vector register,
-placing each byte in the upper bits (15-8) of the lane. The `luv` and `suv`
-instructions also handle 8 consecutive bytes, but load them into bits 14-7 of
-each lane, rather than bits 15-8. `lhv` and `lfv` are like `luv` but access every
-second byte and every fourth byte, respectively.
+For instance:
+
+	// a0 is 64-bit aligned
+	LUV v1[e2],$06(a0)     // load bytes $06(a0)-$07(a0) into VPR[1]<2..3>, and then $00(a0)-$05(a0) into VPR[1]<4..7,0..1>
+
+If `element` is higher than 8 (so, in the range `[8..15]`), load instructions wrap
+element access around (so basically the highest bit of `element` is ignored), while
+store instructions change the mapping bits, effectively swapping their meaning: `SPV`
+with `element` in the range `[8..15]` is like `SUV` with `element` in the range `[0..7]`,
+and viceversa.
 
 
 Vector move instructions
