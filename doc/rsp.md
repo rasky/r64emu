@@ -57,7 +57,7 @@ It is possible to extract the contents of the accumulator through the VSAR
 opcode; one call to this opcode can extract a 16-bit portion of each lane and
 store it into the specified vector register. The three portions are
 conventionally called `ACCUM_LO` (bits 15..0 of each lane), `ACCUM_MD` (bits 31..16
-of each lean), and `ACCUM_HI` (bits 47..32 of each lane).
+of each lane), and `ACCUM_HI` (bits 47..32 of each lane).
 
 If you exclude the VSAR instruction that cuts the accumulator piecewise
 for extracting it, it is better to think of it a single register where each
@@ -72,18 +72,18 @@ treated as a *signed* 48-bit number.
 This is the pseudo-code for signed clamping (no surprises):
 
     function clamp_signed(accum)
-   		if accum < -32768  => return -32768
-   		if accum > 32767   => return 32767
-   		return accum
+        if accum < -32768  => return -32768
+        if accum > 32767   => return 32767
+        return accum
 
 The returned value is thus always within the signed 16-bit range.
 
 This is the pseudo-code for unsigned clamping:
 
     function clamp_unsigned(accum)
-   		if accum < 0       => return 0
-   		if accum > 32767   => return 65535
-   		return accum
+        if accum < 0       => return 0
+        if accum > 32767   => return 65535
+        return accum
 
 Notice that in unsigned clamping, the saturating threshold is 15-bit, but the
 saturated value is 16-bit.
@@ -156,9 +156,9 @@ read 128 bits of data into a vector register, irrespective of the alignment. For
 instance, this code will fill `v0` with 128 bits of data starting at the
 possibly-unaligned `$08(a0)`.
 
-	// a0 is 128-bit aligned in this example
-	LQV v0[e0],$08(a0)     // read bytes $08(a0)-$0F(a0) into left part of the vector (VPR[vt][0..7])
-	LRV v0[e0],$18(a0)     // read bytes $10(a0)-$17(a0) into right part of the vector (VPR[vt][8..15])
+    // a0 is 128-bit aligned in this example
+    LQV v0[e0],$08(a0)     // read bytes $08(a0)-$0F(a0) into left part of the vector (VPR[vt][0..7])
+    LRV v0[e0],$18(a0)     // read bytes $10(a0)-$17(a0) into right part of the vector (VPR[vt][8..15])
 
 Notice that if the data is 128-bit aligned, `LQV` is sufficient to read the
 whole vector (`LRV` in this case is redundant because it becomes a no-op).
@@ -176,8 +176,8 @@ loaded with the instruction pair is `VPR[vt][element..15]`. Thus a non-zero
 element means that fewer bytes are loaded; for instance, this code loads 12
 unaligned bytes into the lower part of the vector starting at byte 4:
 
-	LQV v1[e4],$08(a0)     // read bytes $08(a0)-$0F(a0) into VPR[vt][4..11]
-	LRV v1[e4],$18(a0)     // read bytes $10(a0)-$13(a0) into VPR[vt][12..15]
+    LQV v1[e4],$08(a0)     // read bytes $08(a0)-$0F(a0) into VPR[vt][4..11]
+    LRV v1[e4],$18(a0)     // read bytes $10(a0)-$13(a0) into VPR[vt][12..15]
 
 128-bit vector stores
 ---------------------
@@ -192,9 +192,9 @@ vector:
 These instructions behave like `SWL` and `SWR` and are thus the counterpart
 to `LQV` and `LRV`. For instance:
 
-	// a0 is 128-bit aligned in this example
-	SQV v0[e0],$08(a0)     // store left (higher) part of the vector into bytes $08(a0)-$0F(a0)
-	SRV v0[e0],$18(a0)     // store right (lower) part of the vector into bytes $10(a0)-$17(a0)
+    // a0 is 128-bit aligned in this example
+    SQV v0[e0],$08(a0)     // store left (higher) part of the vector into bytes $08(a0)-$0F(a0)
+    SRV v0[e0],$18(a0)     // store right (lower) part of the vector into bytes $10(a0)-$17(a0)
 
 The main difference from load instructions is how `element` is used: it still
 refers to the first byte being accessed in the vector register, but `SQV`/`SRV`
@@ -202,8 +202,8 @@ always perform a full-width write (128-bit in total when used together), and
 the data is fetched from `VPR[vt][element..element+16]` wrapping around the
 vector. For instance:
 
-	SQV v1[e4],$08(a0)     // write bytes $08(a0)-$0F(a0) from VPR[vt][4..11]
-	SRV v1[e4],$18(a0)     // write bytes $10(a0)-$17(a0) from VPR[vt][12..15,0..3]
+    SQV v1[e4],$08(a0)     // write bytes $08(a0)-$0F(a0) from VPR[vt][4..11]
+    SRV v1[e4],$18(a0)     // write bytes $10(a0)-$17(a0) from VPR[vt][12..15,0..3]
 
 128-bit vector transpose
 ------------------------
@@ -246,26 +246,63 @@ By combining `LTV` and `STV`, it is possible to transpose a matrix because diago
 are symmetric; for instance, assuming a 8x8 matrix is stored in `VPR[0..7]<0..7>`,
 the following sequence transposes it:
 
-	STV v0[e2],$10(a0)  // store diagonal 1
-	STV v0[e4],$20(a0)  // store diagonal 2
-	STV v0[e6],$30(a0)  // store diagonal 3
-	STV v0[e8],$40(a0)  // store diagonal 4
-	STV v0[e10],$50(a0) // store diagonal 5
-	STV v0[e12],$60(a0) // store diagonal 6
-	STV v0[e14],$70(a0) // store diagonal 7
+    STV v0[e2],$10(a0)  // store diagonal 1
+    STV v0[e4],$20(a0)  // store diagonal 2
+    STV v0[e6],$30(a0)  // store diagonal 3
+    STV v0[e8],$40(a0)  // store diagonal 4
+    STV v0[e10],$50(a0) // store diagonal 5
+    STV v0[e12],$60(a0) // store diagonal 6
+    STV v0[e14],$70(a0) // store diagonal 7
 
-	LTV v0[e2],$12(a0)  // load back diagonal 1 into diagonal 7
-	LTV v0[e4],$24(a0)  // load back diagonal 2 into diagonal 6
-	LTV v0[e6],$36(a0)  // load back diagonal 3 into diagonal 5
-	LTV v0[e8],$48(a0)  // load back diagonal 4 into diagonal 4
-	LTV v0[e10],$5a(a0)  // load back diagonal 5 into diagonal 3
-	LTV v0[e12],$6c(a0)  // load back diagonal 6 into diagonal 2
-	LTV v0[e14],$7e(a0)  // load back diagonal 7 into diagonal 1
+    LTV v0[e2],$12(a0)  // load back diagonal 1 into diagonal 7
+    LTV v0[e4],$24(a0)  // load back diagonal 2 into diagonal 6
+    LTV v0[e6],$36(a0)  // load back diagonal 3 into diagonal 5
+    LTV v0[e8],$48(a0)  // load back diagonal 4 into diagonal 4
+    LTV v0[e10],$5a(a0)  // load back diagonal 5 into diagonal 3
+    LTV v0[e12],$6c(a0)  // load back diagonal 6 into diagonal 2
+    LTV v0[e14],$7e(a0)  // load back diagonal 7 into diagonal 1
 
 128-bit vector rotated store
 ----------------------------
 
+Haven't implemented it yet.
 
+
+Packed vector loads and stores
+------------------------------
+
+The instructions load a vector register from a memory location in a particular
+strided pattern. The `lpv` and `spv` instructions are probably easiest to explain.
+`lpv` loads 8 consecutive bytes in memory into the 8 lanes of a vector register,
+placing each byte in the upper bits (15-8) of the lane. The `luv` and `suv`
+instructions also handle 8 consecutive bytes, but load them into bits 14-7 of
+each lane, rather than bits 15-8. `lhv` and `lfv` are like `luv` but access every
+second byte and every fourth byte, respectively.
+
+
+Vector move instructions
+========================
+| 31..21 | 20..16 | 15..11 | 10..8 | 7..0 |
+| --- | --- | --- | --- | --- |
+| `COP2 Move`| `rt` | `vs` | `vs_elem` | 0 |
+
+Vector moves follow the same format as other coprocessor moves, but use part of
+the lower 11 bits to specify which lane of the vector register is used. `mtc2`
+moves the lower 16 bits of the general purpose register `rt` to the vector
+register `VS<elem>`, while `mtc2` moves `VS<elem>` to GPR `rt`, sign extending
+to 64 bits.
+
+`ctc2` moves the lower 16 bits of GPR `rt` into the control register
+specified by `vs`, while `cfc2` does the reverse, moving the control register
+specified by `vs` into GPR `rt`, sign extending to 64 bits. Note that both
+`ctc2` and `cfc2` ignore the `vs_elem` field. For these instructions, the
+control register is specified as follows:
+
+| `vs` | Register |
+|---|---|
+| 0 | `VCO` |
+| 1 | `VCC` |
+| 2 | `VCE` |
 
 
 Single-lane instructions
@@ -293,9 +330,9 @@ same-position bits in `vt_elem`. Notice that this behaviour is actually consiste
 with what happens when `vt_elem(3)` is 1, which means that there is no need to
 think of it as a special-case. Pseudo-code:
 
-	de(2..0) = vd_elem(2..0)
-	msb = highest_set_bit(vt_elem)
-	se(2..0) = vd_elem(2..msb) || vt_elem(msb-1..0)
+    de(2..0) = vd_elem(2..0)
+    msb = highest_set_bit(vt_elem)
+    se(2..0) = vd_elem(2..msb) || vt_elem(msb-1..0)
 
 TODO: complete analysis for `vt_elem(4)` == 1.
 
@@ -304,18 +341,18 @@ VMOV
 ----
 Copy the source lane into the destination lane:
 
-	VMOV vd[de],vs[se]
+    VMOV vd[de],vs[se]
 
 Pseudo-code:
 
-	VD<de> = VS<se>
+    VD<de> = VS<se>
 
 
 VRCP
 ----
 Computes a 32-bit reciprocal of the 16-bit input lane, and store it into the output lane:
 
-	VRCP vd[de],vs[se]
+    VRCP vd[de],vs[se]
 
 The recriprocal is computed using a lookup table of 512 elements of 16-bits each one. The
 table is burnt within an internal ROM of the RSP and cannot be directly accessed nor modified.
@@ -326,26 +363,26 @@ register, and can be subsequently read using `VRCPH`.
 
 Pseudo-code:
 
-	function rcp(input(31..0))
-		result = 0
-		if input == 0
-			return NOT result
-		endif
-		x = abs(input)
-		scale_out = highest_set_bit(x)
-		scale_in = 32 - scale_out
-		result(scale_out..scale_out-16) = 1 || RCP_ROM[x(scale_in-1..scale_in-9)]
-		if input < 0
-			result = NOT result
-		endif
-		return result
+    function rcp(input(31..0))
+        result = 0
+        if input == 0
+            return NOT result
+        endif
+        x = abs(input)
+        scale_out = highest_set_bit(x)
+        scale_in = 32 - scale_out
+        result(scale_out..scale_out-16) = 1 || RCP_ROM[x(scale_in-1..scale_in-9)]
+        if input < 0
+            result = NOT result
+        endif
+        return result
 
-	result = rcp(sign_extend(VT<se>))
-	VD<de> = result(15..0)
-	DIV_OUT = result(31..16)
-	for i in 0..7
-		ACCUM<i>(15..0) = VT<i>(15..0)
-	endfor
+    result = rcp(sign_extend(VT<se>))
+    VD<de> = result(15..0)
+    DIV_OUT = result(31..16)
+    for i in 0..7
+        ACCUM<i>(15..0) = VT<i>(15..0)
+    endfor
 
 As a side-effect, `ACCUM_LO` is loaded with `VT` (all lanes).
 
@@ -390,7 +427,7 @@ VRSQ
 ----
 Computes a 32-bit reciprocal of the square root of the input lane, and store it into the output lane:
 
-	VRSQ vd[de],vs[se]
+    VRSQ vd[de],vs[se]
 
 The recriprocal of the square root is computed using a lookup table similar to that used by `VRCP`
 (512 elements of 16-bits each one), stored within the same ROM. The higher part of the result is
@@ -398,24 +435,24 @@ stored into the same `DIV_OUT` special register used by `VRCP`.
 
 Pseudo-code:
 
-	function rsq(input(31..0))
-		result = 0
-		if input == 0
-			return NOT result
-		endif
-		x = abs(input)
-		scale_out = highest_set_bit(x)
-		scale_in = 32 - scale_out
-		scale_out = scale_out / 2
-		result(scale_out..scale_out-16) = 1 || RSQ_ROM[scale_in(0) || x(scale_in-1..scale_in-8)]
-		if input < 0
-			result = NOT result
-		endif
-		return result
+    function rsq(input(31..0))
+        result = 0
+        if input == 0
+            return NOT result
+        endif
+        x = abs(input)
+        scale_out = highest_set_bit(x)
+        scale_in = 32 - scale_out
+        scale_out = scale_out / 2
+        result(scale_out..scale_out-16) = 1 || RSQ_ROM[scale_in(0) || x(scale_in-1..scale_in-8)]
+        if input < 0
+            result = NOT result
+        endif
+        return result
 
-	result = rcp(sign_extend(VT<se>))
-	VD<de> = result(15..0)
-	DIV_OUT = result(31..16)
+    result = rcp(sign_extend(VT<se>))
+    VD<de> = result(15..0)
+    DIV_OUT = result(31..16)
 
 This is the `RSQ_ROM` table:
 
@@ -459,7 +496,7 @@ VRCPH/VRSQH
 Reads the higher part of the result of a previous 32-bit reciprocal instruction, and
 stores the higher part of the input for a following 32-bit reciprocal.
 
-	VRCPH vd[de],vs[se]
+    VRCPH vd[de],vs[se]
 
 `VRSPH` is meant to be used for the recriprocal of square root, but its beahvior
 is identical to `VRCPH`, as neither perform an actual calculation, and there is
@@ -473,11 +510,11 @@ full-width 32-bit reciprocal that can be invoked with `VRCPL`.
 
 Pseudo-code:
 
-	VD<de>(15..0) = DIV_OUT(15..0)
-	DIV_IN(15..0) = VT<se>(15..0)
-	for i in 0..7
-		ACCUM<i>(15..0) = VT<i>(15..0)
-	endfor
+    VD<de>(15..0) = DIV_OUT(15..0)
+    DIV_IN(15..0) = VT<se>(15..0)
+    for i in 0..7
+        ACCUM<i>(15..0) = VT<i>(15..0)
+    endfor
 
 As a side-effect, `ACCUM_LO` is loaded with `VT` (all lanes).
 
@@ -487,8 +524,8 @@ VRCPL/VRSQL
 Performs a full 32-bit reciprocal combining the input lane with the special register
 `DIV_IN` that must have been loaded with a previous `VRCPH`/`VRSPH` instruction.
 
-	VRCPL vd[de],vs[se]
-	VRSQL vd[de],vs[se]
+    VRCPL vd[de],vs[se]
+    VRSQL vd[de],vs[se]
 
 The RSP remembers whether `DIV_IN` was loaded or not, by a previous `VRCPH` or `VRSQH`
 instruction. If `VRCPL`/`VRSQL` is executed without `DIV_IN` being loaded, they perform
@@ -497,13 +534,13 @@ lane is sign extended). After `VRCPL`/`VRSQL`, `DIV_IN` is unloaded.
 
 Pseudo-code:
 
-	result = rcp(DIV_IN(15..0) || VT<se>(15..0))  // or rsq()
-	VD<de> = result(15..0)
-	DIV_OUT = result(31..16)
-	DIV_IN = <null>
-	for i in 0..7
-		ACCUM<i>(15..0) = VT<i>(15..0)
-	endfor
+    result = rcp(DIV_IN(15..0) || VT<se>(15..0))  // or rsq()
+    VD<de> = result(15..0)
+    DIV_OUT = result(31..16)
+    DIV_IN = <null>
+    for i in 0..7
+        ACCUM<i>(15..0) = VT<i>(15..0)
+    endfor
 
 As a side-effect, `ACCUM_LO` is loaded with `VT` (all lanes).
 
@@ -517,7 +554,7 @@ Computational instructions
 
 Instructions have this general format:
 
-	VINSN vd, vs, vt[element]
+    VINSN vd, vs, vt[element]
 
 where `element` is a "broadcast modifier" (as found in other SIMD
 architectures), that modifies the access to `vt` duplicating some
@@ -572,80 +609,80 @@ VADD/VSUB
 ---------
 Vector addition or subtraction, with signed saturation:
 
-	vadd vd, vs, vt[e]
-	vsub vd, vs, vt[e]
+    vadd vd, vs, vt[e]
+    vsub vd, vs, vt[e]
 
 Pseudo-code for `vadd`:
 
-	for i in 0..7
-		result(16..0) = VS<i>(15..0) + VT<i>(15..0) + VCC(i)
-		ACC<i>(15..0) = result(15..0)
-		VD<i>(15..0) = clamp_signed(result(16..0))
-		VCC(i) = 0
-		VNE(i) = 0
-	endfor
+    for i in 0..7
+        result(16..0) = VS<i>(15..0) + VT<i>(15..0) + VCO(i)
+        ACC<i>(15..0) = result(15..0)
+        VD<i>(15..0) = clamp_signed(result(16..0))
+        VCO(i) = 0
+        VCO(i + 8) = 0
+    endfor
 
 Pseudo-code for `vsub`:
 
-	for i in 0..7
-		result(16..0) = VS<i>(15..0) - VT<i>(15..0) - VCC(i)
-		ACC<i>(15..0) = result(15..0)
-		VD<i>(15..0) = clamp_signed(result(16..0))
-		VCC(i) = 0
-		VNE(i) = 0
-	endfor
+    for i in 0..7
+        result(16..0) = VS<i>(15..0) - VT<i>(15..0) - VCO(i)
+        ACC<i>(15..0) = result(15..0)
+        VD<i>(15..0) = clamp_signed(result(16..0))
+        VCO(i) = 0
+        VCO(i + 8) = 0
+    endfor
 
-Both instructions use the carry bits in `VCC`, and clear them after usage. `VNE` is
-also cleared (though it is not used).
+Both instructions use the carry bits in `VCO_LO`, and clear them after usage.
+`VCO_HI` is also cleared (though it is not used).
 
 VADDC/VSUBC
 -----------
 Vector addition or subtraction, with unsigned carry computation:
 
-	vaddc vd, vs, vt[e]
-	vsubc vd, vs, vt[e]
+    vaddc vd, vs, vt[e]
+    vsubc vd, vs, vt[e]
 
-Pseudo-code for `vadd`:
+Pseudo-code for `vaddc`:
 
-	for i in 0..7
-		result(16..0) = VS<i>(15..0) + VT<i>(15..0)
-		ACC<i>(15..0) = result(15..0)
-		VD<i>(15..0) = result(15..0)
-		VCC(i) = result(16)
-		VNE(i) = 0
-	endfor
+    for i in 0..7
+        result(16..0) = VS<i>(15..0) + VT<i>(15..0)
+        ACC<i>(15..0) = result(15..0)
+        VD<i>(15..0) = result(15..0)
+        VCO(i) = result(16)
+        VCO(i + 8) = 0
+    endfor
 
-Pseudo-code for `vsub`:
+Pseudo-code for `vsubc`:
 
-	for i in 0..7
-		result(16..0) = VS<i>(15..0) - VT<i>(15..0)
-		ACC<i>(15..0) = result(15..0)
-		VD<i>(15..0) = result(15..0)
-		VCC(i) = result(16)
-		VNE(i) = 0
-	endfor
+    for i in 0..7
+        result(16..0) = VS<i>(15..0) - VT<i>(15..0)
+        ACC<i>(15..0) = result(15..0)
+        VD<i>(15..0) = result(15..0)
+        VCO(i) = result(16)
+        VCO(i + 8) = result(16..0) != 0
+    endfor
 
-Both instructions stores the carry produced by the unsigned overlfow (16th bit)
-to `VCC`, and clear `VNE`. `VCC` is not used as input.
+Both instructions stores the carry produced by the unsigned overflow (16th bit)
+to `VCO_LO`, but `vaddc` clears `VCO_HI` while `vsubc` uses it to store whether
+the subtracted elements are equal. Note that `VCO_LO` is not used as input.
 
 VAND/VNAND/VOR/VNOR/VXOR/VNXOR
 ------------------------------
 Logical bitwise operations:
 
-	vand vd,vs,vt[e]     // VS AND VT
-	vnand vd,vs,vt[e]    // NOT (VS AND VT)
-	vor vd,vs,vt[e]      // VS OR VT
-	vnor vd,vs,vt[e]     // NOT (VS OR VT)
-	vxor vd,vs,vt[e]     // VS XOR VT
-	vnxor vd,vs,vt[e]    // NOT (VS XOR VT)
+    vand vd,vs,vt[e]     // VS AND VT
+    vnand vd,vs,vt[e]    // NOT (VS AND VT)
+    vor vd,vs,vt[e]      // VS OR VT
+    vnor vd,vs,vt[e]     // NOT (VS OR VT)
+    vxor vd,vs,vt[e]     // VS XOR VT
+    vnxor vd,vs,vt[e]    // NOT (VS XOR VT)
 
 Pseudo-code for all instructions:
 
-	for i in 0..7
-		ACC<i>(15..0) = VS<i>(15..0) <LOGICAL_OP> VT<i>(15..0)
-		VD<i>(15..0) = ACC<i>(15..0)
-	endfor
-
+    for i in 0..7
+        ACC<i>(15..0) = VS<i>(15..0) <LOGICAL_OP> VT<i>(15..0)
+        VD<i>(15..0) = ACC<i>(15..0)
+    endfor
 
 VMULF
 -----
@@ -661,9 +698,9 @@ by saturating to the positive max (0x7FFF).
 Pseudo-code:
 
     for i in 0..7
-		prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-		ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
-		VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
+        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
+        VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
 VMULU
@@ -679,11 +716,11 @@ and it produces 0xFFFF.
 
 Pseudo-code:
 
-	for i in 0..7
-		prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-		ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
-		VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
-	endfor
+    for i in 0..7
+        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
+        VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
+    endfor
 
 NOTE: name notwithstanding, this opcode performs a *signed* multiplication
 of the incoming vectors. The only difference with `VMULF` is the clamping step.
@@ -703,10 +740,12 @@ in case subsequent `VMACF` are issued.
 Notice that, contrary to `VMULF`, there is no rounding-to-nearest performed
 while saturating the intermediate high-precision value into the result.
 
+Pseudo-code:
+
     for i in 0..7
-		prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-		ACC<i>(47..0) += sign_extend(prod(32..0))
-		VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
+        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) += sign_extend(prod(32..0))
+        VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
 VMACU
@@ -724,27 +763,308 @@ overflow with the out-of-band value 0xFFFF.
 Notice that, contrary to `VMULU`, there is no rounding-to-nearest performed
 while saturating the intermediate high-precision value into the result.
 
-	for i in 0..7
-		prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-		ACC<i>(47..0) += sign_extend(prod(32..0))
-		VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
-	endfor
+Pseudo-code:
+
+    for i in 0..7
+        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) += sign_extend(prod(32..0))
+        VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
+    endfor
 
 NOTE: name notwithstanding, this opcode performs a *signed* multiplication
 of the incoming vectors. The only difference with `VMACU` is the clamping step.
 
-VMUDN
------
-Vector multiplication:
+VMUDN/VMADN
+-----------
+Vector multiply of mid partial products with unsigned result:
 
-	vmudn vd, vs, vt[e]
+    vmudn vd, vs, vt[e]
+    vmadn vd, vs, vt[e]
 
-For each lane, this instruction mulitplies an unsigned fixed-point number
-with a signed fixed-point number, returning a result after removing 16
-bits of precision. A 
+For each lane, this instruction multiplies an unsigned fixed-point number
+with a signed fixed-point number, returning the lower 16 bits of the result.
+The full result is stored in the lower 32 bits of the accumulator.
+
+Pseudo-code for `vmadn`:
+
+    for i in 0..7
+        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
+        ACC<i>(47..0) += sign_extend(prod(32..0))
+        VD<i>(15..0) = clamp_unsigned(ACC<i>(31..0))
+    endfor
+
+In this case, the unsigned clamp will return `ACC_LO` if `ACC_HI` is the sign
+extension of `ACC_MD` - otherwise, it will return 0 for negative `ACC_HI`, and
+65535 for positive `ACC_HI`. `vmudn` operates similarly, but clears the
+accumulator beforehand.
+
+VMUDL/VMADL
+-----------
+Vector multiply of low partial products:
+
+    vmudl vd, vs, vt[e]
+    vmadl vd, vs, vt[e]
+
+For each lane, this instruction multiplies 2 unsigned fixed-point operands
+and produces an unsigned fixed-point result after removing 16 bits of
+precision. The result is stored in the lower 16 bits of the accumulator.
+
+Pseudo-code for `vmadl`:
+
+    for i in 0..7
+        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned multiplication
+        ACC<i>(47..0) += prod(32..16)
+        VD<i>(15..0) = clamp_unsigned(ACC<i>(31..0))
+    endfor
+
+The unsigned clamp works the same way as for `vmudn`. `vmudl` operates
+similarly, but clears the accumulator beforehand. Note that the lower bits
+of the product are discarded, and no sign extension is performed.
+
+VMUDM/VMADM
+-----------
+Vector multiply of mid partial products with signed result:
+
+    vmudl vd, vs, vt[e]
+    vmadl vd, vs, vt[e]
+
+For each lane, this instruction multiplies an unsigned fixed-point number
+with a signed fixed-point number, returning the upper 16 bits of the result.
+The full result is stored in the lower 32 bits of the accumulator.
+
+Pseudo-code for `vmadm`:
+
+    for i in 0..7
+        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
+        ACC<i>(47..0) += sign_extend(prod(32..0))
+        VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
+    endfor
+
+`vmudm` operates similarly, but clears the accumulator beforehand. These
+instructions differ from `vmudn` and `vmadn` in the bits of the result returned
+as well as the type of clamping.
+
+VMUDH/VMADH
+-----------
+Vector multiply of high partial products:
+
+    vmudh vd, vs, vt[e]
+    vmadh vd, vs, vt[e]
+
+For each lane, this instructions multiplies 2 signed fixed-point operands
+and returns the lower 16 bits of the signed fixed-point result. The full
+result is stored in the higher 32 bits of the accumulator.
+
+Pseudo-code for `vmadh`:
+
+    for i in 0..7
+        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // signed multiplication
+        ACC<i>(47..16) += prod(32..0)
+        VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
+    endfor
+
+`vmudh` operates similarly, but clears the accumulator beforehand.
+
+VSAR
+----
+Vector accumulator read:
+
+    vsar vd, vs, vt[e]
+
+This instruction loads each lane of `vd` with the 16-bit portion of the
+accumulator specified by `e` - `ACC_LO` if `e` is 0, `ACC_MD` if `e` is 1,
+and `ACC_HI` is `e` is 2. The values of `vs` and `vt` are not used.
+
+Pseudo-code:
+
+    for i in 0..7
+        a = 16 * e + 15
+        b = 16 * e
+        VD<i>(15..0) = ACC<i>(a..b)
+    endfor
 
 
+Select instructions
+===================
 
+| 31..26 | 25 | 24..21 | 20..16 | 15..11 | 10..6 | 5..0 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `COP2`| 1 | `element` | `vt` | `vs` | `vd` | `opcode` |
 
-TODO: CFC2 sign extends
-TODO: VMACF/VMACU saturate the accumulator?
+Instructions have this general format:
+
+    VINSN vd, vs, vt[element]
+
+where `element` is a "broadcast modifier" (as found in other SIMD
+architectures), that modifies the access to `vt` duplicating some
+lanes and hiding others. See the Computational instructions section
+for details.
+
+This is the list of opcodes in this group:
+
+| Opcode | Instruction |
+| --- | --- |
+| 0x00 | `VLT` |
+| 0x01 | `VEQ` |
+| 0x02 | `VNE` |
+| 0x03 | `VGE` |
+| 0x04 | `VCL` |
+| 0x05 | `VCH` |
+| 0x06 | `VCR` |
+| 0x07 | `VMRG` |
+
+VLT/VEQ/VNE/VGE
+---------------
+Vector select comparison operations:
+
+    vlt vd, vs, vt[e]     // VS < VT
+    veq vd, vs, vt[e]     // VS == VT
+    vne vd, vs, vt[e]     // VS != VT
+    vge vd, vs, vt[e]     // VS >= VT
+
+These instructions compare the elements of two vector registers in parallel.
+Compare operations not supplied can be done by reversing the order of operands,
+or decrementing `vt` if it is a scalar operand. The result of the comparison
+is stored in `VCC_LO`, while `VCC_HI`, `VCO_HI`, and `VCO_LO` are cleared.
+Depending on the instruction, `VCO_HI` and `VCO_LO` may be used.
+
+Pseudo-code for `vge`:
+
+    for i in 0..7
+        eql = VS<i>(15..0) == VT<i>(15..0)
+        neg = !(VCO(i + 8) & VCO(i)) & eql
+        VCC(i) = neg | (VS<i>(15..0) > VT<i>(15..0))
+        ACC<i>(15..0) = VCC(i) ? VS<i>(15..0) : VT<i>(15..0)
+        VD<i>(15..0) = ACC<i>(15..0)
+        VCC(i + 8) = VCO(i + 8) = VCO(i) = 0
+    endfor
+
+Pseudo-code for `vne`:
+
+    for i in 0..7
+        VCC(i) = VCO(i + 8) | (VS<i>(15..0) != VT<i>(15..0))
+        ACC<i>(15..0) = VCC(i) ? VS<i>(15..0) : VT<i>(15..0)
+        VD<i>(15..0) = ACC<i>(15..0)
+        VCC(i + 8) = VCO(i + 8) = VCO(i) = 0
+    endfor
+
+Pseudo-code for `veq`:
+
+    for i in 0..7
+        VCC(i) = !VCO(i + 8) & (VS<i>(15..0) == VT<i>(15..0))
+        ACC<i>(15..0) = VCC(i) ? VS<i>(15..0) : VT<i>(15..0)
+        VD<i>(15..0) = ACC<i>(15..0)
+        VCC(i + 8) = VCO(i + 8) = VCO(i) = 0
+    endfor
+
+Pseudo-code for `vlt`:
+
+    for i in 0..7
+        eql = VS<i>(15..0) == VT<i>(15..0)
+        neg = VCO(i + 8) & VCO(i) & eql
+        VCC(i) = neg | (VS<i>(15..0) < VT<i>(15..0))
+        ACC<i>(15..0) = VCC(i) ? VS<i>(15..0) : VT<i>(15..0)
+        VD<i>(15..0) = ACC<i>(15..0)
+        VCC(i + 8) = VCO(i + 8) = VCO(i) = 0
+    endfor
+
+VCH/VCR
+-------
+Vector select clip test, single precision or high half of double precision:
+
+    vch vd, vs, vt[e]
+
+For each lane, this instruction sets the corresponding bit of `VCO_LO` if
+the operands have opposite signs. `VCO_HI` indicates if the two operands are
+definitely not equal, and is only set when `vs` is not equal `vt`, `-vt`, or
+`-vt - 1`. This last condition is also specifically shown by the `VCE` bit, so
+that it can be read by a later `vcl` instruction to determine if the lower bits
+of the double-precision operands need to be compared for an accurate result.
+
+The actual results of the clip test are stored in `VCC`. `VCC_HI` is set if
+`vs >= vt`, and `VCC_LO` is set if `vs <= -vt`. When `vs` and `vt` have
+opposite signs, `ACC_LO` is loaded with `vs` if `vs > -vt` and `-vt` otherwise.
+When `vs` and `vt` have the same sign, `ACC_LO` is loaded with `vs` if `vs < vt`
+and `vt` otherwise. This results in `ACC_LO` containing `vs` clamped within the
+range `(-vt, vt)` when `vt` is positive, and excluded from the range `(vt, -vt)`
+when `vt` is negative. The value of `ACC_LO` is then returned in `vd`.
+
+Pseudo-code for `vch`:
+
+    for i in 0..7
+        VCO(i) = VS<i>(15) != VT<i>(15)
+        vt_abs(15..0) = VCO(i) ? -VT<i>(15..0) : VT<i>(15..0)
+        VCE(i) = VCO(i) & (VS<i>(15..0) == -VT<i>(15..0) - 1)
+        VCO(i + 8) = !VCE(i) & (VS<i>(15..0) != vt_abs(15..0))
+        VCC(i) = VS<i>(15..0) <= -VT<i>(15..0)
+        VCC(i + 8) = VS<i>(15..0) >= VT<i>(15..0)
+        clip = VCO(i) ? VCC(i) : VCC(i + 8)
+        ACC<i>(15..0) = clip ? vt_abs(15..0) : VS<i>(15..0)
+        VD<i>(15..0) = ACC<i>(15..0)
+    endfor
+
+`vcr` operates in exactly the same manner as `vch`, but assumes the inputs are
+in 1s complement, rather than 2s complement. This changes the representation of
+`-vt` and how comparison between operands of different sign are carried out,
+but the algorithm remains the same.
+
+VCL
+---
+Vector select clip test, low half of double precision:
+
+    vcl vd, vs, vt[e]
+
+This is used in conjunction with `vch` for double precision clip compares.
+The numbers to be compared much each have their upper 16 bits in one vector
+register and their lower 16 bits in a different register. Then, the registers
+containing the upper bits can be compared using `vch`, and the registers with
+the lower bits compared using `vcl`.
+
+For each lane, this instruction sets `VCC_HI` to `vs >= vt` only if the previous
+`vch` operands had same sign and were approximately equal, as shown by the
+stored `VCO_LO` and `VCO_HI` bits, respectively. `VCC_LO` is only recomputed
+if the previous operands had opposite sign and were approximately equal. The
+computed value depends on `VCE` - if it is set, `VCC_LO` is set when
+`vs <= -vt`, otherwise `VCC_LO` is only set when `vs == -vt`. If the
+previous operands had opposite sign `ACC_LO` is loaded with `-vt` if `VCC_LO`
+is set and `vs` otherwise, while if they were the same sign `ACC_LO` is loaded
+with `vt` if `VCC_HI` is set and `vs` otherwise. The value of `ACC_LO` is then
+returned in `vd`.
+
+Pseudo-code:
+
+    for i in 0..7
+        if !VCO(i) & !VCO(i + 8)
+            VCC(i + 8) = VS<i>(15..0) >= VT<i>(15..0)
+        endif
+        if VCO(i) & !VCO(i + 8)
+            lte = VS<i>(15..0) <= -VT<i>(15..0)
+            eql = VS<i>(15..0) == -VT<i>(15..0)
+            VCC(i) = VCE(i) ? lte : eql
+        endif
+        clip = VCO(i) ? VCC(i) : VCC(i + 8)
+        vt_abs(15..0) = VCO(i) ? -VT<i>(15..0) : VT<i>(15..0)
+        ACC<i>(15..0) = clip ? vt_abs(15..0) : VS<i>(15..0)
+        VD<i>(15..0) = ACC<i>(15..0)
+    endfor
+
+Note that all comparisons are unsigned. This instruction is intended for the
+low bits of double-prevision operands, so the sign bits are handled by `vch`.
+Negatives are represented in 2s complement form.
+
+VMRG
+----
+Vector select merge:
+
+    vmrg vd, vs, vt[e]
+
+For each lane, this instruction selects one of its operands based on the
+value of `VCC` for that lane. The values of `VCC`, `VCO`, and `VCE` remain
+unchanged. Note that only the lower 8 bits of `VCC` are considered.
+
+Pseudo-code:
+
+    for i in 0..7
+        ACC<i>(15..0) = VCC(i) ? VS<i>(15..0) : VT<i>(15..0)
+        VD<i>(15..0) = ACC<i>(15..0)
+    endfor
