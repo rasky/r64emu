@@ -151,21 +151,6 @@ ClearLoop:
   break
 """
 
-# e0 = L0 >> 7 | L1 >> 7 | L2 >> 7 | L3 >> 7
-# e1 = L6 >> 7 | L7 >> 7 | L4 >> 7 | L5 >> 7
-# e2 = 0
-# e3 = 0
-# e4 = L1 >> 7 | L2 >> 7 | L3 >> 7 | L4 >> 7
-# e5
-# e6
-# e7
-# e8 = L4 >> 7 | L5 >> 7 | L6 >> 7 | L7 >> 7
-
-# sfv_e0:  22aaaaaa 66aaaaaa aaaaaaaa efaaaaaa
-# sfv_e4:  66aaaaaa aaaaaaaa efaaaaaa 22aaaaaa
-# sfv_e8:  33aaaaaa 77aaaaaa 28aaaaaa 8baaaaaa
-# sfv_e12: 77aaaaaa 28aaaaaa 8baaaaaa 33aaaaaa
-
 [[test]]
 name = "offset0"
 input = [
