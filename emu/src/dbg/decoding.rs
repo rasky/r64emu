@@ -24,6 +24,10 @@ pub enum Operand {
     Imm16(u16),            // 16-bit immediate
     Imm32(u32),            // 32-bit immediate
     Imm64(u64),            // 64-bit immediate
+    Simm8(i8),             // 8-bit signed immediate
+    Simm16(i16),           // 16-bit signed immediate
+    Simm32(i32),           // 32-bit signed immediate
+    Simm64(i64),           // 64-bit signed immediate
     Target(u64),           // A branch target (absolute address)
 }
 
@@ -39,6 +43,34 @@ impl fmt::Display for Operand {
             Imm16(v) => write!(f, "0x{:x}", v),
             Imm32(v) => write!(f, "0x{:x}", v),
             Imm64(v) => write!(f, "0x{:x}", v),
+            Simm8(v) => {
+                if *v >= 0 {
+                    write!(f, "0x{:x}", v)
+                } else {
+                    write!(f, "-0x{:x}", -v)
+                }
+            }
+            Simm16(v) => {
+                if *v >= 0 {
+                    write!(f, "0x{:x}", v)
+                } else {
+                    write!(f, "-0x{:x}", -v)
+                }
+            }
+            Simm32(v) => {
+                if *v >= 0 {
+                    write!(f, "0x{:x}", v)
+                } else {
+                    write!(f, "-0x{:x}", -v)
+                }
+            }
+            Simm64(v) => {
+                if *v >= 0 {
+                    write!(f, "0x{:x}", v)
+                } else {
+                    write!(f, "-0x{:x}", -v)
+                }
+            }
             Target(v) => write!(f, "0x{:x}", v),
             HidIReg(r) => write!(f, "{}", r),
             HidOReg(r) => write!(f, "{}", r),
