@@ -1,7 +1,9 @@
 use super::decode::{MEMOP_FMT, REG_NAMES};
 use super::{Cop, CpuContext};
 
-use emu::dbg::{DebuggerRenderer, DecodedInsn, Operand, RegisterSize, RegisterView, Result, Tracer};
+use emu::dbg::{
+    DebuggerRenderer, DecodedInsn, Operand, RegisterSize, RegisterView, Result, Tracer,
+};
 use emu::int::Numerics;
 use emu::state::Field;
 
@@ -211,7 +213,10 @@ macro_rules! fp_suffix {
 impl Fpu {
     pub fn new(cpu_name: &'static str, logger: slog::Logger) -> Fpu {
         Fpu {
-            ctx: Field::new(&("mips64".to_owned() + cpu_name + "::fpu"), FpuContext::default()),
+            ctx: Field::new(
+                &("mips64".to_owned() + cpu_name + "::fpu"),
+                FpuContext::default(),
+            ),
             logger,
             cpu_name,
         }
@@ -351,6 +356,7 @@ impl Cop for Fpu {
         let rd = ((opcode >> 6) & 0x1F) as usize;
         match fmt {
             0x0 => cpu.regs[rt] = (self.ctx.regs[rs] as u32).sx64(), // MFC1
+            0x1 => cpu.regs[rt] = self.ctx.regs[rs],                 // DMFC1
             0x2 => match rs {
                 // CFC1
                 31 => cpu.regs[rt] = self.ctx.fcsr,
@@ -360,7 +366,7 @@ impl Cop for Fpu {
                 }
             },
             0x4 => self.ctx.regs[rs] = (cpu.regs[rt] as u32) as u64, // MTC1
-            0x5 => self.ctx.set_fgr(rs, cpu.regs[rt]), // DMTC1
+            0x5 => self.ctx.set_fgr(rs, cpu.regs[rt]),               // DMTC1
             0x6 => match rs {
                 // CTC1
                 31 => self.ctx.fcsr = cpu.regs[rt],
@@ -435,6 +441,7 @@ impl Cop for Fpu {
                 let cfs = FPU_CREG_NAMES[((opcode >> 11) & 0x1f) as usize].into();
                 match fmt {
                     0x0 => DecodedInsn::new2("mfc1", OReg(rt), IReg(fs)),
+                    0x1 => DecodedInsn::new2("dmfc1", IReg(rt), OReg(fs)),
                     0x2 => DecodedInsn::new2("cfc1", OReg(rt), IReg(cfs)),
                     0x4 => DecodedInsn::new2("mtc1", IReg(rt), OReg(fs)),
                     0x5 => DecodedInsn::new2("dmtc1", IReg(rt), OReg(fs)),
