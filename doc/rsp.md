@@ -601,12 +601,16 @@ This is the list of opcodes in this group:
 | --- | --- |
 | 0x00 | `VMULF` |
 | 0x01 | `VMULU` |
+| 0x02 | `VRNDP` |
+| 0x03 | `VMULQ` |
 | 0x04 | `VMUDL` |
 | 0x05 | `VMUDM` |
 | 0x06 | `VMUDN` |
 | 0x07 | `VMUDH` |
 | 0x08 | `VMACF` |
 | 0x09 | `VMACU` |
+| 0x0A | `VRNDN` |
+| 0x0B | `VMACQ` |
 | 0x0C | `VMADL` |
 | 0x0D | `VMADM` |
 | 0x0E | `VMADN` |
@@ -714,8 +718,8 @@ by saturating to the positive max (0x7FFF).
 Pseudo-code:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-        ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) = sign_extend(prod(31..0) + 0x8000)
         VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
@@ -733,8 +737,8 @@ and it produces 0xFFFF.
 Pseudo-code:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-        ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) = sign_extend(prod(31..0) + 0x8000)
         VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
     endfor
 
@@ -759,8 +763,8 @@ while saturating the intermediate high-precision value into the result.
 Pseudo-code:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-        ACC<i>(47..0) += sign_extend(prod(32..0))
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) += sign_extend(prod(31..0))
         VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
@@ -782,8 +786,8 @@ while saturating the intermediate high-precision value into the result.
 Pseudo-code:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-        ACC<i>(47..0) += sign_extend(prod(32..0))
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) += sign_extend(prod(31..0))
         VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
     endfor
 
@@ -804,8 +808,8 @@ The full result is stored in the lower 32 bits of the accumulator.
 Pseudo-code for `vmadn`:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
-        ACC<i>(47..0) += sign_extend(prod(32..0))
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
+        ACC<i>(47..0) += sign_extend(prod(31..0))
         VD<i>(15..0) = clamp_unsigned(ACC<i>(31..0))
     endfor
 
@@ -828,14 +832,14 @@ precision. The result is stored in the lower 16 bits of the accumulator.
 Pseudo-code for `vmadl`:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned multiplication
-        ACC<i>(47..0) += prod(32..16)
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned multiplication
+        ACC<i>(47..0) += prod(31..16)
         VD<i>(15..0) = clamp_unsigned(ACC<i>(31..0))
     endfor
 
 The unsigned clamp works the same way as for `vmudn`. `vmudl` operates
 similarly, but clears the accumulator beforehand. Note that the lower bits
-of the product are discarded, and no sign extension is performed.
+of the product are discarded, and no sign extension is performed. 
 
 VMUDM/VMADM
 -----------
@@ -851,8 +855,8 @@ The full result is stored in the lower 32 bits of the accumulator.
 Pseudo-code for `vmadm`:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
-        ACC<i>(47..0) += sign_extend(prod(32..0))
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
+        ACC<i>(47..0) += sign_extend(prod(31..0))
         VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
@@ -875,11 +879,80 @@ Pseudo-code for `vmadh`:
 
     for i in 0..7
         prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // signed multiplication
-        ACC<i>(47..16) += prod(32..0)
+        ACC<i>(47..16) += prod(31..0)
         VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
 `vmudh` operates similarly, but clears the accumulator beforehand.
+
+VRNDP/VRNDN
+-----------
+
+Vector accumulator MPEG DCT round:
+
+    vrndp vd, vs, vt[e]
+    vrndn vd, vs, vt[e]
+
+For each lane, this instruction computes `VT` shifted left by 16 bits if the
+`VS` field (not the register, but the instruction bits) equals 1. This value
+is then added to the accumulator if and only if the accumulator is positive.
+The upper 32 bits of the accumulator are then clamped and returned.
+
+Pseudo-code for `vrndp`:
+
+    for i in 0..7
+        prod(47..0) = sign_extend(VT<i>(15..0))
+        if VS<i>(0)     => prod(47..0) <<= 16
+        if !ACC<i>(47)  => ACC<i>(47..0) += prod(47..0)
+        VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
+    endfor
+
+`vrndn` behaves similarly, but the value is added to the accumulator if and
+only if the accumulator is negative.
+
+VMULQ
+-----
+
+Vector multiply with MPEG inverse quantization:
+
+    vmulq vd, vs, vt[e]
+
+For each lane, this instruction multiples two signed operands to produce
+a signed result, with negative values rounded up by 31. This result is
+shifted up by 16 bits and loaded in the accumulator. The returned value
+is the result shifted right by 1 bit, clamped, and AND'd with `0xFFF0`.
+
+Pseudo-code:
+
+    for i in 0..7
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0)  // signed multiplication
+        if prod(31)  => prod(31..0) += 0x1F
+        ACC<i>(47..0) = prod(31..0) << 16
+        VD<i>(15..0) = clamp_signed(prod(31..1)) & 0xFFF0
+    endfor
+
+VMACQ
+-----
+
+Vector accumulator oddification:
+
+    vmacq vd, vs, vt[e]
+
+This instruction ignores its two input operands and performs MPEG-1 oddification
+of bits 16-46 of the accumulator. If the higher 32 bits of the accumulator are
+negative and bit 5 is zero, it rounds up by 32; if the higher 32 bits are
+positive and bit 5 is zero, it rounds down by 32. The returned value are these
+32 bits shifted right by 1 bit, clamped, and AND'd with `0xFFF0`.
+
+Pseudo-code:
+
+    for i in 0..7
+        prod(31..0) = ACC<i>(47..16)
+        if  prod(31) & !prod(5)  => prod(31..0) += 0x1F
+        if !prod(31) & !prod(5)  => prod(31..0) -= 0x1F
+        ACC<i>(47..0) = prod(31..0) << 16
+        VD<i>(15..0) = clamp_signed(prod(31..1)) & 0xFFF0
+    endfor
 
 VSAR
 ----
@@ -1020,9 +1093,9 @@ Pseudo-code for `vch`:
     endfor
 
 `vcr` operates in exactly the same manner as `vch`, but assumes the inputs are
-in 1s complement, rather than 2s complement. This changes the representation of
-`-vt` and how comparison between operands of different sign are carried out,
-but the algorithm remains the same.
+in 1s complement, rather than 2s complement, and clears VCO and VCE at the end.
+This changes the representation of `-vt` and how comparison between operands of
+different sign are carried out, but the general algorithm remains the same.
 
 VCL
 ---
@@ -1077,7 +1150,7 @@ Vector select merge:
 For each lane, this instruction selects one of its operands based on the
 value of `VCC` for that lane. The values of `VCC`, `VCO`, and `VCE` remain
 unchanged. Note that only the lower 8 bits of `VCC` are considered.
-
+    
 Pseudo-code:
 
     for i in 0..7
