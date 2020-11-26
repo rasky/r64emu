@@ -1,12 +1,12 @@
 RSP
 ===
-RSP (Reality Signal Processor) is the name of the computation units used
-for mathematical calculations.
 
-It is made by a stripped-down R4300 core (without a few more advanced opcodes)
-referred to as Scalar Unit (SU), composed with a coprocessor (configured as
-COP2) that can perform SIMD operations on a separate set of vector registers,
-reffered to as Vector Unit (VU).
+Within the Nintendo 64, the RSP (Reality Signal Processor) is the name of the
+computation units used for mathematical calculations. It is made by a
+stripped-down R4300 core (without a few more advanced opcodes) referred to as
+the Scalar Unit (SU), composed with a coprocessor (configured as COP2) that can
+perform SIMD operations on a separate set of vector registers, referred to
+as the Vector Unit (VU).
 
 RSP has two different banks of onboard 0-stalls dedicated memories: IMEM (4KB)
 for instructions, and DMEM (4KB) for data. It has no external memory buses but has
@@ -99,7 +99,7 @@ Loads and stores
 The instructions perform a load/store from DMEM into/from a vector register.
 
 * `base` is the index of a scalar register used as base for the memory access
-* `offset` is an signed offset added to the value of the base register (with
+* `offset` is an unsigned offset added to the value of the base register (with
 some scaling, depending on the actual instruction).
 * `vt` is the vector register.
 * `element` is used to index a specific byte/word within the vector register,
@@ -112,7 +112,7 @@ These instructions can be used to load/store up to 64 bits of data to/from
 a register vector:
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
+| --- | --- | --- |
 | LBV | 0x00 | load 1 byte into vector |
 | SBV | 0x00 | store 1 byte from vector |
 | LSV | 0x01 | load (up to) 2 bytes into vector |
@@ -147,9 +147,9 @@ These instructions can be used to load up to 128 bits of data to a register
 vector:
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
-| `LQV` | 0x04 | load (up to) 16 bytes into vector, left-aligned |
-| `LRV` | 0x05 | load (up to) 16 bytes into vector, right-aligned |
+| --- | --- | --- |
+| LQV | 0x04 | load (up to) 16 bytes into vector, left-aligned |
+| LRV | 0x05 | load (up to) 16 bytes into vector, right-aligned |
 
 Roughly, these functions behave like `LWL` and `LWR`: combined, they allow to
 read 128 bits of data into a vector register, irrespective of the alignment. For
@@ -185,9 +185,9 @@ These instructions can be used to load up to 128 bits of data to a register
 vector:
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
-| `SQV` | 0x04 | store (up to) 16 bytes into vector, left-aligned |
-| `SRV` | 0x05 | store (up to) 16 bytes into vector, right-aligned |
+| --- | --- | --- |
+| SQV | 0x04 | store (up to) 16 bytes into vector, left-aligned |
+| SRV | 0x05 | store (up to) 16 bytes into vector, right-aligned |
 
 These instructions behave like `SWL` and `SWR` and are thus the counterpart
 to `LQV` and `LRV`. For instance:
@@ -202,8 +202,8 @@ always perform a full-width write (128-bit in total when used together), and
 the data is fetched from `VPR[vt][element..element+16]` wrapping around the
 vector. For instance:
 
-    SQV v1[e4],$08(a0)     // write bytes $08(a0)-$0F(a0) from VPR[1][4..11]
-    SRV v1[e4],$18(a0)     // write bytes $10(a0)-$17(a0) from VPR[1][12..15,0..3]
+    SQV v1[e4],$08(a0)     // write bytes $08(a0)-$0F(a0) from VPR[vt][4..11]
+    SRV v1[e4],$18(a0)     // write bytes $10(a0)-$17(a0) from VPR[vt][12..15,0..3]
 
 128-bit vector transpose
 ------------------------
@@ -211,9 +211,9 @@ These instructions are used to read/write lanes across a group of registers,
 to help implementing the transposition of a matrix:
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
-| `LTV` | 0x08 | load 8 lanes from 8 different registers |
-| `STV` | 0x08 | store 8 lanes to 8 different registers  |
+| --- | --- | --- |
+| LTV | 0x08 | load 8 lanes from 8 different registers |
+| STV | 0x08 | store 8 lanes to 8 different registers  |
 
 The 8-registers group is identified by `vt`, ignoring the last 3 bits. This means
 that the 32 registers are logically divided into 4 groups (0-7, 8-15, 16-23, 24-31).
@@ -227,7 +227,7 @@ The following table shows the numbering of the 8 diagonals present in a 8-regist
 group; each cell of the table contains the diagonal that lane belongs to:
 
 | Reg | Lane 0 | Lane 1 | Lane 2 | Lane 3 | Lane 4 | Lane 5 | Lane 6 | Lane 7 |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `v0` | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 | `v1` | 7 | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
 | `v2` | 6 | 7 | 0 | 1 | 2 | 3 | 4 | 5 |
@@ -268,7 +268,7 @@ These instructions can be used to load or store distinct 8-bit signed/unsigned v
 into a vector register, moving each 8-bit value into/from each own lane.
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
+| --- | --- | --- |
 | `LPV` | 0x06 | load 8 signed 8-bit values into 8 lanes |
 | `LUV` | 0x07 | load 8 unsigned 8-bit values into 8 lanes |
 | `SPV` | 0x06 | store 8 signed 8-bit values from 8 lanes |
@@ -280,24 +280,96 @@ mapped into the 16-bit lanes. Signed opcodes (`LPV`, `SPV`) map the value to bit
 value to bits `(14..7)`. Load instructions zero the bits outside the mapped range, while
 store instructions effectively ignore the other bits.
 
-The actual bytes accessed in DMEM start at `GPR[base] + (offset * 8)`, but they wrap around
-at the 64-bit (8-byte) boundary. `element` is used to select the first lane being accessed
-by the instruction (lane accesses also wrap around). 
+One way to think about the packed loads are as 128-bit loads that are then shuffled into
+lanes based on alignment and element. After aligning the address `GPR[base] + (offset * 8)`
+to the 8-byte boundary below, 128 bits starting from that boundary are read. Then, that
+128-bit value is rotated left by the amount the address is unaligned, and right by `element`
+bytes. The leftmost 8 bytes are then mapped to the appropriate bits of the 8 16-bit lanes.
+
+The packed stores generally behave as you would expect, mapping the appropriate bits of
+each lane to consecutive bytes in memory, starting with the lane specified by `element`
+and wrapping addresses at the second 8-byte boundary. However, instead of wrapping at 8 lanes,
+packed stores wrap at 16, and change the mapping bits for "lanes" 8-15. `SPV` when a lane
+index is in the range `[8..15]` behaves like `SUV` when its lane index is in the range
+`[0..7]`, and vice versa.
 
 For instance:
 
-	// a0 is 64-bit aligned
-	LUV v1[e2],$06(a0)     // load bytes $06(a0)-$07(a0) into VPR[1]<2..3>, and then $00(a0)-$05(a0) into VPR[1]<4..7,0..1>
+    // a0 is 64-bit aligned
+    LUV v1[e5],$02(a0)     // load bytes $00(a0)-$04(a0) into VPR[1]<3..7>,
+                              and $0d(a0)-$0f(a0) into VPR[1]<0..2>
+    SUV v1[e5],$02(a0)     // write bytes $02(a0)-$04(a0) from VPR[1]<5..7> (14..7),
+                              and $05(a0)-$09(a0) from VPR[1]<0..5> (15..8)
 
-If `element` is higher than 8 (so, in the range `[8..15]`), load instructions wrap
-element access around (so basically the highest bit of `element` is ignored), while
-store instructions change the mapping bits, effectively swapping their meaning: `SPV`
-with `element` in the range `[8..15]` is like `SUV` with `element` in the range `[0..7]`,
-and viceversa.
+8-bit strided loads and stores
+------------------------------
+Like the packed load/store instructions, these instructions load or store
+8-bit unsigned values into a vector register, moving each 8-bit value from/into
+each lane. Unlike the packed instructions, however, the addreses of these 8-bit
+values are not consecutive, and instead include every other address or every fourth
+address.
+
+| Insn | `opcode` | Desc |
+| --- | --- | --- |
+| `LHV` | 0x08 | load 8 unsigned 8-bit values into 8 lanes |
+| `LFV` | 0x09 | load 8 unsigned 8-bit values into 8 lanes |
+| `SHV` | 0x08 | store 8 unsigned 8-bit values from 8 lanes |
+| `SFV` | 0x09 | store 8 unsigned 8-bit values from 8 lanes |
+
+Similar to (`LUV`, `SUV`), these handle unsigned values, and map each value to bits
+`(14..7)` of the 16-bit lanes. Load instructions zero the bits of each lane outside
+the mapped range, while store instructions effectively ignore the other bits.
+
+Like the 8-bit packed loads, the strided loads can be viewed as 128-bit loads from
+`GPR[base] + (offset * 8)` that are then shuffled based on alignment and element.
+After loading and shifting as above, however, instead of loading the leftmost 8 bytes
+into the lanes, every other byte, in the case of `LHV`, and every fourth byte
+(repeated in a pattern), in the case of `LFV`, are used.
+
+`LFV`, since it doesn't write an entire register, behaves differently from other loads
+at this last step. It first creates a new 128-bit temporary by loading `(14..7)` of each
+lane in the pattern `0,4,8,12,8,12,0,4` from the loaded and shuffled value. 64 bits of
+the original register starting at byte index `element` (NOT wrapping around) are then
+replaced with the corresponding bits of this temporary.
+
+`SHV` stores the appropriate bits of each lane into every other byte in memory, like
+`SUV`. However, instead of storing one lane at a time starting from lane `element`,
+it stores every other byte in the register, beginning at byte index `element`
+(after rotating the entire register left by one to byte-align the mapping). Addresses
+are still wrapped at the second 8-byte boundary.
+
+`SFV` is more complex. `element` is used to change which lanes are stored from the
+register, according to the table below. If `element` is not one of those listed, then
+4 zero bytes are stored instead. Addresses are wrapped at the second 8-byte boundary.
+
+| `element` | Byte 0 | Byte 1 | Byte 2 | Byte 3 |
+| --- | --- | --- | --- | --- |
+| 0x0 | VPR<0> | VPR<1> | VPR<2> | VPR<3> |
+| 0x1 | VPR<6> | VPR<7> | VPR<4> | VPR<5> |
+| 0x4 | VPR<1> | VPR<2> | VPR<3> | VPR<0> |
+| 0x5 | VPR<7> | VPR<4> | VPR<5> | VPR<6> |
+| 0x8 | VPR<4> | VPR<5> | VPR<6> | VPR<7> |
+| 0xb | VPR<3> | VPR<0> | VPR<1> | VPR<2> |
+| 0xc | VPR<5> | VPR<6> | VPR<7> | VPR<4> |
+| 0xf | VPR<0> | VPR<1> | VPR<2> | VPR<3> |
+
+For instance:
+
+    // a0 is 64-bit aligned
+    LHV v1[e7],$06(a0)     // load bytes $01(a0)..$0d(a0) (odd) into VPR[1]<1..7>,
+                              then byte $0f(a0) into VPR[1]<0>
+    SHV v1[e3],$06(a0)     // write bytes $06(a0)..$0e(a0) (even) from VPR[1][3..11] (odd)
+                              then bytes $00(a0)..$04(a0) (even) from VPR[1][13,15,1]
+    LFV v1[e3],$06(a0)     // load byte $07(a0) into VPR[1]<1>
+                              then bytes $0b(a0),$0f(a0) into VPR[1]<2..3>
+                              then bytes $0b(a0),$0f(a0) into VPR[1]<4..5>
+    SFV v1[e5],$06(a0)     // write bytes $06(a0),$0a(a0),$0e(a0) from VPR[1]<7,4,5>
+                              then byte $02(a0) from VPR[1]<6>
 
 
 Vector move instructions
 ========================
+
 | 31..21 | 20..16 | 15..11 | 10..8 | 7..0 |
 | --- | --- | --- | --- | --- |
 | `COP2 Move`| `rt` | `vs` | `vs_elem` | 0 |
@@ -305,17 +377,17 @@ Vector move instructions
 Vector moves follow the same format as other coprocessor moves, but use part of
 the lower 11 bits to specify which lane of the vector register is used. `mtc2`
 moves the lower 16 bits of the general purpose register `rt` to the vector
-register `VS<elem>`, while `mtc2` moves `VS<elem>` to GPR `rt`, sign extending
-to 64 bits.
+register `VS<vs_elem>`, while `mtc2` moves `VS<vs_elem>` to GPR `rt`, sign
+extending to 64 bits.
 
 `ctc2` moves the lower 16 bits of GPR `rt` into the control register
 specified by `vs`, while `cfc2` does the reverse, moving the control register
 specified by `vs` into GPR `rt`, sign extending to 64 bits. Note that both
-`ctc2` and `cfc2` ignore the `vs_elem` field. For these instructions, the
+`ctc2` and `cfc2` ignore the `elem` field. For these instructions, the
 control register is specified as follows:
 
 | `vs` | Register |
-|---|---|
+| --- | --- |
 | 0 | `VCO` |
 | 1 | `VCC` |
 | 2 | `VCE` |
@@ -323,52 +395,61 @@ control register is specified as follows:
 
 Single-lane instructions
 ========================
+
 | 31..26 | 25 | 24..21 | 20..16 | 15..11 | 10..6 | 5..0 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `COP2`| 1 | `vd_elem` | `vt` | `vt_elem` | `vd` | `opcode` |
+| `COP2`| 1 | `vt_elem` | `vt` | `vd_elem` | `vd` | `opcode` |
 
 Single-lane instructions are an instruction group that perform operations on a
-single lange of a single input register (`VT<se>`), and store the result into a single
-lane of a single output register (`VD<de>`).
+single lange of a single input register (`VT<vt_elem>`), and store the result into
+a single lane of a single output register (`VD<vd_elem>`). Only the lowest 3
+bits of `vt_elem` and `vd_elem` are used to compute the source lane `se` and destination
+lane `de`, respectively.
 
-`vt_elem` and `vd_elem` are used to compute `se` and `de` that is to specify which lane,
-respectively of the input and output register, is affected.
+For all single-lane instructions, `vt_elem` is further used as a "broadcast modifier",
+(as in other SIMD architectures) that modifies `vt`, duplicating some lanes and hiding
+others. All 4 bits of `vt_elem` are used for this purpose. Note that the broadcast
+modifier `vt_elem` affects the value of `VT` whenever it is used within an instruction,
+but these modifications are not written back - that is, from the point of view of other
+instructions the value of `VT` remains the same.
 
-`vd_elem` is 4 bits long (range 0..15); the highest bit is always ignored so
-the destination lane `de` is computed from the lowest 3 bits.
-
-`vt_elem` is 5 bits long (range 0..31). `vt_elem(4)` must be zero. When
-`vt_elem(3)` is 1, `vt_elem(2..0)` is actually used as source lane `se`, as expected. When
-`vt_elem(3)` is 0, a hardware bug is triggered and portions of the lower bits of
-`vt_elem` are replaced with portion of the bits of `vd_elem` while computing `se`. Specifically, all
-bits in `vt_elem` from the topmost set bit and higher are replaced with the
-same-position bits in `vt_elem`. Notice that this behaviour is actually consistent
-with what happens when `vt_elem(3)` is 1, which means that there is no need to
-think of it as a special-case. Pseudo-code:
-
-    de(2..0) = vd_elem(2..0)
-    msb = highest_set_bit(vt_elem)
-    se(2..0) = vd_elem(2..msb) || vt_elem(msb-1..0)
-
-TODO: complete analysis for `vt_elem(4)` == 1.
-
+| `element` | Lanes being accessed | Description |
+| --- | --- | --- |
+| 0 | 0,1,2,3,4,5,6,7 | Normal register access (no broadcast) |
+| 1 | 0,1,2,3,4,5,6,7 | Normal register access (no broadcast) |
+| 2 | 0,0,2,2,4,4,6,6 | Broadcast 4 of 8 lanes |
+| 3 | 1,1,3,3,5,5,7,7 | Broadcast 4 of 8 lanes |
+| 4 | 0,0,0,0,4,4,4,4 | Broadcast 2 of 8 lanes |
+| 5 | 1,1,1,1,5,5,5,5 | Broadcast 2 of 8 lanes |
+| 6 | 2,2,2,2,6,6,6,6 | Broadcast 2 of 8 lanes |
+| 7 | 3,3,3,3,7,7,7,7 | Broadcast 2 of 8 lanes |
+| 8 | 0,0,0,0,0,0,0,0 | Broadcast single lane |
+| 9 | 1,1,1,1,1,1,1,1 | Broadcast single lane |
+| 10 | 2,2,2,2,2,2,2,2 | Broadcast single lane |
+| 11 | 3,3,3,3,3,3,3,3 | Broadcast single lane |
+| 12 | 4,4,4,4,4,4,4,4 | Broadcast single lane |
+| 13 | 5,5,5,5,5,5,5,5 | Broadcast single lane |
+| 14 | 6,6,6,6,6,6,6,6 | Broadcast single lane |
+| 15 | 7,7,7,7,7,7,7,7 | Broadcast single lane |
 
 VMOV
 ----
-Copy the source lane into the destination lane:
+Copy a lane from `vt` to `vd`, after broadcast:
 
-    VMOV vd[de],vs[se]
+    VMOV vd[de],vt[de]
 
 Pseudo-code:
 
-    VD<de> = VS<se>
+    VD<de> = VT<de>
 
+As a side-effect, `ACCUM_LO` is loaded with `VT`. Note that the source and destination
+lanes are both `de`, and `vt_elem` is being used as a broadcast modifier.
 
 VRCP
 ----
 Computes a 32-bit reciprocal of the 16-bit input lane, and store it into the output lane:
 
-    VRCP vd[de],vs[se]
+    VRCP vd[de],vt[se]
 
 The recriprocal is computed using a lookup table of 512 elements of 16-bits each one. The
 table is burnt within an internal ROM of the RSP and cannot be directly accessed nor modified.
@@ -443,7 +524,7 @@ VRSQ
 ----
 Computes a 32-bit reciprocal of the square root of the input lane, and store it into the output lane:
 
-    VRSQ vd[de],vs[se]
+    VRSQ vd[de],vt[se]
 
 The recriprocal of the square root is computed using a lookup table similar to that used by `VRCP`
 (512 elements of 16-bits each one), stored within the same ROM. The higher part of the result is
@@ -512,7 +593,7 @@ VRCPH/VRSQH
 Reads the higher part of the result of a previous 32-bit reciprocal instruction, and
 stores the higher part of the input for a following 32-bit reciprocal.
 
-    VRCPH vd[de],vs[se]
+    VRCPH vd[de],vt[se]
 
 `VRSPH` is meant to be used for the recriprocal of square root, but its beahvior
 is identical to `VRCPH`, as neither perform an actual calculation, and there is
@@ -534,14 +615,13 @@ Pseudo-code:
 
 As a side-effect, `ACCUM_LO` is loaded with `VT` (all lanes).
 
-
 VRCPL/VRSQL
 -----------
 Performs a full 32-bit reciprocal combining the input lane with the special register
 `DIV_IN` that must have been loaded with a previous `VRCPH`/`VRSPH` instruction.
 
-    VRCPL vd[de],vs[se]
-    VRSQL vd[de],vs[se]
+    VRCPL vd[de],vt[se]
+    VRSQL vd[de],vt[se]
 
 The RSP remembers whether `DIV_IN` was loaded or not, by a previous `VRCPH` or `VRSQH`
 instruction. If `VRCPL`/`VRSQL` is executed without `DIV_IN` being loaded, they perform
@@ -574,26 +654,10 @@ Instructions have this general format:
 
 where `element` is a "broadcast modifier" (as found in other SIMD
 architectures), that modifies the access to `vt` duplicating some
-lanes and hiding others.
-
-| `element` | Lanes being accessed | Description |
-| --- | --- | --- |
-| 0 | 0,1,2,3,4,5,6,7 | Normal register access (no broadcast) |
-| 1 | 0,1,2,3,4,5,6,7 | Normal register access (no broadcast) |
-| 2 | 0,0,2,2,4,4,6,6 | Broadcast 4 of 8 lanes |
-| 3 | 1,1,3,3,5,5,7,7 | Broadcast 4 of 8 lanes |
-| 4 | 0,0,0,0,4,4,4,4 | Broadcast 2 of 8 lanes |
-| 5 | 1,1,1,1,5,5,5,5 | Broadcast 2 of 8 lanes |
-| 6 | 2,2,2,2,6,6,6,6 | Broadcast 2 of 8 lanes |
-| 7 | 3,3,3,3,7,7,7,7 | Broadcast 2 of 8 lanes |
-| 8 | 0,0,0,0,0,0,0,0 | Broadcast single lane |
-| 9 | 1,1,1,1,1,1,1,1 | Broadcast single lane |
-| 10 | 2,2,2,2,2,2,2,2 | Broadcast single lane |
-| 11 | 3,3,3,3,3,3,3,3 | Broadcast single lane |
-| 12 | 4,4,4,4,4,4,4,4 | Broadcast single lane |
-| 13 | 5,5,5,5,5,5,5,5 | Broadcast single lane |
-| 14 | 6,6,6,6,6,6,6,6 | Broadcast single lane |
-| 15 | 7,7,7,7,7,7,7,7 | Broadcast single lane |
+lanes and hiding others. See the above section on single-lane
+instructions for more details about how `element` can be used to
+modify how `vt` is accessed. The broadcast modifier is used by
+all RSP computational instructions, whenever `vt` is read.
 
 This is the list of opcodes in this group:
 
