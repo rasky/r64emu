@@ -113,14 +113,14 @@ a register vector:
 
 | Insn | `opcode` | Desc |
 | --- | --- | --- |
-| LBV | 0x00 | load 1 byte into vector |
-| SBV | 0x00 | store 1 byte from vector |
-| LSV | 0x01 | load (up to) 2 bytes into vector |
-| SSV | 0x01 | store 2 bytes from vector |
-| LLV | 0x02 | load (up to) 4 bytes into vector |
-| SLV | 0x02 | store 4 bytes from vector |
-| LDV | 0x03 | load (up to) 8 bytes into vector |
-| SDV | 0x03 | store 8 bytes from vector |
+| `LBV` | 0x00 | load 1 byte into vector |
+| `SBV` | 0x00 | store 1 byte from vector |
+| `LSV` | 0x01 | load (up to) 2 bytes into vector |
+| `SSV` | 0x01 | store 2 bytes from vector |
+| `LLV` | 0x02 | load (up to) 4 bytes into vector |
+| `SLV` | 0x02 | store 4 bytes from vector |
+| `LDV` | 0x03 | load (up to) 8 bytes into vector |
+| `SDV` | 0x03 | store 8 bytes from vector |
 
 The address in DMEM is computed as `GPR[base] + (offset * access_size)`, where
 `access_size` is the number of bytes being accessed (eg: 4 for `SLV`). The
@@ -148,8 +148,8 @@ vector:
 
 | Insn | `opcode` | Desc |
 | --- | --- | --- |
-| LQV | 0x04 | load (up to) 16 bytes into vector, left-aligned |
-| LRV | 0x05 | load (up to) 16 bytes into vector, right-aligned |
+| `LQV` | 0x04 | load (up to) 16 bytes into vector, left-aligned |
+| `LRV` | 0x05 | load (up to) 16 bytes into vector, right-aligned |
 
 Roughly, these functions behave like `LWL` and `LWR`: combined, they allow to
 read 128 bits of data into a vector register, irrespective of the alignment. For
@@ -157,8 +157,8 @@ instance, this code will fill `v0` with 128 bits of data starting at the
 possibly-unaligned `$08(a0)`.
 
     // a0 is 128-bit aligned in this example
-    LQV v0[e0],$08(a0)     // read bytes $08(a0)-$0F(a0) into left part of the vector (VPR[vt][0..7])
-    LRV v0[e0],$18(a0)     // read bytes $10(a0)-$17(a0) into right part of the vector (VPR[vt][8..15])
+    LQV v0[e0],$08(a0)     // read bytes $08(a0)-$0F(a0) into left part of the vector (VPR[0][0..7])
+    LRV v0[e0],$18(a0)     // read bytes $10(a0)-$17(a0) into right part of the vector (VPR[0][8..15])
 
 Notice that if the data is 128-bit aligned, `LQV` is sufficient to read the
 whole vector (`LRV` in this case is redundant because it becomes a no-op).
@@ -176,8 +176,8 @@ loaded with the instruction pair is `VPR[vt][element..15]`. Thus a non-zero
 element means that fewer bytes are loaded; for instance, this code loads 12
 unaligned bytes into the lower part of the vector starting at byte 4:
 
-    LQV v1[e4],$08(a0)     // read bytes $08(a0)-$0F(a0) into VPR[vt][4..11]
-    LRV v1[e4],$18(a0)     // read bytes $10(a0)-$13(a0) into VPR[vt][12..15]
+    LQV v1[e4],$08(a0)     // read bytes $08(a0)-$0F(a0) into VPR[1][4..11]
+    LRV v1[e4],$18(a0)     // read bytes $10(a0)-$13(a0) into VPR[1][12..15]
 
 128-bit vector stores
 ---------------------
@@ -186,8 +186,8 @@ vector:
 
 | Insn | `opcode` | Desc |
 | --- | --- | --- |
-| SQV | 0x04 | store (up to) 16 bytes into vector, left-aligned |
-| SRV | 0x05 | store (up to) 16 bytes into vector, right-aligned |
+| `SQV` | 0x04 | store (up to) 16 bytes into vector, left-aligned |
+| `SRV` | 0x05 | store (up to) 16 bytes into vector, right-aligned |
 
 These instructions behave like `SWL` and `SWR` and are thus the counterpart
 to `LQV` and `LRV`. For instance:
@@ -202,8 +202,8 @@ always perform a full-width write (128-bit in total when used together), and
 the data is fetched from `VPR[vt][element..element+16]` wrapping around the
 vector. For instance:
 
-    SQV v1[e4],$08(a0)     // write bytes $08(a0)-$0F(a0) from VPR[vt][4..11]
-    SRV v1[e4],$18(a0)     // write bytes $10(a0)-$17(a0) from VPR[vt][12..15,0..3]
+    SQV v1[e4],$08(a0)     // write bytes $08(a0)-$0F(a0) from VPR[1][4..11]
+    SRV v1[e4],$18(a0)     // write bytes $10(a0)-$17(a0) from VPR[1][12..15,0..3]
 
 128-bit vector transpose
 ------------------------
@@ -212,8 +212,8 @@ to help implementing the transposition of a matrix:
 
 | Insn | `opcode` | Desc |
 | --- | --- | --- |
-| LTV | 0x08 | load 8 lanes from 8 different registers |
-| STV | 0x08 | store 8 lanes to 8 different registers  |
+| `LTV` | 0x08 | load 8 lanes from 8 different registers |
+| `STV` | 0x08 | store 8 lanes to 8 different registers  |
 
 The 8-registers group is identified by `vt`, ignoring the last 3 bits. This means
 that the 32 registers are logically divided into 4 groups (0-7, 8-15, 16-23, 24-31).
@@ -237,6 +237,12 @@ group; each cell of the table contains the diagonal that lane belongs to:
 | `v6` | 6 | 5 | 4 | 3 | 2 | 1 | 0 | 7 |
 | `v7` | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
 
+`STV` writes lane 0 of the specified diagonal to the address `GPR[base] + (offset * 16)`;
+following lanes are written to subsequent memory addresses, wrapping around at the
+second 64-bit boundary. For instance, `STV v0[e2],$1E(r0)` writes diagonal 1, starting
+with `VPR[1]<0>`, to the following addresses: `$1E`, `$20`, `$22`, `$24`, `$26`, `$18`,
+`$1A`, `$1C`.
+
 `LTV` reads 128 bits from `(GPR[base] + (offset * 16)) & 0xFF8`, rotates them left by
 `element + (address & 0x8)` bytes, then loads the leftmost 16 bits into lane 0 of the
 specified diagonal, the next 16 bits into lane 1, and so on. If `element(0)` is 0
@@ -245,13 +251,7 @@ starting from register `v0` of the register group. For instance, `LTV v0[e2],$1E
 reads diagonal 1, starting with `VPR[0]<7>`, from the following addresses: `$20`, `$22`,
 `$24`, `$26`, `$18`, `$1A`, `$1C`, `$1E`.
 
-`STV` writes lane 0 of the specified diagonal to the address `GPR[base] + (offset * 16)`;
-following lanes are written to subsequent memory addresses, wrapping around at the
-second 64-bit boundary. For instance, `STV v0[e2],$1E(r0)` writes diagonal 1, starting
-with `VPR[1]<0>`, to the following addresses: `$1E`, `$20`, `$22`, `$24`, `$26`, `$18`,
-`$1A`, `$1C`.
-
-By combining `LTV` and `STV`, it is possible to transpose a matrix because diagonals
+By combining `STV` and `LTV`, it is possible to transpose a matrix because diagonals
 are symmetric; for instance, assuming a 8x8 matrix is stored in `VPR[0..7]<0..7>`,
 the following sequence transposes it:
 
