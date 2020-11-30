@@ -99,7 +99,7 @@ Loads and stores
 The instructions perform a load/store from DMEM into/from a vector register.
 
 * `base` is the index of a scalar register used as base for the memory access
-* `offset` is an unsigned offset added to the value of the base register (with
+* `offset` is a signed offset added to the value of the base register (with
 some scaling, depending on the actual instruction).
 * `vt` is the vector register.
 * `element` is used to index a specific byte/word within the vector register,
@@ -220,32 +220,42 @@ that the 32 registers are logically divided into 4 groups (0-7, 8-15, 16-23, 24-
 
 The lanes affected within the register group are laid out in *diagonal* layout; for
 instance, if `vt` is zero, the lanes will be: `VREG[0]<0>`, `VREG[1]<1>`, ...,
-`VREG[7]<7>`. `element(3..1)` specifies the lane affected in the first register of
-the register group, and thus identifies the diagonal (`element(0)` is ignored). 
+`VREG[7]<7>`. `element(3..1)` specifies the first register affected within the
+register group, and thus identifies the diagonal (`element(0)` is ignored).
 
 The following table shows the numbering of the 8 diagonals present in a 8-registers
 group; each cell of the table contains the diagonal that lane belongs to:
 
 | Reg | Lane 0 | Lane 1 | Lane 2 | Lane 3 | Lane 4 | Lane 5 | Lane 6 | Lane 7 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `v0` | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-| `v1` | 7 | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
-| `v2` | 6 | 7 | 0 | 1 | 2 | 3 | 4 | 5 |
-| `v3` | 5 | 6 | 7 | 0 | 1 | 2 | 3 | 4 |
-| `v4` | 4 | 5 | 6 | 7 | 0 | 1 | 2 | 3 |
-| `v5` | 3 | 4 | 5 | 6 | 7 | 0 | 1 | 2 |
-| `v6` | 2 | 3 | 4 | 5 | 6 | 7 | 0 | 1 |
-| `v7` | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 0 |
+| `v0` | 0 | 7 | 6 | 5 | 4 | 3 | 2 | 1 |
+| `v1` | 1 | 0 | 7 | 6 | 5 | 4 | 3 | 2 |
+| `v2` | 2 | 1 | 0 | 7 | 6 | 5 | 4 | 3 |
+| `v3` | 3 | 2 | 1 | 0 | 7 | 6 | 5 | 4 |
+| `v4` | 4 | 3 | 2 | 1 | 0 | 7 | 6 | 5 |
+| `v5` | 5 | 4 | 3 | 2 | 1 | 0 | 7 | 6 |
+| `v6` | 6 | 5 | 4 | 3 | 2 | 1 | 0 | 7 |
+| `v7` | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
 
-The address in DMEM from which the first lane is read/write is `GPR[base] + offset*16`;
-following lanes are read/written from subsequent memory addresses, wrapping around at the
-second 64-bit boundary. For instance, `LTV v0[e0],$1E(r0)` reads the lanes from the
-following addresses: `$1E`, `$20`, `$22`, `$24`, `$26`, `$18`, `$1C`.
+`LTV` reads 128 bits from `(GPR[base] + (offset * 16)) & 0xFF8`, rotates them left by
+`element + (address & 0x8)` bytes, then loads the leftmost 16 bits into lane 0 of the
+specified diagonal, the next 16 bits into lane 1, and so on. If `element(0)` is 0
+and the address is 128-bit aligned, this has the effect of reading the given diagonal
+starting from register `v0` of the register group. For instance, `LTV v0[e2],$1E(r0)`
+reads diagonal 1, starting with `VPR[0]<7>`, from the following addresses: `$20`, `$22`,
+`$24`, `$26`, `$18`, `$1A`, `$1C`, `$1E`.
+
+`STV` writes lane 0 of the specified diagonal to the address `GPR[base] + (offset * 16)`;
+following lanes are written to subsequent memory addresses, wrapping around at the
+second 64-bit boundary. For instance, `STV v0[e2],$1E(r0)` writes diagonal 1, starting
+with `VPR[1]<0>`, to the following addresses: `$1E`, `$20`, `$22`, `$24`, `$26`, `$18`,
+`$1A`, `$1C`.
 
 By combining `LTV` and `STV`, it is possible to transpose a matrix because diagonals
 are symmetric; for instance, assuming a 8x8 matrix is stored in `VPR[0..7]<0..7>`,
 the following sequence transposes it:
 
+    // a0 is 128-bit aligned
     STV v0[e2],$10(a0)  // store diagonal 1
     STV v0[e4],$20(a0)  // store diagonal 2
     STV v0[e6],$30(a0)  // store diagonal 3
@@ -254,13 +264,38 @@ the following sequence transposes it:
     STV v0[e12],$60(a0) // store diagonal 6
     STV v0[e14],$70(a0) // store diagonal 7
 
-    LTV v0[e2],$12(a0)  // load back diagonal 1 into diagonal 7
-    LTV v0[e4],$24(a0)  // load back diagonal 2 into diagonal 6
-    LTV v0[e6],$36(a0)  // load back diagonal 3 into diagonal 5
-    LTV v0[e8],$48(a0)  // load back diagonal 4 into diagonal 4
-    LTV v0[e10],$5a(a0)  // load back diagonal 5 into diagonal 3
-    LTV v0[e12],$6c(a0)  // load back diagonal 6 into diagonal 2
-    LTV v0[e14],$7e(a0)  // load back diagonal 7 into diagonal 1
+    LTV v0[e14],$10(a0) // load back diagonal 1 into diagonal 7
+    LTV v0[e12],$20(a0) // load back diagonal 2 into diagonal 6
+    LTV v0[e10],$30(a0) // load back diagonal 3 into diagonal 5
+    LTV v0[e8],$40(a0)  // load back diagonal 4 into diagonal 4
+    LTV v0[e6],$50(a0)  // load back diagonal 5 into diagonal 3
+    LTV v0[e4],$60(a0)  // load back diagonal 6 into diagonal 2
+    LTV v0[e2],$70(a0)  // load back diagonal 7 into diagonal 1
+
+It is also possible to transpose a matrix stored in memory by combining `LTV` and `SWV`.
+`SWV` is much simpler than the other transpose instructions, and simply rotates `vt`
+left by `element` bytes before storing it to the address `GPR[base] + (offset * 16)`,
+wrapping at the second 64-bit boundary. The following sequence transposes a
+matrix stored at `$00(a0)..$7F(a0)`:
+
+    // a0 is 128-bit aligned
+    LTV v0[e0], $00(a0)   // load diagonal 0
+    LTV v0[e14], $10(a0)  // load diagonal 7
+    LTV v0[e12], $20(a0)  // load diagonal 6
+    LTV v0[e10], $30(a0)  // load diagonal 5
+    LTV v0[e8], $40(a0)   // load diagonal 4
+    LTV v0[e6], $50(a0)   // load diagonal 3
+    LTV v0[e4], $60(a0)   // load diagonal 2
+    LTV v0[e2], $70(a0)   // load diagonal 1
+
+    SWV v0[e0], $00(a0)   // store column 0 to row 0
+    SWV v1[e2], $10(a0)   // store column 1 to row 1
+    SWV v2[e4], $20(a0)   // store column 2 to row 2
+    SWV v3[e6], $30(a0)   // store column 3 to row 3
+    SWV v4[e8], $40(a0)   // store column 4 to row 4
+    SWV v5[e10], $50(a0)  // store column 5 to row 5
+    SWV v5[e12], $60(a0)  // store column 6 to row 6
+    SWV v5[e14], $70(a0)  // store column 7 to row 7
 
 8-bit packed loads and stores
 -----------------------------
@@ -280,18 +315,17 @@ mapped into the 16-bit lanes. Signed opcodes (`LPV`, `SPV`) map the value to bit
 value to bits `(14..7)`. Load instructions zero the bits outside the mapped range, while
 store instructions effectively ignore the other bits.
 
-One way to think about the packed loads are as 128-bit loads that are then shuffled into
-lanes based on alignment and element. After aligning the address `GPR[base] + (offset * 8)`
-to the 8-byte boundary below, 128 bits starting from that boundary are read. Then, that
-128-bit value is rotated left by the amount the address is unaligned, and right by `element`
-bytes. The leftmost 8 bytes are then mapped to the appropriate bits of the 8 16-bit lanes.
+One way to think about the packed loads are as 128-bit loads that are then rotated based
+on alignment and element. After aligning the address `GPR[base] + (offset * 8)` to the
+64-bit boundary below, 128 bits starting from that boundary are read. Then, that 128-bit
+value is rotated left by the amount the address is unaligned, and right by `element`
+bytes. The leftmost 8 bytes are mapped to the appropriate bits of the 8 16-bit lanes.
 
 The packed stores generally behave as you would expect, mapping the appropriate bits of
-each lane to consecutive bytes in memory, starting with the lane specified by `element`
-and wrapping addresses at the second 8-byte boundary. However, instead of wrapping at 8 lanes,
-packed stores wrap at 16, and change the mapping bits for "lanes" 8-15. `SPV` when a lane
-index is in the range `[8..15]` behaves like `SUV` when its lane index is in the range
-`[0..7]`, and vice versa.
+each lane to consecutive bytes in memory, starting with the lane specified by `element`.
+However, instead of wrapping at 8 lanes, packed stores wrap at 16, and change the mapping
+bits for "lanes" 8-15. `SPV` when a lane index is in the range `[8..15]` behaves like `SUV`
+when its lane index is in the range `[0..7]`, and vice versa.
 
 For instance:
 
@@ -321,7 +355,7 @@ Similar to (`LUV`, `SUV`), these handle unsigned values, and map each value to b
 the mapped range, while store instructions effectively ignore the other bits.
 
 Like the 8-bit packed loads, the strided loads can be viewed as 128-bit loads from
-`GPR[base] + (offset * 8)` that are then shuffled based on alignment and element.
+`GPR[base] + (offset * 16)` that are then rotated based on alignment and element.
 After loading and shifting as above, however, instead of loading the leftmost 8 bytes
 into the lanes, every other byte, in the case of `LHV`, and every fourth byte
 (repeated in a pattern), in the case of `LFV`, are used.
@@ -335,12 +369,12 @@ replaced with the corresponding bits of this temporary.
 `SHV` stores the appropriate bits of each lane into every other byte in memory, like
 `SUV`. However, instead of storing one lane at a time starting from lane `element`,
 it stores every other byte in the register, beginning at byte index `element`
-(after rotating the entire register left by one to byte-align the mapping). Addresses
-are still wrapped at the second 8-byte boundary.
+(after rotating the entire register left by one bit to align the mapping). Addresses
+are wrapped at the second 64-bit boundary.
 
 `SFV` is more complex. `element` is used to change which lanes are stored from the
 register, according to the table below. If `element` is not one of those listed, then
-4 zero bytes are stored instead. Addresses are wrapped at the second 8-byte boundary.
+4 zero bytes are stored instead. Addresses also wrap at the second 64-bit boundary.
 
 | `element` | Byte 0 | Byte 1 | Byte 2 | Byte 3 |
 | --- | --- | --- | --- | --- |
@@ -1214,7 +1248,7 @@ Vector select merge:
 For each lane, this instruction selects one of its operands based on the
 value of `VCC` for that lane. The values of `VCC`, `VCO`, and `VCE` remain
 unchanged. Note that only the lower 8 bits of `VCC` are considered.
-    
+
 Pseudo-code:
 
     for i in 0..7
