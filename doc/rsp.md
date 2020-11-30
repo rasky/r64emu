@@ -356,36 +356,29 @@ the mapped range, while store instructions effectively ignore the other bits.
 
 Like the 8-bit packed loads, the strided loads can be viewed as 128-bit loads from
 `GPR[base] + (offset * 16)` that are then rotated based on alignment and element.
-After loading and shifting as above, however, instead of loading the leftmost 8 bytes
+After loading and rotating as above, however, instead of mapping the leftmost 8 bytes
 into the lanes, every other byte, in the case of `LHV`, and every fourth byte
 (repeated in a pattern), in the case of `LFV`, are used.
 
 `LFV`, since it doesn't write an entire register, behaves differently from other loads
-at this last step. It first creates a new 128-bit temporary by loading `(14..7)` of each
-lane in the pattern `0,4,8,12,8,12,0,4` from the loaded and shuffled value. 64 bits of
-the original register starting at byte index `element` (NOT wrapping around) are then
-replaced with the corresponding bits of this temporary.
+at this last step. It first creates a new 128-bit temporary, and loads `(14..7)` of each
+lane in the temporary from a different byte in the rotated value, using the pattern
+`0,4,8,12,8,12,0,4`. 64 bits of the original register starting at byte index `element`
+(NOT wrapping around) are then replaced with the corresponding bits of this temporary.
 
 `SHV` stores the appropriate bits of each lane into every other byte in memory, like
 `SUV`. However, instead of storing one lane at a time starting from lane `element`,
 it stores every other byte in the register, beginning at byte index `element`
-(after rotating the entire register left by one bit to align the mapping). Addresses
-are wrapped at the second 64-bit boundary.
+(after rotating the entire register left by one bit to align the mapping). Mapping
+bits are not affected by `element`, and addresses wrap at the second 64-bit boundary.
 
-`SFV` is more complex. `element` is used to change which lanes are stored from the
-register, according to the table below. If `element` is not one of those listed, then
-4 zero bytes are stored instead. Addresses also wrap at the second 64-bit boundary.
-
-| `element` | Byte 0 | Byte 1 | Byte 2 | Byte 3 |
-| --- | --- | --- | --- | --- |
-| 0x0 | VPR<0> | VPR<1> | VPR<2> | VPR<3> |
-| 0x1 | VPR<6> | VPR<7> | VPR<4> | VPR<5> |
-| 0x4 | VPR<1> | VPR<2> | VPR<3> | VPR<0> |
-| 0x5 | VPR<7> | VPR<4> | VPR<5> | VPR<6> |
-| 0x8 | VPR<4> | VPR<5> | VPR<6> | VPR<7> |
-| 0xb | VPR<3> | VPR<0> | VPR<1> | VPR<2> |
-| 0xc | VPR<5> | VPR<6> | VPR<7> | VPR<4> |
-| 0xf | VPR<0> | VPR<1> | VPR<2> | VPR<3> |
+`SFV` is more complex. It first creates a new 128-bit temporary, and loads each byte
+of the temporary from `(14..7)` of a different lane in the source register, using the
+pattern `0,6,X,X,1,7,X,X,2,4,X,X,3,5,X,X` (`X` repesents a zeroed byte). It then
+increments `element` values in the range `[8..15]` by 1, so they become `[9..15,0]`.
+Finally, every fourth byte of the temporary, beginning at byte index `element`,
+is written to every fourth byte in memory, with addresses wrapping at the second 64-bit
+boundary.
 
 For instance:
 
