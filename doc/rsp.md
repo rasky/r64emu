@@ -212,8 +212,9 @@ to help implementing the transposition of a matrix:
 
 | Insn | `opcode` | Desc |
 | --- | --- | --- |
-| `LTV` | 0x08 | load 8 lanes from 8 different registers |
-| `STV` | 0x08 | store 8 lanes to 8 different registers  |
+| `LTV` | 0x0B | load 8 lanes to 8 different registers |
+| `STV` | 0x0B | store 8 lanes from 8 different registers |
+| `SWV` | 0x0A | store 16 bytes into vector, wrapped |
 
 The 8-registers group is identified by `vt`, ignoring the last 3 bits. This means
 that the 32 registers are logically divided into 4 groups (0-7, 8-15, 16-23, 24-31).
@@ -221,10 +222,13 @@ that the 32 registers are logically divided into 4 groups (0-7, 8-15, 16-23, 24-
 The lanes affected within the register group are laid out in *diagonal* layout; for
 instance, if `vt` is zero, the lanes will be: `VREG[0]<0>`, `VREG[1]<1>`, ...,
 `VREG[7]<7>`. `element(3..1)` specifies the first register affected within the
-register group, and thus identifies the diagonal (`element(0)` is ignored).
+register group, and thus identifies the diagonal. For instance, if `vt` is 0 and
+`element(3..1)` is 5, the lanes will be: `VREG[5]<0>`, `VREG[6]<1>`, `VREG[7]<2>`,
+`VREG[0]<3>`, etc. Notice that `element(0)` is ignored.
 
 The following table shows the numbering of the 8 diagonals present in a 8-registers
-group; each cell of the table contains the diagonal that lane belongs to:
+group; each cell of the table contains the diagonal that lane belongs to (and thus
+shows which `element(3..1)` value will trigger an access to it):
 
 | Reg | Lane 0 | Lane 1 | Lane 2 | Lane 3 | Lane 4 | Lane 5 | Lane 6 | Lane 7 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -243,13 +247,16 @@ second 64-bit boundary. For instance, `STV v0[e2],$1E(r0)` writes diagonal 1, st
 with `VPR[1]<0>`, to the following addresses: `$1E`, `$20`, `$22`, `$24`, `$26`, `$18`,
 `$1A`, `$1C`.
 
-`LTV` reads 128 bits from `(GPR[base] + (offset * 16)) & 0xFF8`, rotates them left by
-`element + (address & 0x8)` bytes, then loads the leftmost 16 bits into lane 0 of the
-specified diagonal, the next 16 bits into lane 1, and so on. If `element(0)` is 0
-and the address is 128-bit aligned, this has the effect of reading the given diagonal
-starting from register `v0` of the register group. For instance, `LTV v0[e2],$1E(r0)`
-reads diagonal 1, starting with `VPR[0]<7>`, from the following addresses: `$20`, `$22`,
-`$24`, `$26`, `$18`, `$1A`, `$1C`, `$1E`.
+`LTV` fetches two subsequent 64-bit aligned words, starting from `(GPR[base] + (offset
+* 16)) & 0xFF8`, and combines them into a 128-bit intermediate value called `W`, that
+will be used to populate the diagonal. The highest half in `W` is populated with the
+only 64-bit word among the two whose address is also 128-bit aligned. Lane 0 of the
+diagonal is then populated with the 16 bits in `W ` starting at byte offset `element(3..0)`
+(`W[element(3..0)..element(3..0)+1]`). Subsequent lanes are populated with subsequent
+16 bits words in `W`, wrapping around within `W`. For instance `LTV v0[e3],$1E(r0)`
+reads diagonal 1, starting with `VPR[1]<0>`, from `DMEM[$23..$24]`, `DMEM[$25..$26]`,
+`DMEM[$27,$18]`, `DMEM[$19..$1A]`, `DMEM[$1B..$1C]`, `DMEM[$1D..$1E]`, `DMEM[$1F..$20]`,
+`DMEM[$21..$22]`.
 
 By combining `STV` and `LTV`, it is possible to transpose a matrix because diagonals
 are symmetric; for instance, assuming a 8x8 matrix is stored in `VPR[0..7]<0..7>`,
@@ -272,11 +279,12 @@ the following sequence transposes it:
     LTV v0[e4],$60(a0)  // load back diagonal 6 into diagonal 2
     LTV v0[e2],$70(a0)  // load back diagonal 7 into diagonal 1
 
-It is also possible to transpose a matrix stored in memory by combining `LTV` and `SWV`.
-`SWV` is much simpler than the other transpose instructions, and simply rotates `vt`
-left by `element` bytes before storing it to the address `GPR[base] + (offset * 16)`,
-wrapping at the second 64-bit boundary. The following sequence transposes a
-matrix stored at `$00(a0)..$7F(a0)`:
+It is also possible to transpose a matrix stored in memory by combining `LTV` and
+`SWV`. `SWV` is much simpler than the other transpose instructions. It writes byte
+`element(3..0)` of `vt` to the address `GPR[base] + (offset * 16)`, and writes
+subsequent bytes of `vt` to subsequent addresses, wrapping around within `vt`.
+Addresses also wrap at the second 64-bit boundary. The following sequence transposes
+a matrix stored at `$00(a0)..$7F(a0)`:
 
     // a0 is 128-bit aligned
     LTV v0[e0], $00(a0)   // load diagonal 0
@@ -410,7 +418,7 @@ extending to 64 bits.
 `ctc2` moves the lower 16 bits of GPR `rt` into the control register
 specified by `vs`, while `cfc2` does the reverse, moving the control register
 specified by `vs` into GPR `rt`, sign extending to 64 bits. Note that both
-`ctc2` and `cfc2` ignore the `elem` field. For these instructions, the
+`ctc2` and `cfc2` ignore the `vs_elem` field. For these instructions, the
 control register is specified as follows:
 
 | `vs` | Register |
@@ -433,32 +441,6 @@ a single lane of a single output register (`VD<vd_elem>`). Only the lowest 3
 bits of `vt_elem` and `vd_elem` are used to compute the source lane `se` and destination
 lane `de`, respectively.
 
-For all single-lane instructions, `vt_elem` is further used as a "broadcast modifier",
-(as in other SIMD architectures) that modifies `vt`, duplicating some lanes and hiding
-others. All 4 bits of `vt_elem` are used for this purpose. Note that the broadcast
-modifier `vt_elem` affects the value of `VT` whenever it is used within an instruction,
-but these modifications are not written back - that is, from the point of view of other
-instructions the value of `VT` remains the same.
-
-| `element` | Lanes being accessed | Description |
-| --- | --- | --- |
-| 0 | 0,1,2,3,4,5,6,7 | Normal register access (no broadcast) |
-| 1 | 0,1,2,3,4,5,6,7 | Normal register access (no broadcast) |
-| 2 | 0,0,2,2,4,4,6,6 | Broadcast 4 of 8 lanes |
-| 3 | 1,1,3,3,5,5,7,7 | Broadcast 4 of 8 lanes |
-| 4 | 0,0,0,0,4,4,4,4 | Broadcast 2 of 8 lanes |
-| 5 | 1,1,1,1,5,5,5,5 | Broadcast 2 of 8 lanes |
-| 6 | 2,2,2,2,6,6,6,6 | Broadcast 2 of 8 lanes |
-| 7 | 3,3,3,3,7,7,7,7 | Broadcast 2 of 8 lanes |
-| 8 | 0,0,0,0,0,0,0,0 | Broadcast single lane |
-| 9 | 1,1,1,1,1,1,1,1 | Broadcast single lane |
-| 10 | 2,2,2,2,2,2,2,2 | Broadcast single lane |
-| 11 | 3,3,3,3,3,3,3,3 | Broadcast single lane |
-| 12 | 4,4,4,4,4,4,4,4 | Broadcast single lane |
-| 13 | 5,5,5,5,5,5,5,5 | Broadcast single lane |
-| 14 | 6,6,6,6,6,6,6,6 | Broadcast single lane |
-| 15 | 7,7,7,7,7,7,7,7 | Broadcast single lane |
-
 VMOV
 ----
 Copy a lane from `vt` to `vd`, after broadcast:
@@ -470,7 +452,9 @@ Pseudo-code:
     VD<de> = VT<de>
 
 As a side-effect, `ACCUM_LO` is loaded with `VT`. Note that the source and destination
-lanes are both `de`, and `vt_elem` is being used as a broadcast modifier.
+lanes are both `de`, and `vt_elem` is only being used as a broadcast modifier. See the
+section on computational instructions for more details about how `vt_elem` modifies
+how `vt` is accessed.
 
 VRCP
 ----
@@ -681,10 +665,26 @@ Instructions have this general format:
 
 where `element` is a "broadcast modifier" (as found in other SIMD
 architectures), that modifies the access to `vt` duplicating some
-lanes and hiding others. See the above section on single-lane
-instructions for more details about how `element` can be used to
-modify how `vt` is accessed. The broadcast modifier is used by
-all RSP computational instructions, whenever `vt` is read.
+lanes and hiding others.
+
+| `element` | Lanes being accessed | Description |
+| --- | --- | --- |
+| 0 | 0,1,2,3,4,5,6,7 | Normal register access (no broadcast) |
+| 1 | 0,1,2,3,4,5,6,7 | Normal register access (no broadcast) |
+| 2 | 0,0,2,2,4,4,6,6 | Broadcast 4 of 8 lanes |
+| 3 | 1,1,3,3,5,5,7,7 | Broadcast 4 of 8 lanes |
+| 4 | 0,0,0,0,4,4,4,4 | Broadcast 2 of 8 lanes |
+| 5 | 1,1,1,1,5,5,5,5 | Broadcast 2 of 8 lanes |
+| 6 | 2,2,2,2,6,6,6,6 | Broadcast 2 of 8 lanes |
+| 7 | 3,3,3,3,7,7,7,7 | Broadcast 2 of 8 lanes |
+| 8 | 0,0,0,0,0,0,0,0 | Broadcast single lane |
+| 9 | 1,1,1,1,1,1,1,1 | Broadcast single lane |
+| 10 | 2,2,2,2,2,2,2,2 | Broadcast single lane |
+| 11 | 3,3,3,3,3,3,3,3 | Broadcast single lane |
+| 12 | 4,4,4,4,4,4,4,4 | Broadcast single lane |
+| 13 | 5,5,5,5,5,5,5,5 | Broadcast single lane |
+| 14 | 6,6,6,6,6,6,6,6 | Broadcast single lane |
+| 15 | 7,7,7,7,7,7,7,7 | Broadcast single lane |
 
 This is the list of opcodes in this group:
 
