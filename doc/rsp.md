@@ -1,12 +1,12 @@
 RSP
 ===
-RSP (Reality Signal Processor) is the name of the computation units used
-for mathematical calculations.
 
-It is made by a stripped-down R4300 core (without a few more advanced opcodes)
-referred to as Scalar Unit (SU), composed with a coprocessor (configured as
-COP2) that can perform SIMD operations on a separate set of vector registers,
-reffered to as Vector Unit (VU).
+Within the Nintendo 64, the RSP (Reality Signal Processor) is the name of the
+computation units used for mathematical calculations. It is made by a
+stripped-down R4300 core (without a few more advanced opcodes) referred to as
+the Scalar Unit (SU), composed with a coprocessor (configured as COP2) that can
+perform SIMD operations on a separate set of vector registers, referred to
+as the Vector Unit (VU).
 
 RSP has two different banks of onboard 0-stalls dedicated memories: IMEM (4KB)
 for instructions, and DMEM (4KB) for data. It has no external memory buses but has
@@ -99,7 +99,7 @@ Loads and stores
 The instructions perform a load/store from DMEM into/from a vector register.
 
 * `base` is the index of a scalar register used as base for the memory access
-* `offset` is an signed offset added to the value of the base register (with
+* `offset` is a signed offset added to the value of the base register (with
 some scaling, depending on the actual instruction).
 * `vt` is the vector register.
 * `element` is used to index a specific byte/word within the vector register,
@@ -112,15 +112,15 @@ These instructions can be used to load/store up to 64 bits of data to/from
 a register vector:
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
-| LBV | 0x00 | load 1 byte into vector |
-| SBV | 0x00 | store 1 byte from vector |
-| LSV | 0x01 | load (up to) 2 bytes into vector |
-| SSV | 0x01 | store 2 bytes from vector |
-| LLV | 0x02 | load (up to) 4 bytes into vector |
-| SLV | 0x02 | store 4 bytes from vector |
-| LDV | 0x03 | load (up to) 8 bytes into vector |
-| SDV | 0x03 | store 8 bytes from vector |
+| --- | --- | --- |
+| `LBV` | 0x00 | load 1 byte into vector |
+| `SBV` | 0x00 | store 1 byte from vector |
+| `LSV` | 0x01 | load (up to) 2 bytes into vector |
+| `SSV` | 0x01 | store 2 bytes from vector |
+| `LLV` | 0x02 | load (up to) 4 bytes into vector |
+| `SLV` | 0x02 | store 4 bytes from vector |
+| `LDV` | 0x03 | load (up to) 8 bytes into vector |
+| `SDV` | 0x03 | store 8 bytes from vector |
 
 The address in DMEM is computed as `GPR[base] + (offset * access_size)`, where
 `access_size` is the number of bytes being accessed (eg: 4 for `SLV`). The
@@ -147,7 +147,7 @@ These instructions can be used to load up to 128 bits of data to a register
 vector:
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
+| --- | --- | --- |
 | `LQV` | 0x04 | load (up to) 16 bytes into vector, left-aligned |
 | `LRV` | 0x05 | load (up to) 16 bytes into vector, right-aligned |
 
@@ -157,8 +157,8 @@ instance, this code will fill `v0` with 128 bits of data starting at the
 possibly-unaligned `$08(a0)`.
 
     // a0 is 128-bit aligned in this example
-    LQV v0[e0],$08(a0)     // read bytes $08(a0)-$0F(a0) into left part of the vector (VPR[vt][0..7])
-    LRV v0[e0],$18(a0)     // read bytes $10(a0)-$17(a0) into right part of the vector (VPR[vt][8..15])
+    LQV v0[e0],$08(a0)     // read bytes $08(a0)-$0F(a0) into left part of the vector (VPR[0][0..7])
+    LRV v0[e0],$18(a0)     // read bytes $10(a0)-$17(a0) into right part of the vector (VPR[0][8..15])
 
 Notice that if the data is 128-bit aligned, `LQV` is sufficient to read the
 whole vector (`LRV` in this case is redundant because it becomes a no-op).
@@ -176,8 +176,8 @@ loaded with the instruction pair is `VPR[vt][element..15]`. Thus a non-zero
 element means that fewer bytes are loaded; for instance, this code loads 12
 unaligned bytes into the lower part of the vector starting at byte 4:
 
-    LQV v1[e4],$08(a0)     // read bytes $08(a0)-$0F(a0) into VPR[vt][4..11]
-    LRV v1[e4],$18(a0)     // read bytes $10(a0)-$13(a0) into VPR[vt][12..15]
+    LQV v1[e4],$08(a0)     // read bytes $08(a0)-$0F(a0) into VPR[1][4..11]
+    LRV v1[e4],$18(a0)     // read bytes $10(a0)-$13(a0) into VPR[1][12..15]
 
 128-bit vector stores
 ---------------------
@@ -185,7 +185,7 @@ These instructions can be used to load up to 128 bits of data to a register
 vector:
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
+| --- | --- | --- |
 | `SQV` | 0x04 | store (up to) 16 bytes into vector, left-aligned |
 | `SRV` | 0x05 | store (up to) 16 bytes into vector, right-aligned |
 
@@ -211,41 +211,58 @@ These instructions are used to read/write lanes across a group of registers,
 to help implementing the transposition of a matrix:
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
-| `LTV` | 0x08 | load 8 lanes from 8 different registers |
-| `STV` | 0x08 | store 8 lanes to 8 different registers  |
+| --- | --- | --- |
+| `LTV` | 0x0B | load 8 lanes to 8 different registers |
+| `STV` | 0x0B | store 8 lanes from 8 different registers |
+| `SWV` | 0x0A | store 16 bytes into vector, wrapped |
 
 The 8-registers group is identified by `vt`, ignoring the last 3 bits. This means
 that the 32 registers are logically divided into 4 groups (0-7, 8-15, 16-23, 24-31).
 
 The lanes affected within the register group are laid out in *diagonal* layout; for
 instance, if `vt` is zero, the lanes will be: `VREG[0]<0>`, `VREG[1]<1>`, ...,
-`VREG[7]<7>`. `element(3..1)` specifies the lane affected in the first register of
-the register group, and thus identifies the diagonal (`element(0)` is ignored). 
+`VREG[7]<7>`. `element(3..1)` specifies the first register affected within the
+register group, and thus identifies the diagonal. For instance, if `vt` is 0 and
+`element(3..1)` is 5, the lanes will be: `VREG[5]<0>`, `VREG[6]<1>`, `VREG[7]<2>`,
+`VREG[0]<3>`, etc. Notice that `element(0)` is ignored.
 
 The following table shows the numbering of the 8 diagonals present in a 8-registers
-group; each cell of the table contains the diagonal that lane belongs to:
+group; each cell of the table contains the diagonal that lane belongs to (and thus
+shows which `element(3..1)` value will trigger an access to it):
 
 | Reg | Lane 0 | Lane 1 | Lane 2 | Lane 3 | Lane 4 | Lane 5 | Lane 6 | Lane 7 |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `v0` | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-| `v1` | 7 | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
-| `v2` | 6 | 7 | 0 | 1 | 2 | 3 | 4 | 5 |
-| `v3` | 5 | 6 | 7 | 0 | 1 | 2 | 3 | 4 |
-| `v4` | 4 | 5 | 6 | 7 | 0 | 1 | 2 | 3 |
-| `v5` | 3 | 4 | 5 | 6 | 7 | 0 | 1 | 2 |
-| `v6` | 2 | 3 | 4 | 5 | 6 | 7 | 0 | 1 |
-| `v7` | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 0 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `v0` | 0 | 7 | 6 | 5 | 4 | 3 | 2 | 1 |
+| `v1` | 1 | 0 | 7 | 6 | 5 | 4 | 3 | 2 |
+| `v2` | 2 | 1 | 0 | 7 | 6 | 5 | 4 | 3 |
+| `v3` | 3 | 2 | 1 | 0 | 7 | 6 | 5 | 4 |
+| `v4` | 4 | 3 | 2 | 1 | 0 | 7 | 6 | 5 |
+| `v5` | 5 | 4 | 3 | 2 | 1 | 0 | 7 | 6 |
+| `v6` | 6 | 5 | 4 | 3 | 2 | 1 | 0 | 7 |
+| `v7` | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
 
-The address in DMEM from which the first lane is read/write is `GPR[base] + offset*16`;
-following lanes are read/written from subsequent memory addresses, wrapping around at the
-second 64-bit boundary. For instance, `LTV v0[e0],$1E(r0)` reads the lanes from the
-following addresses: `$1E`, `$20`, `$22`, `$24`, `$26`, `$18`, `$1C`.
+`STV` writes lane 0 of the specified diagonal to the address `GPR[base] + (offset * 16)`;
+following lanes are written to subsequent memory addresses, wrapping around at the
+second 64-bit boundary. For instance, `STV v0[e2],$1E(r0)` writes diagonal 1, starting
+with `VPR[1]<0>`, to the following addresses: `$1E`, `$20`, `$22`, `$24`, `$26`, `$18`,
+`$1A`, `$1C`.
 
-By combining `LTV` and `STV`, it is possible to transpose a matrix because diagonals
+`LTV` fetches two subsequent 64-bit aligned words, starting from `(GPR[base] + (offset
+* 16)) & 0xFF8`, and combines them into a 128-bit intermediate value called `W`, that
+will be used to populate the diagonal. The highest half in `W` is populated with the
+only 64-bit word among the two whose address is also 128-bit aligned. Lane 0 of the
+diagonal is then populated with the 16 bits in `W ` starting at byte offset `element(3..0)`
+(`W[element(3..0)..element(3..0)+1]`). Subsequent lanes are populated with subsequent
+16 bits words in `W`, wrapping around within `W`. For instance `LTV v0[e3],$1E(r0)`
+reads diagonal 1, starting with `VPR[1]<0>`, from `DMEM[$23..$24]`, `DMEM[$25..$26]`,
+`DMEM[$27,$18]`, `DMEM[$19..$1A]`, `DMEM[$1B..$1C]`, `DMEM[$1D..$1E]`, `DMEM[$1F..$20]`,
+`DMEM[$21..$22]`.
+
+By combining `STV` and `LTV`, it is possible to transpose a matrix because diagonals
 are symmetric; for instance, assuming a 8x8 matrix is stored in `VPR[0..7]<0..7>`,
 the following sequence transposes it:
 
+    // a0 is 128-bit aligned
     STV v0[e2],$10(a0)  // store diagonal 1
     STV v0[e4],$20(a0)  // store diagonal 2
     STV v0[e6],$30(a0)  // store diagonal 3
@@ -254,13 +271,39 @@ the following sequence transposes it:
     STV v0[e12],$60(a0) // store diagonal 6
     STV v0[e14],$70(a0) // store diagonal 7
 
-    LTV v0[e2],$12(a0)  // load back diagonal 1 into diagonal 7
-    LTV v0[e4],$24(a0)  // load back diagonal 2 into diagonal 6
-    LTV v0[e6],$36(a0)  // load back diagonal 3 into diagonal 5
-    LTV v0[e8],$48(a0)  // load back diagonal 4 into diagonal 4
-    LTV v0[e10],$5a(a0)  // load back diagonal 5 into diagonal 3
-    LTV v0[e12],$6c(a0)  // load back diagonal 6 into diagonal 2
-    LTV v0[e14],$7e(a0)  // load back diagonal 7 into diagonal 1
+    LTV v0[e14],$10(a0) // load back diagonal 1 into diagonal 7
+    LTV v0[e12],$20(a0) // load back diagonal 2 into diagonal 6
+    LTV v0[e10],$30(a0) // load back diagonal 3 into diagonal 5
+    LTV v0[e8],$40(a0)  // load back diagonal 4 into diagonal 4
+    LTV v0[e6],$50(a0)  // load back diagonal 5 into diagonal 3
+    LTV v0[e4],$60(a0)  // load back diagonal 6 into diagonal 2
+    LTV v0[e2],$70(a0)  // load back diagonal 7 into diagonal 1
+
+It is also possible to transpose a matrix stored in memory by combining `LTV` and
+`SWV`. `SWV` is much simpler than the other transpose instructions. It writes byte
+`element(3..0)` of `vt` to the address `GPR[base] + (offset * 16)`, and writes
+subsequent bytes of `vt` to subsequent addresses, wrapping around within `vt`.
+Addresses also wrap at the second 64-bit boundary. The following sequence transposes
+a matrix stored at `$00(a0)..$7F(a0)`:
+
+    // a0 is 128-bit aligned
+    LTV v0[e0], $00(a0)   // load diagonal 0
+    LTV v0[e14], $10(a0)  // load diagonal 7
+    LTV v0[e12], $20(a0)  // load diagonal 6
+    LTV v0[e10], $30(a0)  // load diagonal 5
+    LTV v0[e8], $40(a0)   // load diagonal 4
+    LTV v0[e6], $50(a0)   // load diagonal 3
+    LTV v0[e4], $60(a0)   // load diagonal 2
+    LTV v0[e2], $70(a0)   // load diagonal 1
+
+    SWV v0[e0], $00(a0)   // store column 0 to row 0
+    SWV v1[e2], $10(a0)   // store column 1 to row 1
+    SWV v2[e4], $20(a0)   // store column 2 to row 2
+    SWV v3[e6], $30(a0)   // store column 3 to row 3
+    SWV v4[e8], $40(a0)   // store column 4 to row 4
+    SWV v5[e10], $50(a0)  // store column 5 to row 5
+    SWV v5[e12], $60(a0)  // store column 6 to row 6
+    SWV v5[e14], $70(a0)  // store column 7 to row 7
 
 8-bit packed loads and stores
 -----------------------------
@@ -268,7 +311,7 @@ These instructions can be used to load or store distinct 8-bit signed/unsigned v
 into a vector register, moving each 8-bit value into/from each own lane.
 
 | Insn | `opcode` | Desc |
-| :---: | :---: | --- |
+| --- | --- | --- |
 | `LPV` | 0x06 | load 8 signed 8-bit values into 8 lanes |
 | `LUV` | 0x07 | load 8 unsigned 8-bit values into 8 lanes |
 | `SPV` | 0x06 | store 8 signed 8-bit values from 8 lanes |
@@ -280,24 +323,88 @@ mapped into the 16-bit lanes. Signed opcodes (`LPV`, `SPV`) map the value to bit
 value to bits `(14..7)`. Load instructions zero the bits outside the mapped range, while
 store instructions effectively ignore the other bits.
 
-The actual bytes accessed in DMEM start at `GPR[base] + (offset * 8)`, but they wrap around
-at the 64-bit (8-byte) boundary. `element` is used to select the first lane being accessed
-by the instruction (lane accesses also wrap around). 
+The packed loads first create a 128-bit intermediate value `W` by reading 16 bytes in
+DMEM, starting from `GPR[base] + (offset * 8)` and wrapping at the at the second 64-bit
+(8-byte) boundary. The first byte read is loaded into byte offset `element` of `W`, with
+subsequent byte offsets wrapping around within `W`. Bytes `(0..7)` of `W` are then mapped
+to the appropriate bits of each 16-bit lane within the target register.
+
+The packed stores generally behave as you would expect, mapping the appropriate bits of
+each lane to consecutive bytes in memory, starting with the lane specified by `element`.
+However, instead of wrapping at 8 lanes, packed stores wrap at 16, and change the mapping
+bits for "lanes" 8-15. `SPV` when a lane index is in the range `[8..15]` behaves like `SUV`
+when its lane index is in the range `[0..7]`, and vice versa.
 
 For instance:
 
-	// a0 is 64-bit aligned
-	LUV v1[e2],$06(a0)     // load bytes $06(a0)-$07(a0) into VPR[1]<2..3>, and then $00(a0)-$05(a0) into VPR[1]<4..7,0..1>
+    // a0 is 64-bit aligned
+    LUV v1[e5],$02(a0)     // load bytes $00(a0)-$04(a0) into VPR[1]<3..7>,
+                              and $0d(a0)-$0f(a0) into VPR[1]<0..2>
+    SUV v1[e5],$02(a0)     // write bytes $02(a0)-$04(a0) from VPR[1]<5..7> (14..7),
+                              and $05(a0)-$09(a0) from VPR[1]<0..5> (15..8)
 
-If `element` is higher than 8 (so, in the range `[8..15]`), load instructions wrap
-element access around (so basically the highest bit of `element` is ignored), while
-store instructions change the mapping bits, effectively swapping their meaning: `SPV`
-with `element` in the range `[8..15]` is like `SUV` with `element` in the range `[0..7]`,
-and viceversa.
+8-bit strided loads and stores
+------------------------------
+Like the packed load/store instructions, these instructions load or store
+8-bit unsigned values into a vector register, moving each 8-bit value from/into
+each lane. Unlike the packed instructions, however, the addreses of these 8-bit
+values are not consecutive, and instead include every other address or every fourth
+address.
+
+| Insn | `opcode` | Desc |
+| --- | --- | --- |
+| `LHV` | 0x08 | load 8 unsigned 8-bit values into 8 lanes |
+| `LFV` | 0x09 | load 8 unsigned 8-bit values into 8 lanes |
+| `SHV` | 0x08 | store 8 unsigned 8-bit values from 8 lanes |
+| `SFV` | 0x09 | store 8 unsigned 8-bit values from 8 lanes |
+
+Similar to (`LUV`, `SUV`), these handle unsigned values, and map each value to bits
+`(14..7)` of the 16-bit lanes. Load instructions zero the bits of each lane outside
+the mapped range, while store instructions effectively ignore the other bits.
+
+Like the packed loads, the strided loads create an intermediate value `W` by reading 16
+bytes in DMEM, starting from `GPR[base] + (offset * 16)` this time. After loading `W`
+as above, however, instead of mapping the leftmost 8 bytes into the lanes, every other
+byte, in the case of `LHV`, and every fourth byte (repeated in a pattern), in the case
+of `LFV`, are used.
+
+`LFV`, since it doesn't write an entire register, behaves differently from other loads
+at this last step. It creates a second 128-bit temporary, and loads `(14..7)` of each
+lane in this temporary from a different byte in `W`, in the pattern `0,4,8,12,8,12,0,4`.
+64 bits of the original register starting at byte index `element` (NOT wrapping around)
+are then replaced with the corresponding bits of the second temporary.
+
+`SHV` stores the appropriate bits of each lane into every other byte in memory, like
+`SUV`. However, instead of storing one lane at a time starting from lane `element`,
+it stores every other byte in the register, beginning at byte index `element`
+(after rotating the entire register left by one bit to align the mapping). Mapping
+bits are not affected by `element`, and addresses wrap at the second 64-bit boundary.
+
+`SFV` is more complex. It first creates a new 128-bit temporary, and loads each byte
+of the temporary from `(14..7)` of a different lane in the source register, using the
+pattern `0,6,X,X,1,7,X,X,2,4,X,X,3,5,X,X` (`X` repesents a zeroed byte). It then
+increments `element` values in the range `[8..15]` by 1, so they become `[9..15,0]`.
+Finally, every fourth byte of the temporary, beginning at byte index `element`,
+is written to every fourth byte in memory, with addresses wrapping at the second 64-bit
+boundary.
+
+For instance:
+
+    // a0 is 64-bit aligned
+    LHV v1[e7],$06(a0)     // load bytes $01(a0)..$0d(a0) (odd) into VPR[1]<1..7>,
+                              then byte $0f(a0) into VPR[1]<0>
+    SHV v1[e3],$06(a0)     // write bytes $06(a0)..$0e(a0) (even) from VPR[1][3..11] (odd)
+                              then bytes $00(a0)..$04(a0) (even) from VPR[1][13,15,1]
+    LFV v1[e3],$06(a0)     // load byte $07(a0) into VPR[1]<1>
+                              then bytes $0b(a0),$0f(a0) into VPR[1]<2..3>
+                              then bytes $0b(a0),$0f(a0) into VPR[1]<4..5>
+    SFV v1[e5],$06(a0)     // write bytes $06(a0),$0a(a0),$0e(a0) from VPR[1]<7,4,5>
+                              then byte $02(a0) from VPR[1]<6>
 
 
 Vector move instructions
 ========================
+
 | 31..21 | 20..16 | 15..11 | 10..8 | 7..0 |
 | --- | --- | --- | --- | --- |
 | `COP2 Move`| `rt` | `vs` | `vs_elem` | 0 |
@@ -305,8 +412,8 @@ Vector move instructions
 Vector moves follow the same format as other coprocessor moves, but use part of
 the lower 11 bits to specify which lane of the vector register is used. `mtc2`
 moves the lower 16 bits of the general purpose register `rt` to the vector
-register `VS<elem>`, while `mtc2` moves `VS<elem>` to GPR `rt`, sign extending
-to 64 bits.
+register `VS<vs_elem>`, while `mtc2` moves `VS<vs_elem>` to GPR `rt`, sign
+extending to 64 bits.
 
 `ctc2` moves the lower 16 bits of GPR `rt` into the control register
 specified by `vs`, while `cfc2` does the reverse, moving the control register
@@ -315,7 +422,7 @@ specified by `vs` into GPR `rt`, sign extending to 64 bits. Note that both
 control register is specified as follows:
 
 | `vs` | Register |
-|---|---|
+| --- | --- |
 | 0 | `VCO` |
 | 1 | `VCC` |
 | 2 | `VCE` |
@@ -323,52 +430,37 @@ control register is specified as follows:
 
 Single-lane instructions
 ========================
+
 | 31..26 | 25 | 24..21 | 20..16 | 15..11 | 10..6 | 5..0 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `COP2`| 1 | `vd_elem` | `vt` | `vt_elem` | `vd` | `opcode` |
+| `COP2`| 1 | `vt_elem` | `vt` | `vd_elem` | `vd` | `opcode` |
 
 Single-lane instructions are an instruction group that perform operations on a
-single lange of a single input register (`VT<se>`), and store the result into a single
-lane of a single output register (`VD<de>`).
-
-`vt_elem` and `vd_elem` are used to compute `se` and `de` that is to specify which lane,
-respectively of the input and output register, is affected.
-
-`vd_elem` is 4 bits long (range 0..15); the highest bit is always ignored so
-the destination lane `de` is computed from the lowest 3 bits.
-
-`vt_elem` is 5 bits long (range 0..31). `vt_elem(4)` must be zero. When
-`vt_elem(3)` is 1, `vt_elem(2..0)` is actually used as source lane `se`, as expected. When
-`vt_elem(3)` is 0, a hardware bug is triggered and portions of the lower bits of
-`vt_elem` are replaced with portion of the bits of `vd_elem` while computing `se`. Specifically, all
-bits in `vt_elem` from the topmost set bit and higher are replaced with the
-same-position bits in `vt_elem`. Notice that this behaviour is actually consistent
-with what happens when `vt_elem(3)` is 1, which means that there is no need to
-think of it as a special-case. Pseudo-code:
-
-    de(2..0) = vd_elem(2..0)
-    msb = highest_set_bit(vt_elem)
-    se(2..0) = vd_elem(2..msb) || vt_elem(msb-1..0)
-
-TODO: complete analysis for `vt_elem(4)` == 1.
-
+single lange of a single input register (`VT<vt_elem>`), and store the result into
+a single lane of a single output register (`VD<vd_elem>`). Only the lowest 3
+bits of `vt_elem` and `vd_elem` are used to compute the source lane `se` and destination
+lane `de`, respectively.
 
 VMOV
 ----
-Copy the source lane into the destination lane:
+Copy a lane from `vt` to `vd`, after broadcast:
 
-    VMOV vd[de],vs[se]
+    VMOV vd[de],vt[de]
 
 Pseudo-code:
 
-    VD<de> = VS<se>
+    VD<de> = VT<de>
 
+As a side-effect, `ACCUM_LO` is loaded with `VT`. Note that the source and destination
+lanes are both `de`, and `vt_elem` is only being used as a broadcast modifier. See the
+section on computational instructions for more details about how `vt_elem` modifies
+how `vt` is accessed.
 
 VRCP
 ----
 Computes a 32-bit reciprocal of the 16-bit input lane, and store it into the output lane:
 
-    VRCP vd[de],vs[se]
+    VRCP vd[de],vt[se]
 
 The recriprocal is computed using a lookup table of 512 elements of 16-bits each one. The
 table is burnt within an internal ROM of the RSP and cannot be directly accessed nor modified.
@@ -443,7 +535,7 @@ VRSQ
 ----
 Computes a 32-bit reciprocal of the square root of the input lane, and store it into the output lane:
 
-    VRSQ vd[de],vs[se]
+    VRSQ vd[de],vt[se]
 
 The recriprocal of the square root is computed using a lookup table similar to that used by `VRCP`
 (512 elements of 16-bits each one), stored within the same ROM. The higher part of the result is
@@ -512,7 +604,7 @@ VRCPH/VRSQH
 Reads the higher part of the result of a previous 32-bit reciprocal instruction, and
 stores the higher part of the input for a following 32-bit reciprocal.
 
-    VRCPH vd[de],vs[se]
+    VRCPH vd[de],vt[se]
 
 `VRSPH` is meant to be used for the recriprocal of square root, but its beahvior
 is identical to `VRCPH`, as neither perform an actual calculation, and there is
@@ -534,14 +626,13 @@ Pseudo-code:
 
 As a side-effect, `ACCUM_LO` is loaded with `VT` (all lanes).
 
-
 VRCPL/VRSQL
 -----------
 Performs a full 32-bit reciprocal combining the input lane with the special register
 `DIV_IN` that must have been loaded with a previous `VRCPH`/`VRSPH` instruction.
 
-    VRCPL vd[de],vs[se]
-    VRSQL vd[de],vs[se]
+    VRCPL vd[de],vt[se]
+    VRSQL vd[de],vt[se]
 
 The RSP remembers whether `DIV_IN` was loaded or not, by a previous `VRCPH` or `VRSQH`
 instruction. If `VRCPL`/`VRSQL` is executed without `DIV_IN` being loaded, they perform
@@ -601,12 +692,16 @@ This is the list of opcodes in this group:
 | --- | --- |
 | 0x00 | `VMULF` |
 | 0x01 | `VMULU` |
+| 0x02 | `VRNDP` |
+| 0x03 | `VMULQ` |
 | 0x04 | `VMUDL` |
 | 0x05 | `VMUDM` |
 | 0x06 | `VMUDN` |
 | 0x07 | `VMUDH` |
 | 0x08 | `VMACF` |
 | 0x09 | `VMACU` |
+| 0x0A | `VRNDN` |
+| 0x0B | `VMACQ` |
 | 0x0C | `VMADL` |
 | 0x0D | `VMADM` |
 | 0x0E | `VMADN` |
@@ -714,8 +809,8 @@ by saturating to the positive max (0x7FFF).
 Pseudo-code:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-        ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) = sign_extend(prod(31..0) + 0x8000)
         VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
@@ -733,8 +828,8 @@ and it produces 0xFFFF.
 Pseudo-code:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-        ACC<i>(47..0) = sign_extend(prod(32..0) + 0x8000)
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) = sign_extend(prod(31..0) + 0x8000)
         VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
     endfor
 
@@ -759,8 +854,8 @@ while saturating the intermediate high-precision value into the result.
 Pseudo-code:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-        ACC<i>(47..0) += sign_extend(prod(32..0))
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) += sign_extend(prod(31..0))
         VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
@@ -782,8 +877,8 @@ while saturating the intermediate high-precision value into the result.
 Pseudo-code:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
-        ACC<i>(47..0) += sign_extend(prod(32..0))
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0) * 2   // signed multiplication
+        ACC<i>(47..0) += sign_extend(prod(31..0))
         VD<i>(15..0) = clamp_unsigned(ACC<i>(47..16))
     endfor
 
@@ -804,8 +899,8 @@ The full result is stored in the lower 32 bits of the accumulator.
 Pseudo-code for `vmadn`:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
-        ACC<i>(47..0) += sign_extend(prod(32..0))
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
+        ACC<i>(47..0) += sign_extend(prod(31..0))
         VD<i>(15..0) = clamp_unsigned(ACC<i>(31..0))
     endfor
 
@@ -828,14 +923,14 @@ precision. The result is stored in the lower 16 bits of the accumulator.
 Pseudo-code for `vmadl`:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned multiplication
-        ACC<i>(47..0) += prod(32..16)
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned multiplication
+        ACC<i>(47..0) += prod(31..16)
         VD<i>(15..0) = clamp_unsigned(ACC<i>(31..0))
     endfor
 
 The unsigned clamp works the same way as for `vmudn`. `vmudl` operates
 similarly, but clears the accumulator beforehand. Note that the lower bits
-of the product are discarded, and no sign extension is performed.
+of the product are discarded, and no sign extension is performed. 
 
 VMUDM/VMADM
 -----------
@@ -851,8 +946,8 @@ The full result is stored in the lower 32 bits of the accumulator.
 Pseudo-code for `vmadm`:
 
     for i in 0..7
-        prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
-        ACC<i>(47..0) += sign_extend(prod(32..0))
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0)   // unsigned by signed
+        ACC<i>(47..0) += sign_extend(prod(31..0))
         VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
@@ -875,11 +970,80 @@ Pseudo-code for `vmadh`:
 
     for i in 0..7
         prod(32..0) = VS<i>(15..0) * VT<i>(15..0)   // signed multiplication
-        ACC<i>(47..16) += prod(32..0)
+        ACC<i>(47..16) += prod(31..0)
         VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
     endfor
 
 `vmudh` operates similarly, but clears the accumulator beforehand.
+
+VRNDP/VRNDN
+-----------
+
+Vector accumulator MPEG DCT round:
+
+    vrndp vd, vs, vt[e]
+    vrndn vd, vs, vt[e]
+
+For each lane, this instruction computes `VT` shifted left by 16 bits if the
+`VS` field (not the register, but the instruction bits) equals 1. This value
+is then added to the accumulator if and only if the accumulator is positive.
+The upper 32 bits of the accumulator are then clamped and returned.
+
+Pseudo-code for `vrndp`:
+
+    for i in 0..7
+        prod(47..0) = sign_extend(VT<i>(15..0))
+        if VS<i>(0)     => prod(47..0) <<= 16
+        if !ACC<i>(47)  => ACC<i>(47..0) += prod(47..0)
+        VD<i>(15..0) = clamp_signed(ACC<i>(47..16))
+    endfor
+
+`vrndn` behaves similarly, but the value is added to the accumulator if and
+only if the accumulator is negative.
+
+VMULQ
+-----
+
+Vector multiply with MPEG inverse quantization:
+
+    vmulq vd, vs, vt[e]
+
+For each lane, this instruction multiples two signed operands to produce
+a signed result, with negative values rounded up by 31. This result is
+shifted up by 16 bits and loaded in the accumulator. The returned value
+is the result shifted right by 1 bit, clamped, and AND'd with `0xFFF0`.
+
+Pseudo-code:
+
+    for i in 0..7
+        prod(31..0) = VS<i>(15..0) * VT<i>(15..0)  // signed multiplication
+        if prod(31)  => prod(31..0) += 0x1F
+        ACC<i>(47..0) = prod(31..0) << 16
+        VD<i>(15..0) = clamp_signed(prod(31..1)) & 0xFFF0
+    endfor
+
+VMACQ
+-----
+
+Vector accumulator oddification:
+
+    vmacq vd, vs, vt[e]
+
+This instruction ignores its two input operands and performs MPEG-1 oddification
+of bits 16-46 of the accumulator. If the higher 32 bits of the accumulator are
+negative and bit 5 is zero, it rounds up by 32; if the higher 32 bits are
+positive and bit 5 is zero, it rounds down by 32. The returned value are these
+32 bits shifted right by 1 bit, clamped, and AND'd with `0xFFF0`.
+
+Pseudo-code:
+
+    for i in 0..7
+        prod(31..0) = ACC<i>(47..16)
+        if  prod(31) & !prod(5)  => prod(31..0) += 0x1F
+        if !prod(31) & !prod(5)  => prod(31..0) -= 0x1F
+        ACC<i>(47..0) = prod(31..0) << 16
+        VD<i>(15..0) = clamp_signed(prod(31..1)) & 0xFFF0
+    endfor
 
 VSAR
 ----
@@ -1020,9 +1184,9 @@ Pseudo-code for `vch`:
     endfor
 
 `vcr` operates in exactly the same manner as `vch`, but assumes the inputs are
-in 1s complement, rather than 2s complement. This changes the representation of
-`-vt` and how comparison between operands of different sign are carried out,
-but the algorithm remains the same.
+in 1s complement, rather than 2s complement, and clears VCO and VCE at the end.
+This changes the representation of `-vt` and how comparison between operands of
+different sign are carried out, but the general algorithm remains the same.
 
 VCL
 ---
