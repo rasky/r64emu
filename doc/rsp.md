@@ -323,11 +323,11 @@ mapped into the 16-bit lanes. Signed opcodes (`LPV`, `SPV`) map the value to bit
 value to bits `(14..7)`. Load instructions zero the bits outside the mapped range, while
 store instructions effectively ignore the other bits.
 
-One way to think about the packed loads are as 128-bit loads that are then rotated based
-on alignment and element. After aligning the address `GPR[base] + (offset * 8)` to the
-64-bit boundary below, 128 bits starting from that boundary are read. Then, that 128-bit
-value is rotated left by the amount the address is unaligned, and right by `element`
-bytes. The leftmost 8 bytes are mapped to the appropriate bits of the 8 16-bit lanes.
+The packed loads first create a 128-bit intermediate value `W` by reading 16 bytes in
+DMEM, starting from `GPR[base] + (offset * 8)` and wrapping at the at the second 64-bit
+(8-byte) boundary. The first byte read is loaded into byte offset `element` of `W`, with
+subsequent byte offsets wrapping around within `W`. Bytes `(0..7)` of `W` are then mapped
+to the appropriate bits of each 16-bit lane within the target register.
 
 The packed stores generally behave as you would expect, mapping the appropriate bits of
 each lane to consecutive bytes in memory, starting with the lane specified by `element`.
@@ -362,17 +362,17 @@ Similar to (`LUV`, `SUV`), these handle unsigned values, and map each value to b
 `(14..7)` of the 16-bit lanes. Load instructions zero the bits of each lane outside
 the mapped range, while store instructions effectively ignore the other bits.
 
-Like the 8-bit packed loads, the strided loads can be viewed as 128-bit loads from
-`GPR[base] + (offset * 16)` that are then rotated based on alignment and element.
-After loading and rotating as above, however, instead of mapping the leftmost 8 bytes
-into the lanes, every other byte, in the case of `LHV`, and every fourth byte
-(repeated in a pattern), in the case of `LFV`, are used.
+Like the packed loads, the strided loads create an intermediate value `W` by reading 16
+bytes in DMEM, starting from `GPR[base] + (offset * 16)` this time. After loading `W`
+as above, however, instead of mapping the leftmost 8 bytes into the lanes, every other
+byte, in the case of `LHV`, and every fourth byte (repeated in a pattern), in the case
+of `LFV`, are used.
 
 `LFV`, since it doesn't write an entire register, behaves differently from other loads
-at this last step. It first creates a new 128-bit temporary, and loads `(14..7)` of each
-lane in the temporary from a different byte in the rotated value, using the pattern
-`0,4,8,12,8,12,0,4`. 64 bits of the original register starting at byte index `element`
-(NOT wrapping around) are then replaced with the corresponding bits of this temporary.
+at this last step. It creates a second 128-bit temporary, and loads `(14..7)` of each
+lane in this temporary from a different byte in `W`, in the pattern `0,4,8,12,8,12,0,4`.
+64 bits of the original register starting at byte index `element` (NOT wrapping around)
+are then replaced with the corresponding bits of the second temporary.
 
 `SHV` stores the appropriate bits of each lane into every other byte in memory, like
 `SUV`. However, instead of storing one lane at a time starting from lane `element`,
