@@ -421,7 +421,7 @@ impl LogRecordPrinter for PoolRecordPrinter {
     fn print_header(
         &mut self,
         record: &Record,
-        fn_timestamp: &ThreadSafeTimestampFn<Output = io::Result<()>>,
+        fn_timestamp: &dyn ThreadSafeTimestampFn<Output = io::Result<()>>,
     ) -> io::Result<()> {
         let mut pool = self.pool.lock().unwrap();
         self.line.level = record.level().as_usize().try_into().unwrap();

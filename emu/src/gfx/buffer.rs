@@ -167,7 +167,6 @@ impl<'a: 's, 's, CF: ColorFormat, O: ByteOrder> GfxBufferMut<'a, CF, O> {
 }
 
 pub trait BufferLineGetter<CF: ColorFormat> {
-    #[inline(always)]
     fn get(&self, x: usize) -> Color<CF>;
     #[inline(always)]
     fn get2(&self, x: usize) -> (Color<CF>, Color<CF>) {
@@ -184,7 +183,6 @@ pub trait BufferLineGetter<CF: ColorFormat> {
 }
 
 pub trait BufferLineSetter<CF: ColorFormat> {
-    #[inline(always)]
     fn set(&mut self, x: usize, c: Color<CF>);
     #[inline(always)]
     fn set2(&mut self, x: usize, c1: Color<CF>, c2: Color<CF>) {

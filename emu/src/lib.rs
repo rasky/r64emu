@@ -1,10 +1,11 @@
 #![feature(box_syntax)]
 #![feature(step_trait)]
 #![feature(specialization)]
-#![feature(optin_builtin_traits)]
+#![feature(auto_traits)]
 #![feature(pin)]
 #![feature(thread_local)]
 #![feature(integer_atomics)]
+#![feature(negative_impls)]
 
 pub mod bus;
 pub mod dbg;

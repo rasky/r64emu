@@ -30,11 +30,11 @@ pub mod errors {
 mod rdp;
 
 pub mod ai;
-pub mod r4300;
 pub mod cartridge;
 pub mod dp;
 pub mod mi;
 pub mod pi;
+pub mod r4300;
 pub mod ri;
 pub mod si;
 pub mod sp;

@@ -18,16 +18,16 @@ array-macro = "1.0"
 emu_derive = { path="emu-derive", version="0.0.1" }
 slog = "2"
 typenum = "1.10.0"
-imgui = "0.2.1"
-imgui-sys = "^0.2.0"
-imgui-sdl2 = "0.7.0"
-imgui-opengl-renderer = "0.6.0"
+imgui = { version="0.2.1", features=["docking"] }
+imgui-sys = "0.2.1"
+imgui-sdl2 = "0.7"
+imgui-opengl-renderer = { version= "0.6.0" }
 gl = "0.10.0"
-runtime-fmt = "0.4.1"
 rustc-hash = "1.0.1"
 serde = "1.0.82"
 serde_derive = "*"
 serde_bytes = "*"
+string_template = "0.2.1"
 futures = "0.1"
 lz4 = "1.23.1"
 rmp-serde = "0.13.7"
@@ -37,7 +37,7 @@ atty = "0.2.11"
 directories = "1.0"
 indexmap = "1.0.2"
 serde_json = "1.0"
-rusqlite = { version="0.20.0", features=["bundled"] }
+rusqlite = { version="^0", features=["bundled"] }
 tinyfiledialogs = "3.0"
 textwrap = "0.11"
 

@@ -65,7 +65,7 @@ impl<T: Clone> RadixTree<T> {
         beg: u32,
         end: u32,
         shift: usize,
-    ) -> Box<'a + Iterator<Item = &mut Node<T>>> {
+    ) -> Box<dyn 'a + Iterator<Item = &mut Node<T>>> {
         let idx1 = (beg >> shift) as usize;
         let idx2 = (end >> shift) as usize;
         let mask = (1 << shift) - 1;
@@ -98,7 +98,7 @@ impl<T: Clone> RadixTree<T> {
         let (first, mid) = self.nodes[idx1..=idx2].split_at_mut(1);
         let (mid, last) = mid.split_at_mut(idx2 - idx1 - 1);
 
-        let mut iter: Box<Iterator<Item = &mut Node<T>>> = box mid.iter_mut();
+        let mut iter: Box<dyn Iterator<Item = &mut Node<T>>> = box mid.iter_mut();
 
         if beg == 0 {
             iter = box iter.chain(box first.iter_mut());

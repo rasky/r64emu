@@ -49,6 +49,7 @@ features = ["i128"]
 
 [dependencies.packed_simd]
 git = "https://github.com/rust-lang-nursery/packed_simd"
+package = "packed_simd_2"
 features = ["default", "into_bits"]
 
 [dependencies.slog]
@@ -56,10 +57,9 @@ version = "2"
 features = ["nothreads"]
 
 [patch.crates-io]
-# SDL2 fork needed until this PR is merged:
-# https://github.com/Rust-SDL2/rust-sdl2/pull/834
-"sdl2" = { git="https://github.com/rasky/rust-sdl2", branch="master" }
-"imgui-opengl-renderer" = { path="../rust-imgui-opengl-renderer" }
+"imgui" = { path="vendor/imgui-rs" }
+"imgui-sys" = { path="vendor/imgui-rs/imgui-sys" }
+"imgui-sdl2" = { path="vendor/rust-imgui-sdl2" }
 
 [profile.dev]
 overflow-checks = false

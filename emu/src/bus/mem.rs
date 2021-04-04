@@ -35,7 +35,7 @@ impl Default for MemFlags {
     }
 }
 
-type Wcb = Rc<Box<Fn(u32, AccessSize, u64, u64)>>;
+type Wcb = Rc<Box<dyn Fn(u32, AccessSize, u64, u64)>>;
 
 #[derive(Default)]
 pub struct Mem {

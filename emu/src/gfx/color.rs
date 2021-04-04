@@ -286,7 +286,6 @@ pub type Rgba8888 = cf<u32, U32, U8, U0, U8, U8, U8, U16, U8, U24>;
 pub type Abgr8888 = cf<u32, U32, U8, U24, U8, U16, U8, U8, U8, U0>;
 
 pub trait ColorConverter<CF2: ColorFormat>: Sized {
-    #[inline(always)]
     fn cconv(self) -> Color<CF2>;
 }
 

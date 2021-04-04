@@ -36,8 +36,8 @@ impl Default for RegFlags {
     }
 }
 
-type Wcb<U> = Option<Rc<Box<Fn(U, U)>>>;
-type Rcb<U> = Option<Rc<Box<Fn(U) -> U>>>;
+type Wcb<U> = Option<Rc<Box<dyn Fn(U, U)>>>;
+type Rcb<U> = Option<Rc<Box<dyn Fn(U) -> U>>>;
 
 #[derive(Default)]
 pub struct Reg<O, U>

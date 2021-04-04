@@ -1,5 +1,5 @@
-use super::uisupport::{ctext, is_shortcut_pressed, ImGuiListClipper};
-use super::{LogViewCommand, UiCtx, UiCtxLog};
+use super::uisupport::{is_shortcut_pressed, ImGuiListClipper};
+use super::{LogViewCommand, UiCtxLog};
 use crate::log::{LogPool, LogPoolPtr, LogView};
 use sdl2::keyboard::Scancode;
 

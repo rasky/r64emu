@@ -556,8 +556,9 @@ type Deser<'de> = rmp_serde::Deserializer<rmp_serde::decode::ReadReader<&'de [u8
 struct FieldInfo {
     name: String,
     serialize: Box<for<'de> Fn(&mut Ser<'de>, &State) -> Result<(), rmp_serde::encode::Error>>,
-    deserialize:
-        Box<for<'de> FnMut(&mut Deser<'de>, &mut State) -> Result<(), rmp_serde::decode::Error>>,
+    deserialize: Box<
+        dyn for<'de> FnMut(&mut Deser<'de>, &mut State) -> Result<(), rmp_serde::decode::Error>,
+    >,
 }
 
 impl FieldInfo {

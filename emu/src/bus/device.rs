@@ -47,7 +47,7 @@ impl DeviceMap {
     }
     pub fn get_mut_by_tag<D: 'static + Device>(&mut self, tag: &'static str) -> Option<&mut D> {
         self.devices.get_mut(tag).map(|v| {
-            (Pin::get_mut(v.as_mut()) as &mut Any)
+            (Pin::get_mut(v.as_mut()) as &mut dyn Any)
                 .downcast_mut()
                 .unwrap()
         })

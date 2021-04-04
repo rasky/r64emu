@@ -12,10 +12,10 @@ pub(crate) const VREG_NAMES: [&'static str; 32] = [
 
 pub(crate) const ACC_NAMES: [&str; 3] = ["acc_lo", "acc_md", "acc_hi"];
 
-const VMEM_FMT: &'static str = "{}[e{}],{}({})";
-const VMOV_FMT: &'static str = "{}[e{}],{}[e{}]";
-const VREG2_FMT: &'static str = "{},{}[e{}]";
-const VREG3_FMT: &'static str = "{},{},{}[e{}]";
+const VMEM_FMT: &'static str = "{{}}[e{{}}],{{}}({{}})";
+const VMOV_FMT: &'static str = "{{}}[e{{}}],{{}}[e{{}}]";
+const VREG2_FMT: &'static str = "{{}},{{}}[e{{}}]";
+const VREG3_FMT: &'static str = "{{}},{{}},{{}}[e{{}}]";
 
 pub(crate) fn decode(opcode: u32, _pc: u64) -> DecodedInsn {
     use self::Operand::*;

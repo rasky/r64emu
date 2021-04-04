@@ -60,7 +60,7 @@ pub trait ThreadSafeTimestampFn:
 
 impl<F> ThreadSafeTimestampFn for F
 where
-    F: Fn(&mut io::Write) -> io::Result<()> + Send + Sync,
+    F: Fn(&mut dyn io::Write) -> io::Result<()> + Send + Sync,
     F: UnwindSafe + RefUnwindSafe + 'static,
     F: ?Sized,
 {
@@ -78,7 +78,7 @@ pub trait LogRecordPrinter {
     fn print_header(
         &mut self,
         record: &Record,
-        fn_timestamp: &ThreadSafeTimestampFn<Output = io::Result<()>>,
+        fn_timestamp: &dyn ThreadSafeTimestampFn<Output = io::Result<()>>,
     ) -> io::Result<()>;
     fn print_kv<K: fmt::Display, V: fmt::Display>(&mut self, k: K, v: V) -> io::Result<()>;
     fn finish(self) -> io::Result<()>;
@@ -388,7 +388,7 @@ where
     RP: LogPrinter,
 {
     printer: RP,
-    fn_timestamp: Box<ThreadSafeTimestampFn<Output = io::Result<()>>>,
+    fn_timestamp: Box<dyn ThreadSafeTimestampFn<Output = io::Result<()>>>,
     use_original_order: bool,
 }
 
@@ -397,7 +397,7 @@ where
     RP: LogPrinter,
 {
     printer: RP,
-    fn_timestamp: Box<ThreadSafeTimestampFn<Output = io::Result<()>>>,
+    fn_timestamp: Box<dyn ThreadSafeTimestampFn<Output = io::Result<()>>>,
     original_order: bool,
 }
 
@@ -446,7 +446,7 @@ impl<RP: LogPrinter> LogDrain<RP> {
     pub fn new(p: RP) -> LogDrainBuilder<RP> {
         let now = Instant::now();
         LogDrainBuilder {
-            fn_timestamp: Box::new(move |w: &mut io::Write| -> io::Result<()> {
+            fn_timestamp: Box::new(move |w: &mut dyn io::Write| -> io::Result<()> {
                 write!(w, "[{}]", now.elapsed().as_secs())
             }),
             printer: p,

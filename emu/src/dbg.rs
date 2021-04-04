@@ -10,7 +10,6 @@ use imgui_sdl2::ImguiSdl2;
 use imgui_sys::{igSetNextWindowSizeConstraints, ImGuiSizeCallbackData};
 use sdl2::keyboard::Scancode;
 mod uisupport;
-use serde_derive::Deserialize;
 use tinyfiledialogs::save_file_dialog_with_filter;
 
 use std::cell::RefCell;

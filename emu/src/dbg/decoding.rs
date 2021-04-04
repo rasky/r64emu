@@ -1,5 +1,5 @@
 /// Helper classes to write a CPU decoder / disassembler.
-use runtime_fmt::rt_format_args;
+use string_template::Template;
 
 use std::fmt;
 
@@ -262,25 +262,9 @@ impl DecodedInsn {
         let args = self.args().filter(|o| !o.is_hidden()).collect::<Vec<_>>();
 
         if let Some(ref f) = self.fmt {
-            // Custom formatting strings. Use rt_format
-            match args.len() {
-                4 => rt_format_args!(f, args[0], args[1], args[2], args[3])
-                    .unwrap_or(rt_format_args!("<INVALID ARGUMENTS>").unwrap())
-                    .with(|args| format!("{}\t{}", self.op, args)),
-                3 => rt_format_args!(f, args[0], args[1], args[2])
-                    .unwrap_or(rt_format_args!("<INVALID ARGUMENTS>").unwrap())
-                    .with(|args| format!("{}\t{}", self.op, args)),
-                2 => rt_format_args!(f, args[0], args[1])
-                    .unwrap_or(rt_format_args!("<INVALID ARGUMENTS>").unwrap())
-                    .with(|args| format!("{}\t{}", self.op, args)),
-                1 => rt_format_args!(f, args[0])
-                    .unwrap_or(rt_format_args!("<INVALID ARGUMENTS>").unwrap())
-                    .with(|args| format!("{}\t{}", self.op, args)),
-                0 => rt_format_args!(f)
-                    .unwrap_or(rt_format_args!("<INVALID ARGUMENTS>").unwrap())
-                    .with(|args| format!("{}\t{}", self.op, args)),
-                _ => unreachable!(),
-            }
+            let args1: Vec<String> = args.iter().map(|o| o.to_string()).collect();
+            let argss: Vec<&str> = args1.iter().map(|o| &**o).collect();
+            self.op.to_string() + "\t" + &Template::new(f).render_positional(&argss)
         } else {
             // Standard formatting with commas. Use compile-time formatting.
             match args.len() {

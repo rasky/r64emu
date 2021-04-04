@@ -21,7 +21,7 @@ use std::slice;
 
 pub(crate) enum HwIoR {
     Mem(ArrayField<u8>, u32),
-    Func(Rc<Fn(u32) -> u64>),
+    Func(Rc<dyn Fn(u32) -> u64>),
 }
 
 impl Clone for HwIoR {
@@ -36,7 +36,7 @@ impl Clone for HwIoR {
 
 pub(crate) enum HwIoW {
     Mem(ArrayField<u8>, u32),
-    Func(Rc<RefCell<FnMut(u32, u64)>>),
+    Func(Rc<RefCell<dyn FnMut(u32, u64)>>),
 }
 
 impl Clone for HwIoW {
@@ -229,7 +229,7 @@ impl Default for BusFill {
 
 pub(crate) fn unmapped_area_r() -> HwIoR {
     thread_local!(
-        static FN: Rc<Fn(u32)->u64> = Rc::new(|_| {
+        static FN: Rc<dyn Fn(u32)->u64> = Rc::new(|_| {
             return 0xffff_ffff_ffff_ffff;
         })
     );
@@ -238,7 +238,7 @@ pub(crate) fn unmapped_area_r() -> HwIoR {
 
 pub(crate) fn unmapped_area_w() -> HwIoW {
     thread_local!(
-        static FN: Rc<RefCell<FnMut(u32,u64)>> = Rc::new(RefCell::new(|_,_| {}))
+        static FN: Rc<RefCell<dyn FnMut(u32,u64)>> = Rc::new(RefCell::new(|_,_| {}))
     );
     HwIoW::Func(FN.with(|c| c.clone()))
 }
