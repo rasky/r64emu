@@ -325,7 +325,7 @@ Single-lane instructions
 ========================
 | 31..26 | 25 | 24..21 | 20..16 | 15..11 | 10..6 | 5..0 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `COP2`| 1 | `vd_elem` | `vt` | `vt_elem` | `vd` | `opcode` |
+| `COP2`| 1 | `vt_elem` | `vt` | `vd_elem` | `vd` | `opcode` |
 
 Single-lane instructions are an instruction group that perform operations on a
 single lange of a single input register (`VT<se>`), and store the result into a single
@@ -342,7 +342,7 @@ the destination lane `de` is computed from the lowest 3 bits.
 `vt_elem(3)` is 0, a hardware bug is triggered and portions of the lower bits of
 `vt_elem` are replaced with portion of the bits of `vd_elem` while computing `se`. Specifically, all
 bits in `vt_elem` from the topmost set bit and higher are replaced with the
-same-position bits in `vt_elem`. Notice that this behaviour is actually consistent
+same-position bits in `vd_elem`. Notice that this behaviour is actually consistent
 with what happens when `vt_elem(3)` is 1, which means that there is no need to
 think of it as a special-case. Pseudo-code:
 
