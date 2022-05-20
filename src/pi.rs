@@ -1,6 +1,6 @@
 use super::mi::{IrqMask, Mi};
-use super::r4300::R4300;
 use super::n64::JOY_NAMES;
+use super::r4300::R4300;
 use super::si::Si;
 use crate::errors::*;
 use bitfield::Bit;
@@ -143,24 +143,22 @@ impl Pi {
     fn cb_write_dma_rd_len(&mut self, _old: u32, val: u32) {
         let mut raddr = self.dma_ram_addr.get();
         let mut waddr = self.dma_rom_addr.get();
-        info!(self.logger, "DMA xfer"; o!(
+        error!(self.logger, "DMA xfer to ROM"; o!(
             "src(ram)" => raddr.hex(),
             "dst(rom)" => waddr.hex(),
             "len" => val+1));
 
-        let bus = &mut R4300::get_mut().bus;
-        let mut i = 0;
-        while i < val + 1 {
-            let v = bus.read::<u32>(raddr);
-            info!(self.logger, "DMA DATA"; "data" => v.hex());
+        // let bus = &mut R4300::get_mut().bus;
+        // let mut i = 0;
+        // while i < val + 1 {
+        //     let v = bus.read::<u32>(raddr);
+        //     info!(self.logger, "DMA DATA"; "data" => v.hex());
 
-            raddr = raddr + 4;
-            waddr = waddr + 4;
-            i += 4;
-        }
+        //     raddr = raddr + 4;
+        //     waddr = waddr + 4;
+        //     i += 4;
+        // }
         Mi::get_mut().set_irq_line(IrqMask::PI, true);
-
-        unimplemented!();
     }
 
     pub fn begin_frame(&mut self) {

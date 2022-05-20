@@ -2,7 +2,9 @@ use bitfield::bitfield;
 
 use super::decode::REG_NAMES;
 use super::{Cop, Cop0, CpuContext, Exception};
-use emu::dbg::{DebuggerRenderer, DecodedInsn, Operand, RegisterSize, RegisterView, Result, Tracer};
+use emu::dbg::{
+    DebuggerRenderer, DecodedInsn, Operand, RegisterSize, RegisterView, Result, Tracer,
+};
 use emu::int::Numerics;
 use emu::state::Field;
 use serde_derive::{Deserialize, Serialize};
@@ -101,7 +103,10 @@ pub struct Cp0 {
 impl Cp0 {
     pub fn new(cpu_name: &'static str, logger: slog::Logger) -> Cp0 {
         Cp0 {
-            ctx: Field::new(&("mips64::".to_owned() + cpu_name + "::cop0"), Cp0Context::default()),
+            ctx: Field::new(
+                &("mips64::".to_owned() + cpu_name + "::cop0"),
+                Cp0Context::default(),
+            ),
             logger: logger,
             cpu_name,
         }
@@ -214,14 +219,14 @@ impl Cop0 for Cp0 {
             _ => {
                 // Standard exception
                 let vector = if !ctx.reg_status.exl() {
-                    if !cpu.delay_slot {
-                        ctx.reg_epc = cpu.pc;
-                        ctx.reg_cause.set_bd(false);
+                    if exc.is_async() {
+                        ctx.reg_epc = cpu.pc
                     } else {
+                        // FIXME: This is wrong for synchronous exceptions in delay slot,
+                        // because the way the main loop handles delay slots doesn't allow
+                        // us to know the previous pc here.
                         ctx.reg_epc = cpu.pc - 4;
-                        ctx.reg_cause.set_bd(true);
                     }
-
                     match exc {
                         TlbRefill => 0x0,
                         XTlbRefill => 0x80,

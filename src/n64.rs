@@ -121,7 +121,7 @@ impl N64 {
 
         R4300::new(sync::Sync::new_logger(&sync)).register();
         Mi::new(sync::Sync::new_logger(&sync)).register();
-        Cartridge::new(romfn)
+        Cartridge::new(sync::Sync::new_logger(&sync), romfn)
             .chain_err(|| "cannot open rom file")?
             .register();
 
@@ -187,7 +187,9 @@ impl N64 {
         // This is relied upon by libdragon at least. So fix it by setting the RDRAM as already initialized
         // and copying the RAM size.
         R4300::get_mut().bus.write::<u32>(0x0470_000C, 0x14);
-        R4300::get_mut().bus.write::<u32>(0x0000_0318, 4*1024*1024);
+        R4300::get_mut()
+            .bus
+            .write::<u32>(0x0000_0318, 4 * 1024 * 1024);
         Ok(())
     }
 }

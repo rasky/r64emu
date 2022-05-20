@@ -163,61 +163,56 @@ impl Vi {
             return;
         }
 
-        info!(self.logger, "draw frame"; o!("origin" => self.origin.get().hex()));
         let memio = R4300::get().bus.fetch_read::<u8>(self.origin.get());
         let src = memio.mem().unwrap();
 
-        match self.width.get() {
-            640 => {
-                let src = GfxBufferLE::<Rgb888>::new(src, 640, 480, 640 * 4).unwrap();
-                for y in 0..480 {
+        let wstep = (self.x_scale.get() & 0xFFF) as usize;
+        let hstep = (self.y_scale.get() & 0xFFF) as usize / 2;
+
+        let (screen_width, screen_height) = (640, 480);
+        let width = ((wstep * (screen_width - 1)) >> 10) + 1;
+        let height = ((hstep * (screen_height - 1)) >> 10) + 1;
+        let fbwidth = self.width.get() as usize;
+
+        info!(self.logger, "draw frame"; o!(
+            "origin" => self.origin.get().hex(), 
+            "wstep" => (wstep as u32).hex(),
+            "hstep" => (hstep as u32).hex()));
+
+        match bpp {
+            // 32-bit
+            3 => {
+                let src = GfxBufferLE::<Rgb888>::new(src, width, height, fbwidth * 4).unwrap();
+                let mut sy = 0;
+                for y in 0..screen_height {
                     let mut dst = screen.line(y);
-                    let src = src.line(y);
-                    for x in 0..640 {
-                        dst.set(x, src.get(x));
+                    let src = src.line(sy >> 10);
+                    let mut sx = 0;
+                    for x in 0..screen_width {
+                        let px = src.get(sx >> 10);
+                        dst.set(x, px);
+                        sx += wstep;
                     }
+                    sy += hstep;
                 }
             }
-
-            320 => {
-                match bpp {
-                    // 32-bit
-                    3 => {
-                        let src = GfxBufferLE::<Rgb888>::new(src, 320, 240, 320 * 4).unwrap();
-                        for y in 0..240 {
-                            let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
-                            let src = src.line(y);
-                            for x in 0..320 {
-                                let px = src.get(x);
-                                dst1.set(x * 2, px);
-                                dst1.set(x * 2 + 1, px);
-                                dst2.set(x * 2, px);
-                                dst2.set(x * 2 + 1, px);
-                            }
-                        }
+            // 16-bit
+            2 => {
+                let src = GfxBufferBE::<Xbgr1555>::new(src, width, height, fbwidth * 2).unwrap();
+                let mut sy = 0;
+                for y in 0..screen_height {
+                    let mut dst = screen.line(y);
+                    let src = src.line(sy >> 10);
+                    let mut sx = 0;
+                    for x in 0..screen_width {
+                        let px = src.get(sx >> 10).cconv();
+                        dst.set(x, px);
+                        sx += wstep;
                     }
-                    // 16-bit
-                    2 => {
-                        let src = GfxBufferBE::<Xbgr1555>::new(src, 320, 240, 320 * 2).unwrap();
-                        for y in 0..240 {
-                            let (mut dst1, mut dst2) = screen.lines(y * 2, y * 2 + 1);
-                            let src = src.line(y);
-                            for x in 0..320 {
-                                let px = src.get(x).cconv();
-                                dst1.set(x * 2, px);
-                                dst1.set(x * 2 + 1, px);
-                                dst2.set(x * 2, px);
-                                dst2.set(x * 2 + 1, px);
-                            }
-                        }
-                    }
-                    _ => unimplemented!(),
+                    sy += hstep;
                 }
             }
-
-            _ => {
-                error!(self.logger, "unsupported screen width"; o!("width" => self.width.get()));
-            }
+            _ => unimplemented!(),
         }
     }
 }

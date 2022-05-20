@@ -176,7 +176,7 @@ impl<FP: FixedPoint> Q<FP> {
         let bits: FP::BITS = if FP2::shift() > FP::shift() {
             (fp.bits >> (FP2::shift() - FP::shift())).cast()
         } else {
-            (fp.bits.cast::<FP::BITS>() << (FP::shift() - FP2::shift()))
+            fp.bits.cast::<FP::BITS>() << (FP::shift() - FP2::shift())
         };
         let q = Self::from_bits(bits);
         if q.floor().to_i64().unwrap() != fp.floor().to_i64().unwrap() {

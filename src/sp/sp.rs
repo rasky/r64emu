@@ -342,7 +342,14 @@ impl Sp {
             }
             let src_mem = src_hwio.mem().unwrap();
             let dst_mem = dst_hwio.mem().unwrap();
-            dst_mem[0..width].copy_from_slice(&src_mem[0..width]);
+            if src_mem.len() >= width && dst_mem.len() >= width {
+                dst_mem[0..width].copy_from_slice(&src_mem[0..width]);
+            } else {
+                for i in 0..width / 8 {
+                    let v = bus.read::<u64>(src + i as u32 * 8);
+                    bus.write::<u64>(dst + i as u32 * 8, v);
+                }
+            }
 
             src += (width + skip_src) as u32;
             dst += (width + skip_dst) as u32;

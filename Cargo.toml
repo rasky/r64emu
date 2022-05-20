@@ -57,9 +57,14 @@ version = "2"
 features = ["nothreads"]
 
 [patch.crates-io]
+# While developing on imgui-rs:
 "imgui" = { path="vendor/imgui-rs" }
 "imgui-sys" = { path="vendor/imgui-rs/imgui-sys" }
 "imgui-sdl2" = { path="vendor/rust-imgui-sdl2" }
+
+#"imgui" = { git="https://github.com/rasky/imgui-rs", branch="docking" }
+#"imgui-sys" = { git="https://github.com/rasky/imgui-rs", branch="docking" }
+#"imgui-sdl2" = { git="https://github.com/rasky/rust-imgui-sdl2" }
 
 [profile.dev]
 overflow-checks = false

@@ -101,6 +101,11 @@ impl DebuggerUI {
 
         let mut imgui = imgui::Context::create();
         imgui.set_ini_filename(Some("debug.ini".into()));
+        imgui
+            .io_mut()
+            .config_flags
+            .insert(imgui::ConfigFlags::DOCKING_ENABLE);
+        imgui.io_mut().docking_with_shift = true;
 
         let imgui_sdl2 = ImguiSdl2::new(&mut imgui, &window);
         let backend = Renderer::new(&mut imgui, move |s| video.gl_get_proc_address(s) as _);

@@ -1,6 +1,6 @@
 extern crate emu;
 use super::{Arch, Config, Cop, Cpu};
-use emu::dbg::{Operand, DecodedInsn};
+use emu::dbg::{DecodedInsn, Operand};
 
 // Decoding format for arguments of load/store ops
 pub const MEMOP_FMT: &'static str = "{{}},{{}}({{}})";
@@ -49,6 +49,7 @@ fn decode1<C: Config>(cpu: &Cpu<C>, opcode: u32, pc: u64) -> DecodedInsn {
             0x07 => DecodedInsn::new3("srav", OReg(rd), IReg(rt), IReg(rs)),
             0x08 => DecodedInsn::new1("jr", IReg(rs)),
             0x09 => DecodedInsn::new1("jalr", IReg(rs)),
+            0x0C => DecodedInsn::new1("syscall", Imm32((opcode >> 6) & 0xFFFFF)),
             0x0D => DecodedInsn::new0("break"),
             0x0F => DecodedInsn::new0("sync"),
 

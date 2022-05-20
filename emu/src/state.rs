@@ -1028,6 +1028,20 @@ mod tests {
     }
 
     #[test]
+    fn array_field() {
+        let mut f = ArrayField::<u8>::new("a", 5, 16);
+
+        assert_eq!(f[0], 5);
+        assert_eq!(f[15], 5);
+
+        f[4] = 8;
+        f[5] = 6;
+
+        assert_eq!(f[4], 8);
+        assert_eq!(f[5], 6);
+    }
+
+    #[test]
     fn compress() {
         let mut a = Field::new("a", 4u64);
         let mut b = Field::new("b", 12.0f64);

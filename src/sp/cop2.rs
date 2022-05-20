@@ -1124,5 +1124,13 @@ impl dbg::RegisterView for SpCop2 {
                 v[j] = vle[7 - j];
             }
         }
+
+        let (mut vcc, mut vco, mut vce) = (ctx.vcc(), ctx.vco(), ctx.vce());
+        visit("VCC", Reg16(&mut vcc), None);
+        visit("VCO", Reg16(&mut vco), None);
+        visit("VCE", Reg8(&mut vce), None);
+        ctx.set_vcc(vcc);
+        ctx.set_vco(vco);
+        ctx.set_vce(vce);
     }
 }

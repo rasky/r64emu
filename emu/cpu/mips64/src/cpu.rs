@@ -18,7 +18,8 @@ use slog;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Exception {
-    Interrupt,  // Interrupt
+    Interrupt, // Interrupt
+    Syscall,
     Breakpoint, // Breakpoint
     ColdReset,
     SoftReset,
@@ -32,6 +33,7 @@ impl Exception {
     pub(crate) fn exc_code(&self) -> Option<u32> {
         match self {
             Exception::Interrupt => Some(0x00),
+            Exception::Syscall => Some(0x08),
             Exception::Breakpoint => Some(0x09),
             Exception::ColdReset => None,
             Exception::Nmi => None,
@@ -39,6 +41,20 @@ impl Exception {
             Exception::TlbRefill => None,
             Exception::XTlbRefill => None,
             Exception::Trap => Some(0x0D),
+        }
+    }
+
+    pub(crate) fn is_async(&self) -> bool {
+        match self {
+            Exception::Interrupt => true,
+            Exception::Syscall => false,
+            Exception::Breakpoint => false,
+            Exception::ColdReset => true,
+            Exception::SoftReset => true,
+            Exception::Nmi => true,
+            Exception::TlbRefill => false,
+            Exception::XTlbRefill => false,
+            Exception::Trap => false,
         }
     }
 }
@@ -322,6 +338,7 @@ impl<C: Config> Cpu<C> {
                 0x07 if h("srav") => *op.mrd64() = (op.irt32() >> (op.rs32() & 0x1F)).sx64(), // SRAV
                 0x08 if h("jr") => branch!(op, true, op.rs64(), link(false)),                 // JR
                 0x09 if h("jalr") => branch!(op, true, op.rs64(), link(true)), // JALR
+                0x0C if h("syscall") => op.cpu.exception(Exception::Syscall),  // SYSCALL
                 0x0D if h("break") => op.cpu.exception(Exception::Breakpoint), // BREAK
                 0x0F if h("sync") => {}                                        // SYNC
 
@@ -352,6 +369,13 @@ impl<C: Config> Cpu<C> {
                 }
                 0x1B if h("divu") => {
                     // DIVU
+                    if op.rt32() == 0 {
+                        panic!(
+                            "division by zero: func=0x{:x?}, pc={}",
+                            op.op(),
+                            op.ctx.pc.hex()
+                        );
+                    }
                     op.ctx.lo = op.rs32().wrapping_div(op.rt32()).sx64();
                     op.ctx.hi = op.rs32().wrapping_rem(op.rt32()).sx64();
                 }
