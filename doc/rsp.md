@@ -305,7 +305,7 @@ Vector move instructions
 Vector moves follow the same format as other coprocessor moves, but use part of
 the lower 11 bits to specify which lane of the vector register is used. `mtc2`
 moves the lower 16 bits of the general purpose register `rt` to the vector
-register `VS<elem>`, while `mtc2` moves `VS<elem>` to GPR `rt`, sign extending
+register `VS<elem>`, while `mfc2` moves `VS<elem>` to GPR `rt`, sign extending
 to 64 bits.
 
 `ctc2` moves the lower 16 bits of GPR `rt` into the control register
