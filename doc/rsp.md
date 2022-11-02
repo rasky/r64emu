@@ -385,8 +385,8 @@ Pseudo-code:
             return NOT result
         endif
         x = abs(input)
-        scale_out = highest_set_bit(x)
-        scale_in = 32 - scale_out
+        scale_in = highest_set_bit(x)
+        scale_out = 32 - scale_in
         result(scale_out..scale_out-16) = 1 || RCP_ROM[x(scale_in-1..scale_in-9)]
         if input < 0
             result = NOT result
@@ -457,9 +457,9 @@ Pseudo-code:
             return NOT result
         endif
         x = abs(input)
-        scale_out = highest_set_bit(x)
-        scale_in = 32 - scale_out
-        scale_out = scale_out / 2
+        scale_in = highest_set_bit(x)
+        scale_out = 32 - scale_in
+        scale_in = scale_in / 2
         result(scale_out..scale_out-16) = 1 || RSQ_ROM[scale_in(0) || x(scale_in-1..scale_in-8)]
         if input < 0
             result = NOT result
